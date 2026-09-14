@@ -10,6 +10,8 @@ import { MultilingualBroadcastCenter } from './components/broadcast/Multilingual
 import { MobileMissionCockpit } from './components/cockpit/MobileMissionCockpit';
 import { GlobalSOSInterceptModal } from './components/admin/GlobalSOSInterceptModal';
 import { InteractiveWalkthroughToolbar } from './components/layout/InteractiveWalkthroughToolbar';
+import { SpeedInsights } from '@vercel/speed-insights/react';
+import { Analytics } from '@vercel/analytics/react';
 import { AlertOctagon, X } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -145,6 +147,8 @@ export function App() {
     <ErrorBoundary>
       <PravahStoreProvider>
         <AppContent />
+        <SpeedInsights />
+        <Analytics />
       </PravahStoreProvider>
     </ErrorBoundary>
   );
