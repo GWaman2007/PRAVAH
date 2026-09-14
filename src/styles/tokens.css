@@ -1,0 +1,93 @@
+/**
+ * PRAVAH Design Tokens
+ * Strictly adhering to design.md (Sections 5.1, 5.2, 5.4, 5.5, 5.6, 5.8)
+ * Built for GIGW 3.0 and WCAG 2.1 Level AA Compliance
+ */
+
+:root {
+  /* Brand & Functional Palette (Light) */
+  --color-primary: #1B4B73;
+  --color-primary-hover: #123A5A;
+  --color-primary-tint: #E7EEF4;
+  --color-page-bg: #F7F8F9;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #F0F2F5;
+  --color-border: #D8DBDE;
+  --color-border-subtle: #E6E8EA;
+  --color-text-primary: #1A1D1F;
+  --color-text-secondary: #5B6066;
+  --color-text-tertiary: #8A8F94;
+
+  /* Status Palette (Light) - Verified >= 4.5:1 text, >= 3:1 marker */
+  --status-open-tint: #E6F4EA;
+  --status-open-text: #1E7A34;
+  --status-open-solid: #2E7D46;
+
+  --status-restricted-tint: #FFF3D6;
+  --status-restricted-text: #8A5B00;
+  --status-restricted-solid: #B8860B;
+
+  --status-highrisk-tint: #FDEBDD;
+  --status-highrisk-text: #A64D0B;
+  --status-highrisk-solid: #D2691E;
+
+  --status-blocked-tint: #FBE7E7;
+  --status-blocked-text: #B42318;
+  --status-blocked-solid: #D92D20;
+
+  --status-unknown-tint: #EEEFF1;
+  --status-unknown-text: #5B6066;
+  --status-unknown-solid: #8A8F94;
+
+  /* Shape - Corner Radii scale */
+  --radius-input: 4px;
+  --radius-button: 6px;
+  --radius-card: 8px;
+  --radius-pill: 9999px;
+
+  /* Spacing */
+  --space-unit: 8px;
+
+  /* Fonts */
+  --font-sans: 'Noto Sans', 'Noto Sans Bengali', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* Dark Mode Tokens (Section 5.8) */
+.dark {
+  /* Brand & Functional Palette (Dark) */
+  --color-primary: #7FB3E0;
+  --color-primary-hover: #3B84BE;
+  --color-primary-btn: #2E6B9E;
+  --color-primary-btn-hover: #3B84BE;
+  --color-primary-tint: #1E2D3D;
+  --color-page-bg: #101214;
+  --color-surface: #1B1F23;
+  --color-surface-subtle: #24292E;
+  --color-border: #2E3338;
+  --color-border-subtle: #3A4047;
+  --color-text-primary: #F1F2F3;
+  --color-text-secondary: #A9AFB5;
+  --color-text-tertiary: #6E7681;
+
+  /* Status Palette (Dark) - Verified >= 7:1 text, >= 4:1 marker */
+  --status-open-tint: #14261A;
+  --status-open-text: #7CD992;
+  --status-open-solid: #4CAF6D;
+
+  --status-restricted-tint: #2B2210;
+  --status-restricted-text: #F4C24B;
+  --status-restricted-solid: #E0A526;
+
+  --status-highrisk-tint: #2C1A10;
+  --status-highrisk-text: #F2955C;
+  --status-highrisk-solid: #E1783B;
+
+  --status-blocked-tint: #2C1414;
+  --status-blocked-text: #F28B82;
+  --status-blocked-solid: #E5534B;
+
+  --status-unknown-tint: #24272A;
+  --status-unknown-text: #B9BEC3;
+  --status-unknown-solid: #8A8F94;
+}

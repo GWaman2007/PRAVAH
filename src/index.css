@@ -1,0 +1,133 @@
+@import "tailwindcss";
+@import "./styles/tokens.css";
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-page-bg);
+    color: var(--color-text-primary);
+    min-height: 100vh;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  /* Interactive States per design.md Section 5.6 */
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* Touch Target minimums (Section 8) */
+  button, .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Tactile 1px inward shift on press */
+.btn-press:active {
+  transform: translateY(1px);
+}
+
+/* Status Badges */
+.status-open {
+  background-color: var(--status-open-tint);
+  color: var(--status-open-text);
+  border: 1px solid var(--status-open-solid);
+}
+
+.status-restricted {
+  background-color: var(--status-restricted-tint);
+  color: var(--status-restricted-text);
+  border: 1px solid var(--status-restricted-solid);
+}
+
+.status-highrisk {
+  background-color: var(--status-highrisk-tint);
+  color: var(--status-highrisk-text);
+  border: 1px solid var(--status-highrisk-solid);
+}
+
+.status-blocked {
+  background-color: var(--status-blocked-tint);
+  color: var(--status-blocked-text);
+  border: 1px solid var(--status-blocked-solid);
+}
+
+.status-unknown {
+  background-color: var(--status-unknown-tint);
+  color: var(--status-unknown-text);
+  border: 1px solid var(--status-unknown-solid);
+}
+
+/* Custom Soft Pulse for P1 Alerts */
+@keyframes soft-pulse-critical {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(217, 45, 32, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(217, 45, 32, 0);
+  }
+}
+
+.pulse-critical {
+  animation: soft-pulse-critical 2.5s infinite ease-in-out;
+}
+
+/* Custom subtle pulse for dead-reckoning vehicles */
+@keyframes dead-reckon-pulse {
+  0%, 100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pulse-dead-reckon {
+  animation: dead-reckon-pulse 1.8s infinite ease-in-out;
+}
+
+/* Custom clean scrollbars per design.md */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-page-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+
+/* Leaflet Container Overrides */
+.leaflet-container {
+  font-family: var(--font-sans) !important;
+  background-color: #121820 !important;
+  width: 100%;
+  height: 100%;
+}
+
+.dark .leaflet-tile-pane {
+  filter: brightness(0.85) invert(0.92) contrast(1.1) hue-rotate(185deg) saturate(0.4);
+}
+
+/* Motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
