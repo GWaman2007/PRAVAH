@@ -399,7 +399,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
                           />
                           <button
                             onClick={() => handleAddComment(inc.id)}
-                            className="px-3 py-1.5 bg-primary text-white rounded-sm text-xs font-semibold btn-press flex items-center space-x-1 cursor-pointer"
+                            className="px-3 py-1.5 bg-[#1B4B73] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold btn-press flex items-center space-x-1 cursor-pointer"
                           >
                             <Send className="w-3.5 h-3.5" />
                             <span>Post</span>

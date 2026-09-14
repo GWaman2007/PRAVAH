@@ -666,7 +666,7 @@ export const TacticalMapDeck: React.FC = () => {
 
                   <button
                     onClick={handleApplyCustomSpecs}
-                    className="w-full py-1 text-[10px] font-semibold bg-primary text-white rounded-xs btn-press"
+                    className="w-full py-1 text-[10px] font-semibold bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-xs btn-press"
                   >
                     Apply Custom Axle Load
                   </button>

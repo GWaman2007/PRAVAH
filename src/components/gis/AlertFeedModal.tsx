@@ -80,7 +80,7 @@ export const AlertFeedModal: React.FC<AlertFeedModalProps> = ({
               onClick={() => setFilter(tab)}
               className={`px-3 py-1 rounded-xs text-[11px] font-semibold transition-colors cursor-pointer ${
                 filter === tab
-                  ? 'bg-primary text-white shadow-xs'
+                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white shadow-xs'
                   : 'bg-surface border border-border text-text-secondary hover:text-text-primary'
               }`}
             >

@@ -21,6 +21,11 @@
     outline-offset: 2px;
   }
 
+  select option {
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+  }
+
   /* Touch Target minimums (Section 8) */
   button, .touch-target {
     min-height: 44px;

@@ -204,7 +204,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                     <span>2. Dispatch Detour</span>
                   </div>
                   {isMissionDispatched && (
-                    <span className="text-[9px] font-mono px-1 py-0.5 rounded-xs bg-primary text-white font-bold shrink-0">
+                    <span className="text-[9px] font-mono px-1 py-0.5 rounded-xs bg-[#1B4B73] dark:bg-[#2E6B9E] text-white font-bold shrink-0">
                       EN ROUTE
                     </span>
                   )}

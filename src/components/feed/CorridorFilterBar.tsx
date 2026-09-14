@@ -104,7 +104,7 @@ export const CorridorFilterBar: React.FC<CorridorFilterBarProps> = ({
               onClick={() => setActiveFilter(tag.id)}
               className={`whitespace-nowrap px-2.5 py-1 rounded-sm text-xs font-medium transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-primary text-white font-semibold shadow-xs'
+                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white font-semibold shadow-xs'
                   : 'bg-surface-subtle text-text-secondary hover:text-text-primary hover:bg-border/60 border border-border'
               }`}
             >

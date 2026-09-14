@@ -69,7 +69,7 @@ export const Header: React.FC = () => {
             <button
               onClick={toggleSimulatedOffline}
               title="Click to toggle simulated offline mountain dead-zone mode"
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-sm text-xs font-medium border transition-colors btn-press ${
+              className={`inline-flex items-center justify-center space-x-1.5 h-9 px-3 rounded-md text-xs font-medium border transition-colors whitespace-nowrap flex-shrink-0 btn-press ${
                 isOnline
                   ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
                   : 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
@@ -91,7 +91,7 @@ export const Header: React.FC = () => {
             </button>
 
             {/* Persistent Role Switcher / Demo Simulator */}
-            <div className="flex items-center space-x-1 bg-surface-subtle border border-border p-1 rounded-sm">
+            <div className="flex items-center space-x-1 bg-surface-subtle border border-border h-9 px-2 rounded-md">
               <Users className="w-3.5 h-3.5 text-text-secondary ml-1" />
               <select
                 aria-label="Select User Role Simulator"
@@ -110,7 +110,7 @@ export const Header: React.FC = () => {
             <button
               onClick={toggleTheme}
               aria-label="Toggle light or dark theme"
-              className="p-2 rounded-sm border border-border bg-surface text-text-secondary hover:text-text-primary hover:bg-surface-subtle transition-colors btn-press"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-md border border-border bg-surface text-text-secondary hover:text-text-primary hover:bg-surface-subtle transition-colors btn-press flex-shrink-0"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#1B4B73]" />}
             </button>

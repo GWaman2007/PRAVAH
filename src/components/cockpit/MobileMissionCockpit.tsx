@@ -316,7 +316,7 @@ export const MobileMissionCockpit: React.FC = () => {
               </div>
               <button
                 onClick={() => setRoadblockAheadSimulated(false)}
-                className="px-2 py-0.5 rounded-xs bg-white text-status-blocked-text text-[10px] font-bold cursor-pointer"
+                className="px-2 py-0.5 rounded-xs bg-surface text-status-blocked-text text-[10px] font-bold cursor-pointer hover:bg-surface-subtle"
               >
                 Reroute Bypass
               </button>
