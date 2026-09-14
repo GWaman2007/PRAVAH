@@ -54,29 +54,29 @@ The North Eastern Region (NER) of India presents some of the most challenging te
 
 ```mermaid
 flowchart TB
-    subgraph Data Layer & GIS Core
-        GEO[ISRO Bhuvan LHZ & 28 District GeoJSON]
-        NET[NER Road Network: Nodes, Segments & Clearances]
-        COMM[Community Inventories & Burn Baselines]
-        FLEET[Convoy GPS & High-Frequency Breadcrumbs]
-        MET[Open-Meteo Live API & Orographic Sim]
+    subgraph Data_Layer ["Data Layer & GIS Core"]
+        GEO["ISRO Bhuvan LHZ & 28 District GeoJSON"]
+        NET["NER Road Network: Nodes, Segments & Clearances"]
+        COMM["Community Inventories & Burn Baselines"]
+        FLEET["Convoy GPS & High-Frequency Breadcrumbs"]
+        MET["Open-Meteo Live API & Orographic Sim"]
     end
 
-    subgraph Computational Intelligence Engines
-        PE[1. Preemptive Depletion & Urgency Engine\n- S_def, R_iso, I_vuln, T_window\n- 1.4x Monsoon Medical Surge\n- Sensitivity & Audit Trail Stack]
-        RE[2. Vehicle-Aware Routing Engine\n- Yen's K-Shortest Paths (K=5)\n- Physical Clearance Pruning\n- ML Gradient & Road Surface Degradation]
-        TE[3. Fleet Telemetry & Watchdog Engine\n- Blackout Dead-Reckoning Extrapolation\n- Overdue SLA Watchdog (Amber/Red)\n- Emergency SOS QRT Dispatch]
-        OS[4. Ground Intelligence & Offline Sync\n- Confidence Score (Up-Down + 10*Officer)\n- IndexedDB / LocalStorage Queue Buffer]
-        BC[5. Multilingual Broadcast Engine\n- EN, HI, AS, BN, MN Regional Translations\n- Script Routing & Audio Alert Synthesizers]
+    subgraph Intelligence_Engines ["Computational Intelligence Engines"]
+        PE["Preemptive Depletion & Urgency Engine<br/>S_def, R_iso, I_vuln, T_window<br/>1.4x Monsoon Medical Surge"]
+        RE["Vehicle-Aware Routing Engine<br/>Yen K-Shortest Paths K=5<br/>Physical Clearance Pruning"]
+        TE["Fleet Telemetry & Watchdog Engine<br/>Blackout Dead-Reckoning Extrapolation<br/>Amber and Red Watchdog SLA"]
+        OS["Ground Intelligence & Offline Sync<br/>Confidence Scoring & Verification<br/>IndexedDB Local Queue Buffer"]
+        BC["Multilingual Broadcast Engine<br/>EN, HI, AS, BN, MN Translations<br/>Script Routing & Audio Alert Synthesizers"]
     end
 
-    subgraph Unified Reactive Bus
-        STORE[usePravahStore\nEvent Cascades: Incident -> Segment Block -> Reroute -> Priority Recalculate]
+    subgraph Unified_Bus ["Unified Reactive Bus"]
+        STORE["usePravahStore<br/>Event Cascades: Incident to Block to Reroute"]
     end
 
-    subgraph User Command Surfaces
-        DECK[Web Command Console\n- GIS Tactical Deck\n- Preemptive Priority Deck\n- Ground Intelligence Feed\n- Executive Infrastructure Deck\n- Multilingual Broadcast Center]
-        PWA[Field Cockpit PWA\n- Driver HUD & Offline GPS\n- Officer Delivery Handover\n- Emergency Transponder]
+    subgraph User_Surfaces ["User Command Surfaces"]
+        DECK["Central Web Command Console<br/>GIS, Priority, Feed, Infra & Broadcast"]
+        PWA["Field Cockpit PWA<br/>Driver HUD, Offline GPS & Handover"]
     end
 
     GEO --> STORE
