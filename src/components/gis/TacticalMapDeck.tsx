@@ -13,6 +13,7 @@ import { SegmentModal } from './SegmentModal';
 import { VehicleInspector } from './VehicleInspector';
 import { AlertFeedModal } from './AlertFeedModal';
 import { SOSModal } from './SOSModal';
+import { MapLegend } from './MapLegend';
 import type { Segment, VehicleProfile } from '../../types';
 import {
   CloudRain,
@@ -976,6 +977,9 @@ export const TacticalMapDeck: React.FC = () => {
 
         {/* Map Container */}
         <div ref={mapContainerRef} className="w-full h-full" />
+
+        {/* Interactive Tactical GIS Map Legend */}
+        <MapLegend />
       </div>
 
       {/* Right Drawer: Vehicle Inspector */}

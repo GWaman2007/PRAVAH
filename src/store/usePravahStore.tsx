@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { io, type Socket } from 'socket.io-client';
 import type {
   UserRole,
   UserContext,
@@ -14,6 +15,7 @@ import type {
   BroadcastDraft,
   LanguageId,
   SegmentIncident,
+  ReliefMission,
 } from '../types';
 import { NER_SEGMENTS, NER_NODES, VEHICLE_PROFILES } from '../data/routingNetwork';
 import { INITIAL_COMMUNITIES } from '../data/communitiesData';
@@ -120,6 +122,23 @@ interface PravahStoreContextType {
 
   // Closed-Loop Actions
   markMissionDelivered: (communityId: string, vehicleId?: string) => void;
+
+  // Relief Missions & Dispatch
+  activeMissions: ReliefMission[];
+  customizingMission: ReliefMission | null;
+  setCustomizingMission: (mission: ReliefMission | null) => void;
+  approveAndDispatchMission: (missionId: string) => void;
+  customizeMission: (mission: ReliefMission) => void;
+
+  // Driver SOS Distress Signal Intercept
+  pendingSOSAlert: AlertEvent | null;
+  setPendingSOSAlert: (alert: AlertEvent | null) => void;
+
+  // Interactive Walkthrough Demo
+  runDemoStep1: () => void;
+  runDemoStep2: () => void;
+  runDemoStep3: () => void;
+  resetDemoSimulation: () => void;
 }
 
 const PravahStoreContext = createContext<PravahStoreContextType | null>(null);
@@ -392,6 +411,34 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [isSimulationRunning, setIsSimulationRunning] = useState<boolean>(true);
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
 
+  // 6b. Preemptive Relief Missions
+  const INITIAL_MISSIONS: ReliefMission[] = useMemo(() => [
+    {
+      id: 'MISSION-MZ-04',
+      communityId: 'MZ-KOL-004',
+      communityName: 'Kolasib District HQ & PHC',
+      recommendedVehicleType: '4x4 Tata Xenon High-Clearance Medic Carrier',
+      cargoAllocations: [
+        { item: 'IV Fluids (RL / NS 500ml)', quantity: 350, unit: 'Bags' },
+        { item: 'Polyvalent Snake Antivenom', quantity: 60, unit: 'Vials' },
+        { item: 'Fortified High-Energy Biscuits & Grain', quantity: 800, unit: 'kg' },
+        { item: 'Generator Diesel (Emergency)', quantity: 400, unit: 'Litres' },
+      ],
+      assignedRouteId: 'ROUTE-MZ-04',
+      suggestedDetour: 'NH-306 Bilkhawthlir Escarpment alternate spur (via Bairabi Pass)',
+      status: 'SUGGESTED',
+      urgency: 'P1_CRITICAL',
+      createdAt: new Date(Date.now() - 25 * 60000).toISOString(),
+      assignedDriver: 'Rajesh Mech (+91 94350-18492)',
+      assignedOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
+    },
+  ], []);
+
+  const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(INITIAL_MISSIONS);
+  const [customizingMission, setCustomizingMission] = useState<ReliefMission | null>(null);
+  const [pendingSOSAlert, setPendingSOSAlert] = useState<AlertEvent | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+
   const toggleSimulation = useCallback(() => setIsSimulationRunning((p) => !p), []);
 
   const acknowledgeAlert = useCallback((id: string) => {
@@ -416,22 +463,24 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     );
     const target = vehicles.find((v) => v.vehicle_id === id);
     if (target) {
-      setAlerts((prev) => [
-        {
-          id: `sos-${id}-${Date.now()}`,
-          vehicle_id: id,
-          vehicle_name: target.vehicle_name,
-          cargo_type: target.cargo_type,
-          timestamp: new Date().toISOString(),
-          severity: 'CRITICAL',
-          type: 'SOS_TRIGGERED',
-          title: 'EMERGENCY SOS PANIC BEACON ACTIVATED',
-          message: `Manual SOS triggered by ${target.driver_name} (${target.driver_phone}) on Mission ${target.mission_id}! Immediate search & rescue dispatched.`,
-          coords: target.current_coords,
-          acknowledged: false,
-        },
-        ...prev,
-      ]);
+      const sosAlert: AlertEvent = {
+        id: `sos-${id}-${Date.now()}`,
+        vehicle_id: id,
+        vehicle_name: target.vehicle_name,
+        cargo_type: target.cargo_type,
+        timestamp: new Date().toISOString(),
+        severity: 'CRITICAL',
+        type: 'SOS_TRIGGERED',
+        title: 'EMERGENCY SOS PANIC BEACON ACTIVATED',
+        message: `Manual SOS triggered by ${target.driver_name} (${target.driver_phone}) on Mission ${target.mission_id}! Immediate search & rescue dispatched.`,
+        coords: target.current_coords,
+        acknowledged: false,
+      };
+      setAlerts((prev) => [sosAlert, ...prev]);
+      setPendingSOSAlert(sosAlert);
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('TRIGGER_DRIVER_SOS', { vehicleId: id, alert: sosAlert });
+      }
     }
   }, [vehicles]);
 
@@ -970,6 +1019,304 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     ]);
   }, []);
 
+  // 13. Mission Dispatch & Customization
+  const approveAndDispatchMission = useCallback((missionId: string) => {
+    setActiveMissions((prev) =>
+      prev.map((m) =>
+        m.id === missionId
+          ? { ...m, status: 'IN_TRANSIT', dispatchedAt: new Date().toISOString() }
+          : m
+      )
+    );
+
+    setVehicles((prev) =>
+      prev.map((v) =>
+        v.vehicle_id === 'Medic-01'
+          ? {
+              ...v,
+              status: 'ON_ROUTE',
+              speed_kmh: 42,
+              is_stopped_manual: false,
+              next_chokepoint: 'Bilkhawthlir Alternate Spur',
+            }
+          : v
+      )
+    );
+
+    setAlerts((prev) => [
+      {
+        id: `dispatch-${Date.now()}`,
+        vehicle_id: 'Medic-01',
+        vehicle_name: 'Medic-01 (4x4 Tata Xenon High-Clearance)',
+        cargo_type: 'Emergency Medical & Ration Consignment',
+        timestamp: new Date().toISOString(),
+        severity: 'INFO',
+        type: 'WATCHDOG_OVERDUE_AMBER',
+        title: 'MISSION DISPATCH CONFIRMED: Convoy Medic-01 En Route to Kolasib',
+        message: 'Preemptive convoy approved by Regional Dispatcher. Route locked via Bairabi Pass detour. Escort officer and driver notified.',
+        coords: [24.4250, 92.7480],
+        acknowledged: false,
+      },
+      ...prev,
+    ]);
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('DISPATCH_MISSION', { missionId, vehicleId: 'Medic-01' });
+    }
+  }, []);
+
+  const customizeMission = useCallback((mission: ReliefMission) => {
+    setActiveMissions((prev) =>
+      prev.map((m) => (m.id === mission.id ? mission : m))
+    );
+    approveAndDispatchMission(mission.id);
+  }, [approveAndDispatchMission]);
+
+  // 14. Interactive 1-Click Walkthrough Demo Actions
+  const runDemoStep1 = useCallback(() => {
+    setRainfallMmHr(65);
+    setIsMonsoonDownpourSimulated(true);
+
+    setActiveDisruptions((prev) => ({
+      ...prev,
+      'SEG-SIL-KOL': {
+        status: 'TOTAL_BLOCKAGE',
+        cause: 'Torrential Silt Mudflow (65mm/hr)',
+        description: 'Severe slope wash out along Bilkhawthlir escarpment. All heavy transport severed.',
+        reportedBy: 'Field Officer (Insp. L. Hmar / Mizoram Police)',
+      },
+    }));
+
+    setRawCommunities((prev) =>
+      prev.map((c) => {
+        if (c.id === 'MZ-KOL-004') {
+          return {
+            ...c,
+            cutoffTimeHours: 2.1,
+            disruptionProbMax: 0.98,
+            elapsedTimeHours: 14.0,
+            isMonsoonAlertActive: true,
+          };
+        }
+        return c;
+      })
+    );
+
+    setDistrictsHealth((prev) =>
+      prev.map((d) => (d.id === 'kolasib' ? { ...d, accessibilityScore: 18, connectivityCategory: 'CRITICAL', openCorridorsCount: 0 } : d))
+    );
+
+    setActiveMissions((prev) => {
+      if (prev.some((m) => m.communityId === 'MZ-KOL-004')) {
+        return prev.map((m) =>
+          m.communityId === 'MZ-KOL-004' ? { ...m, status: 'SUGGESTED', urgency: 'P1_CRITICAL' } : m
+        );
+      }
+      return [
+        {
+          id: 'MISSION-MZ-04',
+          communityId: 'MZ-KOL-004',
+          communityName: 'Kolasib District HQ & PHC',
+          recommendedVehicleType: '4x4 Tata Xenon High-Clearance Medic Carrier',
+          cargoAllocations: [
+            { item: 'IV Fluids (RL / NS 500ml)', quantity: 350, unit: 'Bags' },
+            { item: 'Polyvalent Snake Antivenom', quantity: 60, unit: 'Vials' },
+            { item: 'Fortified High-Energy Biscuits & Grain', quantity: 800, unit: 'kg' },
+            { item: 'Generator Diesel (Emergency)', quantity: 400, unit: 'Litres' },
+          ],
+          assignedRouteId: 'ROUTE-MZ-04',
+          suggestedDetour: 'NH-306 Bilkhawthlir Escarpment alternate spur (via Bairabi Pass)',
+          status: 'SUGGESTED',
+          urgency: 'P1_CRITICAL',
+          createdAt: new Date().toISOString(),
+          assignedDriver: 'Rajesh Mech (+91 94350-18492)',
+          assignedOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
+        },
+        ...prev,
+      ];
+    });
+
+    setIncidents((prev) => [
+      {
+        id: `inc-kolasib-${Date.now()}`,
+        title: 'Massive Hillside Silt Slide Severing NH-306 at Bilkhawthlir KM-18',
+        corridorFlair: 'r/Mizoram-NH-306',
+        incidentType: 'Landslide',
+        severity: 'Total Blockage',
+        location: {
+          lat: 24.2850,
+          lng: 92.7350,
+          placeName: 'Bilkhawthlir Escarpment, Kolasib District',
+          state: 'Mizoram',
+          corridorId: 'SEG-SIL-KOL',
+        },
+        author: {
+          name: 'Inspector L. Hmar',
+          role: 'Field Officer (BRO/Police)',
+        },
+        timestamp: new Date().toISOString(),
+        mediaUrl: 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80',
+        votes: { upvotes: 42, downvotes: 0, userVote: 'up' },
+        confidenceScore: 52,
+        hasOfficerVerified: true,
+        sync_status: 'SYNCED',
+        updates: [
+          {
+            id: `u-kol-${Date.now()}`,
+            author: 'Insp. L. Hmar',
+            role: 'Field Officer (BRO/Police)',
+            message: 'Main highway impassable. Advising dispatch to divert via Bairabi Pass bypass road.',
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      },
+      ...prev,
+    ]);
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 1 });
+    }
+  }, []);
+
+  const runDemoStep2 = useCallback(() => {
+    approveAndDispatchMission('MISSION-MZ-04');
+    setSelectedVehicleId('Medic-01');
+    setVehicles((prev) =>
+      prev.map((v) =>
+        v.vehicle_id === 'Medic-01'
+          ? {
+              ...v,
+              status: 'ON_ROUTE',
+              route_progress_pct: 35,
+              speed_kmh: 44,
+              is_stopped_manual: false,
+              next_chokepoint: 'Bairabi Pass Alternate Spur',
+            }
+          : v
+      )
+    );
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 2 });
+    }
+  }, [approveAndDispatchMission]);
+
+  const runDemoStep3 = useCallback(() => {
+    markMissionDelivered('MZ-KOL-004', 'Medic-01');
+    setActiveMissions((prev) =>
+      prev.map((m) =>
+        m.communityId === 'MZ-KOL-004'
+          ? { ...m, status: 'DELIVERED', deliveredAt: new Date().toISOString() }
+          : m
+      )
+    );
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 3 });
+    }
+  }, [markMissionDelivered]);
+
+  const resetDemoSimulation = useCallback(() => {
+    setRawCommunities(INITIAL_COMMUNITIES);
+    setActiveDisruptions({
+      'SEG-DIM-KOH-MAIN': {
+        status: 'TOTAL_BLOCKAGE',
+        cause: 'Landslide_Debris',
+        description: 'Major mudflow at Pagla Pahar KM-144',
+        reportedBy: 'Field Officer (BRO Project Sewak)',
+      },
+      'SEG-SIL-KOL': {
+        status: 'SINGLE_LANE_PASSABLE',
+        cause: 'Road_Subsidence',
+        description: 'Bilkhawthlir silt collapse - 18T load restriction',
+        reportedBy: 'Insp. L. Hmar',
+      },
+    });
+    setVehicles(INITIAL_VEHICLES);
+    setActiveMissions(INITIAL_MISSIONS);
+    setPendingSOSAlert(null);
+    setRainfallMmHr(24);
+    setIsMonsoonDownpourSimulated(false);
+    setDistrictsHealth(INITIAL_DISTRICTS_HEALTH);
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 0 });
+    }
+  }, [INITIAL_MISSIONS]);
+
+  // 15. Real-Time Socket Synchronization
+  useEffect(() => {
+    try {
+      const socketUrl = import.meta.env.VITE_SOCKET_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:3001' : null);
+      if (!socketUrl) {
+        console.log('ℹ️ PRAVAH running in standalone in-browser reactive mode (Vercel deployment)');
+        return;
+      }
+
+      const socket = io(socketUrl, {
+        transports: ['websocket', 'polling'],
+        timeout: 3000,
+        reconnectionAttempts: 3,
+      });
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        console.log(`✅ Connected to PRAVAH Realtime Event Bus at ${socketUrl}`);
+      });
+
+      socket.on('DRIVER_SOS_SIGNAL', (payload: any) => {
+        console.warn('🚨 RECEIVED SOS FROM WEBSOCKET:', payload);
+        if (payload.alert) {
+          setAlerts((prev) => [payload.alert, ...prev]);
+          setPendingSOSAlert(payload.alert);
+        }
+      });
+
+      socket.on('MISSION_RECOMMENDED', (payload: any) => {
+        if (payload.mission) {
+          setActiveMissions((prev) => {
+            if (prev.some((m) => m.id === payload.mission.id)) return prev;
+            return [payload.mission, ...prev];
+          });
+        }
+      });
+
+      socket.on('MISSION_DISPATCHED', (payload: any) => {
+        if (payload.missionId) {
+          setActiveMissions((prev) =>
+            prev.map((m) =>
+              m.id === payload.missionId
+                ? { ...m, status: 'IN_TRANSIT', dispatchedAt: new Date().toISOString() }
+                : m
+            )
+          );
+        }
+      });
+
+      socket.on('MISSION_DELIVERED_RESTOCK', (payload: any) => {
+        if (payload.communityId) {
+          markMissionDelivered(payload.communityId, payload.vehicleId);
+        }
+      });
+
+      socket.on('WEATHER_SURGE_TICK', (payload: any) => {
+        if (payload.multiplier && payload.multiplier > 1.5) {
+          setRainfallMmHr(Math.round(24 * payload.multiplier));
+        }
+      });
+
+      socket.on('disconnect', () => {
+        console.log('PRAVAH Socket disconnected - running offline fallback');
+      });
+    } catch (err) {
+      console.warn('PRAVAH Socket fallback:', err);
+    }
+
+    return () => {
+      if (socketRef.current) socketRef.current.disconnect();
+    };
+  }, [markMissionDelivered]);
+
   const value = {
     userContext,
     activeRole,
@@ -1035,6 +1382,17 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setActiveBroadcastLanguage,
     sendBroadcast,
     markMissionDelivered,
+    activeMissions,
+    customizingMission,
+    setCustomizingMission,
+    approveAndDispatchMission,
+    customizeMission,
+    pendingSOSAlert,
+    setPendingSOSAlert,
+    runDemoStep1,
+    runDemoStep2,
+    runDemoStep3,
+    resetDemoSimulation,
   };
 
   return <PravahStoreContext.Provider value={value}>{children}</PravahStoreContext.Provider>;

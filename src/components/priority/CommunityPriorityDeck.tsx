@@ -4,6 +4,7 @@ import { COMMODITY_CONFIG } from '../../engine/priorityEngine';
 import { playAckChime } from '../../utils/audioAlert';
 import { ExplainabilityPanel } from './ExplainabilityPanel';
 import { RestockToast, type RestockToastData } from './RestockToast';
+import { MissionSuggestionQueue } from '../dispatcher/MissionSuggestionQueue';
 import type { CommodityType, PriorityTier } from '../../types';
 import {
   Zap,
@@ -29,6 +30,10 @@ export const CommunityPriorityDeck: React.FC = () => {
     advanceCommunityElapsedHours,
     markMissionDelivered,
     activeRole,
+    activeMissions,
+    candidateRoutes,
+    approveAndDispatchMission,
+    customizeMission,
   } = usePravahStore();
 
   const [explainModalOpen, setExplainModalOpen] = useState(false);
@@ -108,6 +113,14 @@ export const CommunityPriorityDeck: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* AI Preemptive Relief Convoy Mission Queue */}
+      <MissionSuggestionQueue
+        missions={activeMissions}
+        candidateRoutes={candidateRoutes}
+        onApproveAndDispatch={approveAndDispatchMission}
+        onCustomizedDispatch={customizeMission}
+      />
 
       {/* Main Grid: Left Triage Queue & Right In-Depth Depletion Buffer */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

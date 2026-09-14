@@ -8,17 +8,30 @@ import { ExecutiveInfrastructureDeck } from './components/executive/ExecutiveInf
 import { GroundIntelligenceFeed } from './components/feed/GroundIntelligenceFeed';
 import { MultilingualBroadcastCenter } from './components/broadcast/MultilingualBroadcastCenter';
 import { MobileMissionCockpit } from './components/cockpit/MobileMissionCockpit';
+import { GlobalSOSInterceptModal } from './components/admin/GlobalSOSInterceptModal';
+import { InteractiveWalkthroughToolbar } from './components/layout/InteractiveWalkthroughToolbar';
 import { AlertOctagon, X } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { activeView, alerts, acknowledgeAlert } = usePravahStore();
+  const {
+    activeView,
+    alerts,
+    vehicles,
+    acknowledgeAlert,
+    pendingSOSAlert,
+    setPendingSOSAlert,
+  } = usePravahStore();
 
   const unacknowledgedCriticalAlert = alerts.find(
     (a) => !a.acknowledged && (a.severity === 'CRITICAL' || a.severity === 'HIGH RISK')
   );
 
+  const sosVehicle = vehicles.find(
+    (v) => v.vehicle_id === (pendingSOSAlert?.vehicle_id || 'Medic-01')
+  ) || null;
+
   return (
-    <div className="min-h-screen bg-page-bg flex flex-col">
+    <div className="min-h-screen bg-page-bg flex flex-col pb-24">
       {/* Global Header */}
       <Header />
 
@@ -26,7 +39,7 @@ const AppContent: React.FC = () => {
       <Navigation />
 
       {/* High-Priority Floating Alert Banner (GIGW / Section 7.4) */}
-      {unacknowledgedCriticalAlert && (
+      {unacknowledgedCriticalAlert && !pendingSOSAlert && (
         <div className="bg-status-blocked-solid text-white px-4 py-2.5 text-xs flex items-center justify-between shadow-md z-30 animate-siren">
           <div className="flex items-center space-x-2 max-w-5xl">
             <AlertOctagon className="w-5 h-5 shrink-0 animate-pulse" />
@@ -55,6 +68,19 @@ const AppContent: React.FC = () => {
         {activeView === 'BROADCAST_CENTER' && <MultilingualBroadcastCenter />}
         {activeView === 'MOBILE_COCKPIT' && <MobileMissionCockpit />}
       </main>
+
+      {/* Global SOS Distress Signal Intercept Modal */}
+      {pendingSOSAlert && (
+        <GlobalSOSInterceptModal
+          alert={pendingSOSAlert}
+          vehicle={sosVehicle}
+          onClose={() => setPendingSOSAlert(null)}
+          onAcknowledge={(alertId) => acknowledgeAlert(alertId)}
+        />
+      )}
+
+      {/* Persistent 1-Click Interactive Resilience Walkthrough Bar */}
+      <InteractiveWalkthroughToolbar />
     </div>
   );
 };

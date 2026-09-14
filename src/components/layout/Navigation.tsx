@@ -59,11 +59,21 @@ export const Navigation: React.FC = () => {
     },
   ];
 
+  const filteredNavItems = navItems.filter((item) => {
+    if (activeRole === 'DRIVER') {
+      return item.id === 'MOBILE_COCKPIT';
+    }
+    if (activeRole === 'FIELD_OFFICER') {
+      return item.id === 'MOBILE_COCKPIT' || item.id === 'GROUND_FEED' || item.id === 'GIS_COMMAND';
+    }
+    return true; // SUPER_ADMIN & FLEET_DISPATCHER have full operational access
+  });
+
   return (
     <nav className="bg-surface border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex space-x-1 sm:space-x-4 overflow-x-auto py-2 no-scrollbar">
-          {navItems.map((item) => {
+          {filteredNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeView === item.id;
             return (

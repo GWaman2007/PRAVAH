@@ -478,6 +478,23 @@ export interface CommunityWithCalculation extends CommunityBase {
   metrics: CalculationResult;
 }
 
+export interface ReliefMission {
+  id: string;
+  communityId: string;
+  communityName: string;
+  recommendedVehicleType: string;
+  cargoAllocations: { item: string; quantity: number; unit: string }[];
+  assignedRouteId: string;
+  suggestedDetour: string;
+  status: 'SUGGESTED' | 'APPROVED' | 'IN_TRANSIT' | 'DELIVERED';
+  urgency: 'P1_CRITICAL' | 'P2_ELEVATED';
+  createdAt: string;
+  dispatchedAt?: string;
+  deliveredAt?: string;
+  assignedDriver?: string;
+  assignedOfficer?: string;
+}
+
 // ==========================================
 // 8. Executive Macro Analytics & BRO Board (Module 7)
 // ==========================================
