@@ -1,0 +1,16 @@
+{
+  "name": "PRAVAH NER Disruption Feed & Offline Engine",
+  "short_name": "Pravah NER",
+  "description": "Reddit-Style Geo-Tagged Incident Feed & Offline Verification Engine for North East Region Logistics",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

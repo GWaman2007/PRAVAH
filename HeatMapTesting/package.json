@@ -1,0 +1,22 @@
+{
+  "name": "ner-gis-disaster-heatmap",
+  "version": "1.0.0",
+  "description": "Standalone GIS Disaster & Weather Heatmap for North East India (NER) with Leaflet, ISRO Bhuvan, IMD, and Open-Meteo",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve . -p 3000",
+    "dev": "npx serve . -p 3000"
+  },
+  "keywords": [
+    "gis",
+    "leaflet",
+    "disaster-management",
+    "heatmap",
+    "north-east-india",
+    "open-meteo",
+    "isro-bhuvan",
+    "imd"
+  ],
+  "author": "",
+  "license": "MIT"
+}

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF4500" />
+      <stop offset="100%" stop-color="#FF6B35" />
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="#0f172a" stroke="#334155" stroke-width="4"/>
+  <circle cx="50" cy="50" r="38" fill="url(#g)"/>
+  <!-- Mountain / hazard road silhouette -->
+  <path d="M28 65 L44 40 L54 53 L62 42 L74 65 Z" fill="#ffffff" opacity="0.95"/>
+  <!-- Radio / alert beacon -->
+  <circle cx="68" cy="34" r="5" fill="#facc15"/>
+  <path d="M64 26 C68 22 75 22 79 26" stroke="#facc15" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+</svg>
