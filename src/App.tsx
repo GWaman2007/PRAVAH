@@ -17,6 +17,7 @@ import { AlertOctagon, X } from 'lucide-react';
 const AppContent: React.FC = () => {
   const {
     activeView,
+    activeRole,
     alerts,
     vehicles,
     acknowledgeAlert,
@@ -62,17 +63,37 @@ const AppContent: React.FC = () => {
       )}
 
       {/* Master View Routing */}
-      <main className="flex-1 overflow-x-hidden">
+      <main className="flex-1 min-h-0 relative w-full overflow-hidden">
         {activeView === 'GIS_COMMAND' && <TacticalMapDeck />}
-        {activeView === 'COMMUNITY_PRIORITY' && <CommunityPriorityDeck />}
-        {activeView === 'EXECUTIVE_INFRA' && <ExecutiveInfrastructureDeck />}
-        {activeView === 'GROUND_FEED' && <GroundIntelligenceFeed />}
-        {activeView === 'BROADCAST_CENTER' && <MultilingualBroadcastCenter />}
-        {activeView === 'MOBILE_COCKPIT' && <MobileMissionCockpit />}
+        {activeView === 'COMMUNITY_PRIORITY' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <CommunityPriorityDeck />
+          </div>
+        )}
+        {activeView === 'EXECUTIVE_INFRA' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <ExecutiveInfrastructureDeck />
+          </div>
+        )}
+        {activeView === 'GROUND_FEED' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <GroundIntelligenceFeed />
+          </div>
+        )}
+        {activeView === 'BROADCAST_CENTER' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <MultilingualBroadcastCenter />
+          </div>
+        )}
+        {activeView === 'MOBILE_COCKPIT' && (
+          <div className="h-full overflow-y-auto pb-24">
+            <MobileMissionCockpit />
+          </div>
+        )}
       </main>
 
-      {/* Global SOS Distress Signal Intercept Modal */}
-      {pendingSOSAlert && (
+      {/* Global SOS Distress Signal Intercept Modal - Command Roles (Super Admin / Dispatcher) Only */}
+      {pendingSOSAlert && (activeRole === 'SUPER_ADMIN' || activeRole === 'FLEET_DISPATCHER') && (
         <GlobalSOSInterceptModal
           alert={pendingSOSAlert}
           vehicle={sosVehicle}

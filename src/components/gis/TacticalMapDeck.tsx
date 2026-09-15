@@ -3,7 +3,7 @@ import L from 'leaflet';
 import { usePravahStore } from '../../store/usePravahStore';
 import { LANDSLIDE_HAZARD_GEOJSON, NER_DISTRICTS_GEOJSON, NER_CHOKE_POINTS } from '../../data/nerGeoJSON';
 import { NER_NODES, VEHICLE_PROFILES, NER_SEGMENTS } from '../../data/routingNetwork';
-import { BLACKOUT_ZONES } from '../../data/fleetData';
+import { BLACKOUT_ZONES, FLEET_ROUTES } from '../../data/fleetData';
 import {
   fetchLiveChokePointWeather,
   generateSimulatedMonsoonTelemetry,
@@ -31,6 +31,8 @@ import {
   Sliders,
   Maximize2,
   ExternalLink,
+  Crosshair,
+  Route,
 } from 'lucide-react';
 
 export const TacticalMapDeck: React.FC = () => {
@@ -82,7 +84,13 @@ export const TacticalMapDeck: React.FC = () => {
     toggleVehicleDeviation,
     triggerVehicleSOS,
     activeRole,
+    activeMissions,
   } = usePravahStore();
+
+  // Find any active in-transit relief mission
+  const activeDispatchedMission = useMemo(() => {
+    return activeMissions.find((m) => m.status === 'IN_TRANSIT') || null;
+  }, [activeMissions]);
 
   // Modals & Drawers state
   const [inspectedSegment, setInspectedSegment] = useState<Segment | null>(null);
@@ -194,6 +202,14 @@ export const TacticalMapDeck: React.FC = () => {
       mapInstanceRef.current = null;
     };
   }, []);
+
+  // Auto-focus map on active dispatched mission if available
+  useEffect(() => {
+    if (!mapInstanceRef.current || !activeDispatchedMission) return;
+    if (activeDispatchedMission.id === 'MISSION-MZ-04') {
+      mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.2 });
+    }
+  }, [activeDispatchedMission?.id, activeDispatchedMission?.status]);
 
   // 3. Render ISRO Bhuvan Landslide Hazard Layer
   useEffect(() => {
@@ -449,7 +465,7 @@ export const TacticalMapDeck: React.FC = () => {
     });
   }, [candidateRoutes, selectedRouteIndex, activeLayers.routes]);
 
-  // 7. Render Fleet Vehicles & Telemetry
+  // 7. Render Fleet Vehicles, Active Convoy Routes & Telemetry
   useEffect(() => {
     const group = vehiclesLayerRef.current;
     if (!group) return;
@@ -460,37 +476,229 @@ export const TacticalMapDeck: React.FC = () => {
     vehicles.forEach((veh) => {
       if (activeRole === 'DRIVER' && veh.vehicle_id !== 'Medic-01') return;
 
+      const isSelected = selectedVehicleId === veh.vehicle_id;
       const isDeadReckon = veh.status === 'DEAD_ZONE_EXTRAPOLATING';
       const isSOS = veh.status === 'SOS_ALERT';
       const isOverdue = veh.is_watchdog_amber || veh.is_watchdog_red;
+      const isMissionActiveForVeh = veh.vehicle_id === 'Medic-01' && !!activeDispatchedMission;
 
-      const markerColor = isSOS ? '#D92D20' : isOverdue ? '#D2691E' : isDeadReckon ? '#8A8F94' : '#1B4B73';
+      // 7a. Render Full Highlighted Route for Convoy
+      const routeDef = FLEET_ROUTES[veh.assigned_route_id];
+      if (routeDef) {
+        const routeCoords =
+          veh.is_deviated_manual && routeDef.deviationPath && routeDef.deviationPath.length >= 2
+            ? routeDef.deviationPath
+            : routeDef.coordinates;
+
+        // Choose route color based on state and selection
+        const routeColor = isSOS
+          ? '#DC2626'
+          : isDeadReckon
+          ? '#EA580C'
+          : (isSelected || isMissionActiveForVeh)
+          ? '#0284C7'
+          : '#2563EB';
+
+        // Outer glow corridor line
+        const glowLine = L.polyline(routeCoords, {
+          color: (isSelected || isMissionActiveForVeh) ? '#38BDF8' : routeColor,
+          weight: (isSelected || isMissionActiveForVeh) ? 10 : 6,
+          opacity: (isSelected || isMissionActiveForVeh) ? 0.55 : 0.22,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(group);
+
+        // Main convoy route polyline (with dash for dead-reckoning or selected)
+        const mainLine = L.polyline(routeCoords, {
+          color: isMissionActiveForVeh ? '#0284C7' : routeColor,
+          weight: (isSelected || isMissionActiveForVeh) ? 5 : 3.5,
+          opacity: (isSelected || isMissionActiveForVeh) ? 0.98 : 0.75,
+          dashArray: isDeadReckon ? '6, 6' : (isSelected || isMissionActiveForVeh) ? '8, 6' : undefined,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(group);
+
+        const handleSelectVehicle = () => {
+          setSelectedVehicleId(veh.vehicle_id);
+          setIsInspectorOpen(true);
+        };
+
+        glowLine.on('click', handleSelectVehicle);
+        mainLine.on('click', handleSelectVehicle);
+
+        // Tooltip displaying convoy route details on hover
+        mainLine.bindTooltip(`
+          <div style="font-family: sans-serif; min-width: 220px; padding: 2px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+              <span style="font-weight: bold; color: ${routeColor}; font-size: 12px;">🚚 ${veh.vehicle_name}</span>
+              <span style="font-size: 10px; background: ${routeColor}; color: white; padding: 1px 5px; border-radius: 3px; font-weight: bold;">
+                ${veh.status.replace(/_/g, ' ')}
+              </span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: #333;"><strong>Corridor:</strong> ${routeDef.name}</div>
+            <div style="font-size: 11px; color: #555;"><strong>Speed:</strong> ${veh.speed_kmh} km/h | <strong>Heading:</strong> ${Math.round(veh.heading_deg)}°</div>
+            <div style="font-size: 11px; color: #555;"><strong>Progress:</strong> ${veh.route_progress_pct}% (${veh.traveled_distance_km.toFixed(1)} / ${routeDef.distanceKm} km)</div>
+            <div style="font-size: 10px; color: #0284C7; margin-top: 3px; border-top: 1px solid #e5e7eb; padding-top: 2px;">
+              Click route line to inspect convoy telemetry
+            </div>
+          </div>
+        `, { sticky: true, offset: [0, -10] });
+
+        // Highlight Origin and Destination Hubs when vehicle is selected or inspected OR part of active mission
+        if ((isSelected || isMissionActiveForVeh) && routeCoords.length >= 2) {
+          const originCoord = routeCoords[0];
+          const destCoord = routeCoords[routeCoords.length - 1];
+
+          // Origin Depot Icon
+          const originIcon = L.divIcon({
+            className: 'depot-origin-icon',
+            html: `
+              <div style="
+                background: #16A34A;
+                color: #FFFFFF;
+                border: 2px solid #FFFFFF;
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 10px;
+                font-weight: bold;
+                white-space: nowrap;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+                display: flex;
+                align-items: center;
+                gap: 3px;
+              ">
+                <span>⚑ DEPOT:</span>
+                <span>${routeDef.startHub.split(' ')[0]}</span>
+              </div>
+            `,
+            iconAnchor: [30, 24],
+          });
+          L.marker(originCoord, { icon: originIcon }).addTo(group);
+
+          // Destination Hub Icon
+          const destIcon = L.divIcon({
+            className: 'hub-dest-icon',
+            html: `
+              <div style="
+                background: #DC2626;
+                color: #FFFFFF;
+                border: 2px solid #FFFFFF;
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 10px;
+                font-weight: bold;
+                white-space: nowrap;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+                display: flex;
+                align-items: center;
+                gap: 3px;
+              ">
+                <span>🏁 DEST:</span>
+                <span>${routeDef.endHub.split(' ')[0]}</span>
+              </div>
+            `,
+            iconAnchor: [30, 24],
+          });
+          L.marker(destCoord, { icon: destIcon }).addTo(group);
+        }
+      }
+
+      // 7b. Render Breadcrumb trail
+      if (veh.breadcrumbs.length > 1) {
+        const breadcrumbCoords = veh.breadcrumbs.map((b) => b.coords);
+        L.polyline(breadcrumbCoords, {
+          color: isDeadReckon ? '#EA580C' : isSelected ? '#0284C7' : '#2563EB',
+          weight: isSelected ? 4 : 2.5,
+          opacity: 0.8,
+          dashArray: isDeadReckon ? '4, 4' : undefined,
+        }).addTo(group);
+      }
+
+      // 7c. Render Vehicle Marker with True Dynamic Compass Heading
+      const markerColor = isSOS
+        ? '#D92D20'
+        : isOverdue
+        ? '#D2691E'
+        : isDeadReckon
+        ? '#6B7280'
+        : isSelected
+        ? '#0284C7'
+        : '#1B4B73';
+
+      const borderColor = isSelected ? '#FBBF24' : '#FFFFFF';
+
+      const ringEffect = isSOS
+        ? 'box-shadow: 0 0 0 4px rgba(217, 45, 32, 0.45), 0 4px 10px rgba(0,0,0,0.4);'
+        : isSelected
+        ? 'box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.5), 0 4px 10px rgba(0,0,0,0.4);'
+        : 'box-shadow: 0 3px 8px rgba(0,0,0,0.35);';
+
+      // SVG Navigation Chevron: points strictly NORTH (0 deg) at baseline
+      const chevronSvg = `
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="#FFFFFF" style="display:block;">
+          <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+        </svg>
+      `;
 
       const iconHtml = `
-        <div style="
-          width: 32px;
-          height: 32px;
-          background: ${markerColor};
-          border: 2px solid #FFFFFF;
-          border-radius: 6px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: 12px;
-          box-shadow: 0 3px 6px rgba(0,0,0,0.35);
-          transform: rotate(${veh.heading_deg}deg);
-        ">
-          ➤
+        <div style="position: relative; width: 34px; height: 34px;">
+          <!-- Upright circular vehicle puck -->
+          <div style="
+            width: 34px;
+            height: 34px;
+            background: ${markerColor};
+            border: 2.5px solid ${borderColor};
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            ${ringEffect}
+            cursor: pointer;
+            transition: all 0.2s ease;
+          ">
+            <!-- Rotatable Direction Arrow Needle: Rotates exactly to veh.heading_deg -->
+            <div style="
+              width: 18px;
+              height: 18px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              transform: rotate(${veh.heading_deg}deg);
+              transform-origin: center center;
+              transition: transform 0.4s ease-out;
+            ">
+              ${chevronSvg}
+            </div>
+          </div>
+          <!-- Clear Convoy Callout Tag (Always upright and legible) -->
+          <div style="
+            position: absolute;
+            bottom: -19px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.92);
+            color: ${isSelected ? '#FDE047' : '#FFFFFF'};
+            font-size: 9px;
+            font-weight: 700;
+            font-family: monospace;
+            padding: 1px 4px;
+            border-radius: 3px;
+            border: 1px solid ${isSelected ? '#FBBF24' : 'rgba(255,255,255,0.25)'};
+            white-space: nowrap;
+            pointer-events: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            letter-spacing: 0.02em;
+          ">
+            ${veh.vehicle_id}
+          </div>
         </div>
       `;
 
       const customIcon = L.divIcon({
         className: 'veh-marker',
         html: iconHtml,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
       });
 
       const marker = L.marker(veh.current_coords, { icon: customIcon });
@@ -500,20 +708,26 @@ export const TacticalMapDeck: React.FC = () => {
         setIsInspectorOpen(true);
       });
 
-      marker.addTo(group);
+      marker.bindTooltip(`
+        <div style="font-family: sans-serif; font-size: 11px;">
+          <strong style="color:${markerColor}">${veh.vehicle_name}</strong>
+          <div style="color: #555;">Heading: ${Math.round(veh.heading_deg)}° | Speed: ${veh.speed_kmh} km/h</div>
+          <div style="color: #666; font-size: 10px;">Click to inspect convoy telemetry</div>
+        </div>
+      `, { offset: [0, -18] });
 
-      // Render Breadcrumbs
-      if (veh.breadcrumbs.length > 1) {
-        const breadcrumbCoords = veh.breadcrumbs.map((b) => b.coords);
-        L.polyline(breadcrumbCoords, {
-          color: isDeadReckon ? '#8A8F94' : '#1B4B73',
-          weight: 2,
-          opacity: 0.6,
-          dashArray: isDeadReckon ? '4, 4' : undefined,
-        }).addTo(group);
-      }
+      marker.addTo(group);
     });
   }, [vehicles, selectedVehicleId, activeLayers.fleet, activeRole]);
+
+  // Invalidate map size when mission HUD bar toggles
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 150);
+    }
+  }, [activeDispatchedMission]);
 
   const selectedRoute = candidateRoutes[selectedRouteIndex] || candidateRoutes[0];
 
@@ -588,11 +802,11 @@ export const TacticalMapDeck: React.FC = () => {
       />
 
       {/* Left Sidebar: Controls & Predictive Routing */}
-      <div className={`w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-y-auto z-10 shadow-xs custom-scrollbar ${mobileViewTab === 'CONTROLS' ? 'block' : 'hidden lg:flex'}`}>
+      <div className={`w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-y-auto z-10 shadow-xs custom-scrollbar pb-16 lg:pb-6 ${mobileViewTab === 'CONTROLS' ? 'block' : 'hidden lg:flex'}`}>
         {/* Route Selector Header */}
         <div className="p-4 border-b border-border bg-surface-subtle space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-sm text-text-primary flex items-center space-x-2">
+            <h2 className="text-sm font-bold text-text-primary flex items-center space-x-2">
               <Navigation className="w-4 h-4 text-primary" />
               <span>Predictive K-Shortest Routing</span>
             </h2>
@@ -600,6 +814,52 @@ export const TacticalMapDeck: React.FC = () => {
               Top 5 Paths
             </span>
           </div>
+
+          {/* Active Dispatched Mission Link in Left Sidebar */}
+          {activeDispatchedMission && (
+            <div className="p-2.5 rounded-sm bg-status-open-tint border border-status-open-solid/50 text-xs space-y-1.5 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-status-open-text flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping" />
+                  <span>Approved Mission: {activeDispatchedMission.id}</span>
+                </span>
+                <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-xs bg-status-open-solid text-white">
+                  IN_TRANSIT
+                </span>
+              </div>
+              <p className="text-[11px] text-text-secondary">
+                {activeDispatchedMission.communityName} • {activeDispatchedMission.recommendedVehicleType}
+              </p>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => {
+                    setOriginHub('silchar');
+                    setDestinationHub('kolasib');
+                    setSelectedVehicleId('Medic-01');
+                    setIsInspectorOpen(true);
+                    if (mapInstanceRef.current) {
+                      mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.0 });
+                    }
+                  }}
+                  className="flex-1 py-1 text-[11px] font-semibold bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer"
+                >
+                  <Route className="w-3.5 h-3.5" />
+                  <span>Corridor (Silchar ➔ Kolasib)</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (mapInstanceRef.current) {
+                      mapInstanceRef.current.flyTo([24.38, 92.72], 11, { duration: 1.0 });
+                    }
+                  }}
+                  className="p-1 text-[11px] bg-surface border border-border rounded-xs hover:bg-surface-subtle text-text-primary flex items-center justify-center cursor-pointer"
+                  title="Center on Convoy"
+                >
+                  <Crosshair className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Origin & Destination */}
           <div className="space-y-2">
@@ -703,7 +963,7 @@ export const TacticalMapDeck: React.FC = () => {
 
                   <button
                     onClick={handleApplyCustomSpecs}
-                    className="w-full py-1 text-[10px] font-semibold bg-primary text-white rounded-xs btn-press"
+                    className="w-full py-1 text-[10px] font-semibold bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-xs btn-press"
                   >
                     Apply Custom Axle Load
                   </button>
@@ -948,76 +1208,117 @@ export const TacticalMapDeck: React.FC = () => {
       </div>
 
       {/* Center: Leaflet Tactical Map Deck */}
-      <div className={`flex-1 relative flex flex-col h-full ${mobileViewTab === 'MAP' ? 'flex' : 'hidden lg:flex'}`}>
-        {/* Top HUD Controls Bar */}
-        <div className="absolute top-2 sm:top-3 left-2 sm:left-auto right-2 sm:right-3 z-20 flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1.5 sm:p-2 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
-          {/* Layer Toggles */}
-          <div className="flex items-center space-x-1 text-[11px] sm:text-xs shrink-0">
-            <button
-              onClick={() => toggleLayer('lhz')}
-              className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                activeLayers.lhz
-                  ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
-                  : 'bg-surface text-text-secondary border-border'
-              }`}
-            >
-              ISRO LHZ
-            </button>
+      <div className={`flex-1 relative flex flex-col h-full overflow-hidden isolate ${mobileViewTab === 'MAP' ? 'flex' : 'hidden lg:flex'}`}>
+        {/* Active Dispatched Mission HUD Bar */}
+        {activeDispatchedMission && (
+          <div className="shrink-0 bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-status-open-solid/40 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs z-20 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-status-open-solid animate-ping" />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-status-open-tint text-status-open-text border border-status-open-solid/40">
+                  {activeDispatchedMission.id} [IN_TRANSIT]
+                </span>
+                <span className="font-bold text-xs text-text-primary">
+                  {activeDispatchedMission.communityName}
+                </span>
+                <span className="text-[11px] text-text-secondary hidden md:inline">
+                  • Rig: <strong>{activeDispatchedMission.recommendedVehicleType}</strong> • Detour: <strong className="text-status-open-text">{activeDispatchedMission.suggestedDetour}</strong>
+                </span>
+              </div>
+            </div>
 
-            <button
-              onClick={() => toggleLayer('imd')}
-              className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                activeLayers.imd
-                  ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
-                  : 'bg-surface text-text-secondary border-border'
-              }`}
-            >
-              IMD Alerts
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setOriginHub('silchar');
+                  setDestinationHub('kolasib');
+                  setSelectedVehicleId('Medic-01');
+                  setIsInspectorOpen(true);
+                  if (mapInstanceRef.current) {
+                    mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.0 });
+                  }
+                }}
+                className="px-2.5 py-1 text-xs font-semibold bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-xs flex items-center gap-1 btn-press cursor-pointer shadow-xs"
+              >
+                <Crosshair className="w-3.5 h-3.5" />
+                <span>Focus Convoy on Map</span>
+              </button>
+            </div>
+          </div>
+        )}
 
-            <button
-              onClick={() => toggleLayer('routes')}
-              className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                activeLayers.routes
-                  ? 'bg-primary-tint text-primary border-primary'
-                  : 'bg-surface text-text-secondary border-border'
-              }`}
-            >
-              K-Routes
-            </button>
+        {/* Map Viewport Area & Map-Relative Floating Controls */}
+        <div className="flex-1 relative w-full h-full overflow-hidden z-0 isolate">
+          {/* Map Container: rendered first in DOM with isolated z-0 layer */}
+          <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
 
+          {/* Top HUD Controls Bar: floats over the map, strictly below the Mission HUD bar */}
+          <div className="absolute top-2 sm:top-3 left-2 sm:left-auto right-2 sm:right-3 z-30 flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1.5 sm:p-2 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
+            {/* Layer Toggles */}
+            <div className="flex items-center space-x-1 text-[11px] sm:text-xs shrink-0">
+              <button
+                onClick={() => toggleLayer('lhz')}
+                className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                  activeLayers.lhz
+                    ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                ISRO LHZ
+              </button>
+
+              <button
+                onClick={() => toggleLayer('imd')}
+                className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                  activeLayers.imd
+                    ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                IMD Alerts
+              </button>
+
+              <button
+                onClick={() => toggleLayer('routes')}
+                className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                  activeLayers.routes
+                    ? 'bg-primary-tint text-primary border-primary'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                K-Routes
+              </button>
+
+              <button
+                onClick={() => toggleLayer('fleet')}
+                className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                  activeLayers.fleet
+                    ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                Telemetry
+              </button>
+            </div>
+
+            {/* Monsoon Simulation Toggle */}
             <button
-              onClick={() => toggleLayer('fleet')}
-              className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                activeLayers.fleet
-                  ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+              onClick={toggleMonsoonDownpourSimulation}
+              className={`flex items-center space-x-1 px-2 sm:px-2.5 py-1 rounded-sm text-[11px] sm:text-xs font-medium border transition-colors btn-press cursor-pointer shrink-0 ${
+                isMonsoonDownpourSimulated
+                  ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid animate-pulse'
                   : 'bg-surface text-text-secondary border-border'
               }`}
             >
-              Telemetry
+              <CloudRain className="w-3.5 h-3.5" />
+              <span className="hidden xs:inline">{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
+              <span className="xs:hidden">{isMonsoonDownpourSimulated ? '58 mm/h' : 'Monsoon'}</span>
             </button>
           </div>
 
-          {/* Monsoon Simulation Toggle */}
-          <button
-            onClick={toggleMonsoonDownpourSimulation}
-            className={`flex items-center space-x-1 px-2 sm:px-2.5 py-1 rounded-sm text-[11px] sm:text-xs font-medium border transition-colors btn-press cursor-pointer shrink-0 ${
-              isMonsoonDownpourSimulated
-                ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid animate-pulse'
-                : 'bg-surface text-text-secondary border-border'
-            }`}
-          >
-            <CloudRain className="w-3.5 h-3.5" />
-            <span className="hidden xs:inline">{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
-            <span className="xs:hidden">{isMonsoonDownpourSimulated ? '58 mm/h' : 'Monsoon'}</span>
-          </button>
+          {/* Interactive Tactical GIS Map Legend */}
+          <MapLegend />
         </div>
-
-        {/* Map Container */}
-        <div ref={mapContainerRef} className="w-full h-full" />
-
-        {/* Interactive Tactical GIS Map Legend */}
-        <MapLegend />
       </div>
 
       {/* Vehicle Inspector: Side panel on desktop, slide-up sheet on mobile */}

@@ -1,6 +1,66 @@
 @import "tailwindcss";
 @import "./styles/tokens.css";
 
+@theme {
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-tint: var(--color-primary-tint);
+  --color-page-bg: var(--color-page-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-subtle: var(--color-surface-subtle);
+  --color-border: var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+
+  --color-status-open-tint: var(--status-open-tint);
+  --color-status-open-text: var(--status-open-text);
+  --color-status-open-solid: var(--status-open-solid);
+
+  --color-status-restricted-tint: var(--status-restricted-tint);
+  --color-status-restricted-text: var(--status-restricted-text);
+  --color-status-restricted-solid: var(--status-restricted-solid);
+
+  --color-status-highrisk-tint: var(--status-highrisk-tint);
+  --color-status-highrisk-text: var(--status-highrisk-text);
+  --color-status-highrisk-solid: var(--status-highrisk-solid);
+
+  --color-status-blocked-tint: var(--status-blocked-tint);
+  --color-status-blocked-text: var(--status-blocked-text);
+  --color-status-blocked-solid: var(--status-blocked-solid);
+
+  --color-status-unknown-tint: var(--status-unknown-tint);
+  --color-status-unknown-text: var(--status-unknown-text);
+  --color-status-unknown-solid: var(--status-unknown-solid);
+}
+
+/* Core Design Token Utilities (Guaranteed Solid Rendering & Dark Mode) */
+.bg-surface {
+  background-color: var(--color-surface);
+}
+.bg-surface-subtle {
+  background-color: var(--color-surface-subtle);
+}
+.bg-page-bg {
+  background-color: var(--color-page-bg);
+}
+.text-text-primary {
+  color: var(--color-text-primary);
+}
+.text-text-secondary {
+  color: var(--color-text-secondary);
+}
+.text-text-tertiary {
+  color: var(--color-text-tertiary);
+}
+.border-border {
+  border-color: var(--color-border);
+}
+.border-border-subtle {
+  border-color: var(--color-border-subtle);
+}
+
 @layer base {
   body {
     font-family: var(--font-sans);
@@ -11,17 +71,24 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  html, body {
+  html,
+  body {
     overflow-x: hidden;
     max-width: 100vw;
   }
 
-  code, pre, .font-mono {
+  code,
+  pre,
+  .font-mono {
     font-family: var(--font-mono);
   }
 
   /* Interactive States per design.md Section 5.6 */
-  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
@@ -76,7 +143,8 @@
 
 /* Custom Soft Pulse for P1 Alerts */
 @keyframes soft-pulse-critical {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(217, 45, 32, 0.4);
   }
   50% {
@@ -90,7 +158,8 @@
 
 /* Custom subtle pulse for dead-reckoning vehicles */
 @keyframes dead-reckon-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.65;
   }
   50% {
@@ -121,21 +190,62 @@
   background: var(--color-text-secondary);
 }
 
-/* Leaflet Container Overrides */
+/* Leaflet Container Overrides & Stacking Context Containment */
 .leaflet-container {
   font-family: var(--font-sans) !important;
   background-color: #121820 !important;
   width: 100%;
   height: 100%;
+  z-index: 0 !important;
+  isolation: isolate;
+  contain: paint;
+  border-radius: inherit;
+}
+
+/* Trap Leaflet internal panes so they never bleed over headers, toolbars or modals */
+.leaflet-pane {
+  z-index: 1 !important;
+}
+
+.leaflet-tile-pane {
+  z-index: 1 !important;
+}
+
+.leaflet-overlay-pane {
+  z-index: 2 !important;
+}
+
+.leaflet-shadow-pane {
+  z-index: 3 !important;
+}
+
+.leaflet-marker-pane {
+  z-index: 4 !important;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 5 !important;
+}
+
+.leaflet-popup-pane {
+  z-index: 6 !important;
+}
+
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 7 !important;
 }
 
 .dark .leaflet-tile-pane {
-  filter: brightness(0.85) invert(0.92) contrast(1.1) hue-rotate(185deg) saturate(0.4);
+  filter: brightness(0.85) invert(0.92) contrast(1.1) hue-rotate(185deg)
+    saturate(0.4);
 }
 
 /* Motion accessibility */
 @media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
+  *,
+  ::before,
+  ::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -160,11 +270,16 @@
 
 /* Animation utilities */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fadeIn {
   animation: fadeIn 0.2s ease-out forwards;
 }
-

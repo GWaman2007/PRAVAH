@@ -39,7 +39,7 @@ export const Header: React.FC = () => {
   const overdueWatchdogs = vehicles.filter((v) => v.is_watchdog_amber || v.is_watchdog_red).length;
 
   return (
-    <header className="bg-surface border-b border-border sticky top-0 z-40 shadow-xs">
+    <div className="bg-surface">
       {/* Top Banner: Brand, Network Pill, Role Selector, Theme */}
       {/* Top Banner: Brand, Network Pill, Role Selector, Theme */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
@@ -168,6 +168,6 @@ export const Header: React.FC = () => {
           </div>
         </div>
       </div>
-    </header>
+    </div>
   );
 };

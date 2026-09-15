@@ -70,7 +70,7 @@ export const CommunityPriorityDeck: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
       {/* Toast Notification */}
       <RestockToast
         toast={restockToast}
@@ -78,16 +78,16 @@ export const CommunityPriorityDeck: React.FC = () => {
       />
 
       {/* Top Banner: Engine Purpose & Anticipatory Depletion Logic */}
-      <div className="bg-surface border border-border p-5 rounded-md shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-surface border border-border p-4 sm:p-5 rounded-md shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
           <div>
             <div className="flex items-center space-x-2">
-              <Zap className="w-5 h-5 text-primary" />
-              <h1 className="text-lg font-semibold text-text-primary">
-                PRAVAH Preemptive Community Depletion & Priority Engine
+              <Zap className="w-5 h-5 text-primary shrink-0" />
+              <h1 className="text-base sm:text-lg font-semibold text-text-primary">
+                PRAVAH Preemptive Community Depletion &amp; Priority Engine
               </h1>
             </div>
-            <p className="mt-1 text-xs text-text-secondary max-w-3xl">
+            <p className="mt-1 text-xs text-text-secondary max-w-3xl leading-relaxed">
               Anticipatory commodity depletion model evaluating closing road failure windows (T_cutoff),
               transit durations (T_transit), isolation risks (R_iso), and vulnerability indices (I_vuln)
               to prioritize life-saving relief convoys before mountain corridors cleave.
@@ -95,8 +95,8 @@ export const CommunityPriorityDeck: React.FC = () => {
           </div>
 
           {/* Time Advance Controls */}
-          <div className="flex items-center space-x-2 bg-surface-subtle border border-border p-2 rounded-sm">
-            <Clock className="w-4 h-4 text-text-secondary" />
+          <div className="flex items-center space-x-2 bg-surface-subtle border border-border p-2 rounded-sm self-start md:self-auto shrink-0">
+            <Clock className="w-4 h-4 text-text-secondary shrink-0" />
             <span className="text-xs font-medium text-text-secondary">Simulate Time:</span>
             <button
               onClick={() => selectedCommunity && advanceCommunityElapsedHours(selectedCommunity.id, 6)}
@@ -143,7 +143,7 @@ export const CommunityPriorityDeck: React.FC = () => {
                 <div
                   key={c.id}
                   onClick={() => setSelectedCommunityId(c.id)}
-                  className={`p-4 rounded-md border transition-all cursor-pointer ${
+                  className={`p-3.5 sm:p-4 rounded-md border transition-all cursor-pointer ${
                     isSelected
                       ? 'border-primary bg-primary-tint/20 dark:bg-primary-tint/10 shadow-xs'
                       : 'border-border bg-surface hover:bg-surface-subtle'
@@ -175,7 +175,7 @@ export const CommunityPriorityDeck: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs pt-2 border-t border-border/60">
+                  <div className="mt-3 grid grid-cols-1 xs:grid-cols-3 gap-2 text-xs pt-2 border-t border-border/60">
                     <div>
                       <span className="text-[10px] text-text-secondary block">Action Window:</span>
                       <span
@@ -218,10 +218,10 @@ export const CommunityPriorityDeck: React.FC = () => {
           {selectedCommunity && (
             <>
               {/* Sector Deep Dive Card */}
-              <div className="bg-surface border border-border p-5 rounded-md shadow-xs">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border">
+              <div className="bg-surface border border-border p-4 sm:p-5 rounded-md shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
                   <div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-wrap gap-1">
                       <h2 className="text-base font-bold text-text-primary">
                         {selectedCommunity.name} ({selectedCommunity.state})
                       </h2>
@@ -238,18 +238,18 @@ export const CommunityPriorityDeck: React.FC = () => {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => setExplainModalOpen(true)}
-                      className="px-3 py-1.5 bg-primary-tint text-primary hover:bg-primary/20 border border-primary/30 rounded-sm text-xs font-semibold flex items-center space-x-1.5 btn-press cursor-pointer"
+                      className="flex-1 sm:flex-initial px-3 py-1.5 bg-primary-tint text-primary hover:bg-primary/20 border border-primary/30 rounded-sm text-xs font-semibold flex items-center justify-center space-x-1.5 btn-press cursor-pointer"
                     >
                       <Sliders className="w-3.5 h-3.5" />
-                      <span>Math Formulation & Audit</span>
+                      <span>Math Formulation &amp; Audit</span>
                     </button>
 
                     <button
                       onClick={() => handleRestock(selectedCommunity.id)}
-                      className="px-3 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold flex items-center space-x-1.5 btn-press cursor-pointer"
+                      className="flex-1 sm:flex-initial px-3 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold flex items-center justify-center space-x-1.5 btn-press cursor-pointer"
                     >
                       <PackageCheck className="w-3.5 h-3.5" />
                       <span>Restock</span>
@@ -366,20 +366,20 @@ export const CommunityPriorityDeck: React.FC = () => {
 
       {/* Explainability Audit Modal */}
       {explainModalOpen && selectedCommunity && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-surface border border-border rounded-md max-w-2xl w-full p-6 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="flex items-center justify-between pb-3 border-b border-border">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2.5 sm:p-4 animate-fadeIn">
+          <div className="bg-surface border border-border rounded-md max-w-2xl w-full p-4 sm:p-6 space-y-3 sm:space-y-4 shadow-xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between pb-2.5 sm:pb-3 border-b border-border">
               <div className="flex items-center space-x-2">
-                <ShieldAlert className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-base text-text-primary">
-                  Explainability &amp; Sensitivity Engine — {selectedCommunity.name}
+                <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 text-primary shrink-0" />
+                <h3 className="font-semibold text-sm sm:text-base text-text-primary truncate max-w-[220px] xs:max-w-[320px] sm:max-w-none">
+                  Explainability Engine — {selectedCommunity.name}
                 </h3>
               </div>
               <button
                 onClick={() => setExplainModalOpen(false)}
-                className="p-1 rounded-sm text-text-secondary hover:text-text-primary cursor-pointer"
+                className="p-1 rounded-sm text-text-secondary hover:text-text-primary cursor-pointer shrink-0 ml-1"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
 

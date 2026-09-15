@@ -223,7 +223,7 @@ export const MultilingualBroadcastCenter: React.FC = () => {
                         onClick={() => setSpeechPacing(0.80)}
                         className={`px-2 py-0.5 rounded-xs transition-all ${
                           speechPacing === 0.80
-                            ? 'bg-primary text-white font-bold'
+                            ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white font-bold'
                             : 'text-text-secondary hover:text-text-primary'
                         }`}
                         title="Calm, coherent, well-spaced broadcast cadence"
@@ -234,7 +234,7 @@ export const MultilingualBroadcastCenter: React.FC = () => {
                         onClick={() => setSpeechPacing(0.90)}
                         className={`px-2 py-0.5 rounded-xs transition-all ${
                           speechPacing === 0.90
-                            ? 'bg-primary text-white font-bold'
+                            ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white font-bold'
                             : 'text-text-secondary hover:text-text-primary'
                         }`}
                         title="Standard dispatch cadence"
@@ -245,7 +245,7 @@ export const MultilingualBroadcastCenter: React.FC = () => {
                         onClick={() => setSpeechPacing(1.0)}
                         className={`px-2 py-0.5 rounded-xs transition-all ${
                           speechPacing === 1.0
-                            ? 'bg-primary text-white font-bold'
+                            ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white font-bold'
                             : 'text-text-secondary hover:text-text-primary'
                         }`}
                         title="Normal speed"
@@ -298,7 +298,7 @@ export const MultilingualBroadcastCenter: React.FC = () => {
                         }}
                         className={`p-2.5 rounded-sm border flex flex-col items-center justify-center space-y-1 transition-all btn-press ${
                           isSelected
-                            ? 'border-primary bg-primary text-white shadow-xs'
+                            ? 'border-primary bg-[#1B4B73] dark:bg-[#2E6B9E] text-white shadow-xs'
                             : 'border-border bg-surface-subtle hover:bg-surface text-text-primary'
                         } ${isVoicePlayingThis ? 'ring-2 ring-amber-400 animate-pulse' : ''}`}
                       >

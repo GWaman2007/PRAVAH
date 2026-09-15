@@ -151,6 +151,61 @@ const state: StateStore = {
       is_deviated_manual: false,
       is_sos_manual: false,
     },
+    'Oxy-Tanker-04': {
+      vehicle_id: 'Oxy-Tanker-04',
+      vehicle_name: 'Oxy-Tanker-04 (Cryogenic 32T)',
+      driver_name: 'Bikram Thapa',
+      driver_phone: '+91 98180-44219',
+      convoy_lead_officer: 'Capt. P. Bhutia (Sikkim SDMA)',
+      mission_id: 'SK-02',
+      cargo_type: 'Liquid Medical Oxygen (9,000 Litres)',
+      cargo_manifest: [
+        { item: 'Cryogenic Liquid Medical Oxygen', quantity: 9000, unit: 'litres' },
+        { item: 'High-Pressure Manifold Regulators', quantity: 12, unit: 'units' },
+      ],
+      destination_community_id: 'SK-MAN-002',
+      destination_name: 'Gangtok STNM / Mangan Hub',
+      assigned_route_id: 'ROUTE-SK-01',
+      current_coords: [27.0200, 88.4600],
+      current_speed_kmh: 28,
+      heading_deg: 34,
+      status: 'DEAD_ZONE_EXTRAPOLATING',
+      route_progress_pct: 54,
+      dead_reckoning_distance_m: 6800,
+      is_watchdog_amber: false,
+      is_watchdog_red: false,
+      is_stopped_manual: false,
+      is_deviated_manual: false,
+      is_sos_manual: false,
+    },
+    'Ration-Convoy-07': {
+      vehicle_id: 'Ration-Convoy-07',
+      vehicle_name: 'Ration-Convoy-07 (14T Shaktiman)',
+      driver_name: 'Temsu Ao',
+      driver_phone: '+91 97740-92811',
+      convoy_lead_officer: 'Subedar K. Sema (Nagaland Police)',
+      mission_id: 'NL-01',
+      cargo_type: 'Rice, Lentils & High-Calorie Rations',
+      cargo_manifest: [
+        { item: 'Fortified Subsistence Rice', quantity: 8500, unit: 'kg' },
+        { item: 'Pulses / Dal', quantity: 2200, unit: 'kg' },
+        { item: 'Refined Edible Oil', quantity: 1200, unit: 'litres' },
+      ],
+      destination_community_id: 'NL-KOH-009',
+      destination_name: 'Kohima South Sector (Phesama)',
+      assigned_route_id: 'ROUTE-NL-01',
+      current_coords: [25.7500, 93.9800],
+      current_speed_kmh: 30,
+      heading_deg: 128,
+      status: 'ON_ROUTE',
+      route_progress_pct: 58,
+      dead_reckoning_distance_m: 0,
+      is_watchdog_amber: false,
+      is_watchdog_red: false,
+      is_stopped_manual: false,
+      is_deviated_manual: false,
+      is_sos_manual: false,
+    },
   },
   groundReports: [
     {
@@ -456,30 +511,43 @@ io.on('connection', (socket: Socket) => {
 
   // 4. Driver SOS Trigger
   socket.on('TRIGGER_DRIVER_SOS', (data: any) => {
-    const { vehicleId } = data;
+    const { vehicleId, alert: clientAlert } = data;
     const veh = state.fleetTelemetry[vehicleId];
     if (veh) {
       veh.status = 'SOS_ALERT';
       veh.is_sos_manual = true;
-
-      const alert = {
-        id: `sos-${Date.now()}`,
-        vehicle_id: vehicleId,
-        vehicle_name: veh.vehicle_name,
-        cargo_type: veh.cargo_type,
-        timestamp: new Date().toISOString(),
-        severity: 'CRITICAL',
-        type: 'SOS_TRIGGERED',
-        title: 'CRITICAL SOS: Driver Cabin Emergency Transponder Activated',
-        message: `Distress beacon from ${veh.driver_name} (${veh.driver_phone}) on Mission ${veh.mission_id}. Coordinates: [${veh.current_coords[0]}, ${veh.current_coords[1]}]. Immediate QRT dispatched.`,
-        coords: veh.current_coords,
-        acknowledged: false,
-      };
-      state.alerts.unshift(alert);
-
-      io.emit('DRIVER_SOS_SIGNAL', { vehicle: veh, alert });
-      io.emit('STATE_UPDATED', state);
     }
+
+    const alert = clientAlert || {
+      id: `sos-${Date.now()}`,
+      vehicle_id: vehicleId,
+      vehicle_name: veh?.vehicle_name || vehicleId,
+      cargo_type: veh?.cargo_type || 'Emergency Cargo',
+      timestamp: new Date().toISOString(),
+      severity: 'CRITICAL',
+      type: 'SOS_TRIGGERED',
+      title: 'CRITICAL SOS: Driver Cabin Emergency Transponder Activated',
+      message: `Distress beacon from ${veh?.driver_name || 'Convoy Driver'} on Mission ${veh?.mission_id || 'Active'}. Coordinates: [${(veh?.current_coords || [24.38, 92.72]).join(', ')}]. Immediate QRT dispatched.`,
+      coords: veh?.current_coords || [24.3800, 92.7200],
+      acknowledged: false,
+    };
+    state.alerts.unshift(alert);
+
+    io.emit('DRIVER_SOS_SIGNAL', { vehicleId, vehicle: veh, alert });
+    io.emit('STATE_UPDATED', state);
+  });
+
+  // 4b. Driver SOS Stand Down / Cancel
+  socket.on('CANCEL_DRIVER_SOS', (data: any) => {
+    const { vehicleId } = data;
+    const veh = state.fleetTelemetry[vehicleId];
+    if (veh) {
+      veh.status = 'ON_ROUTE';
+      veh.is_sos_manual = false;
+    }
+    state.alerts = state.alerts.filter((a: any) => !(a.vehicle_id === vehicleId && a.type === 'SOS_TRIGGERED'));
+    io.emit('DRIVER_SOS_CANCELLED', { vehicleId });
+    io.emit('STATE_UPDATED', state);
   });
 
   // 5. Mission Delivery Confirmation (Closed-Loop Handover)

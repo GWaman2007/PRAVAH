@@ -138,7 +138,6 @@ export const SegmentModal: React.FC<SegmentModalProps> = ({
                 }`}>
                   {segment.max_height_limit} Meters
                 </span>
-              </div>
                 {segment.tunnelName && (
                   <span className="text-[9px] text-text-secondary truncate block mt-0.5">
                     {segment.tunnelName}
@@ -262,16 +261,16 @@ export const SegmentModal: React.FC<SegmentModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-3 bg-surface-subtle border-t border-border flex justify-end gap-2">
+        <div className="p-3 bg-surface-subtle border-t border-border flex flex-col xs:flex-row justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded-sm border border-border text-text-secondary hover:bg-surface btn-press cursor-pointer"
+            className="w-full xs:w-auto px-3 py-1.5 rounded-sm border border-border text-text-secondary hover:bg-surface btn-press cursor-pointer text-center"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-1.5 rounded-sm bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white font-semibold shadow-xs flex items-center gap-1.5 btn-press cursor-pointer"
+            className="w-full xs:w-auto px-4 py-1.5 rounded-sm bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white font-semibold shadow-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer text-center"
           >
             <Send className="w-3.5 h-3.5" />
             <span>Apply Segment State</span>
