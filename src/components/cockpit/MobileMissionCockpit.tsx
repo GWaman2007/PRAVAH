@@ -132,15 +132,17 @@ export const MobileMissionCockpit: React.FC = () => {
     // Vehicle Marker with Heading
     const truckIcon = L.divIcon({
       html: `
-        <div style="transform: rotate(${activeVehicle.heading_deg}deg); transition: transform 0.3s ease;">
-          <div style="background:#1B4B73; border:2px solid white; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 6px rgba(0,0,0,0.4);">
-            <span style="color:white; font-size:14px;">🚚</span>
+        <div style="background:#1B4B73; border:2.5px solid white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(0,0,0,0.4);">
+          <div style="transform: rotate(${activeVehicle.heading_deg}deg); transition: transform 0.3s ease; display:flex; align-items:center; justify-content:center;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="#FFFFFF">
+              <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+            </svg>
           </div>
         </div>
       `,
       className: 'custom-truck-icon',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
     });
     vehicleMarkerRef.current = L.marker(activeVehicle.current_coords, { icon: truckIcon }).addTo(map);
 
@@ -160,7 +162,7 @@ export const MobileMissionCockpit: React.FC = () => {
     // Update marker heading rotation
     const el = vehicleMarkerRef.current.getElement();
     if (el) {
-      const inner = el.querySelector('div');
+      const inner = el.querySelector('svg')?.parentElement;
       if (inner) inner.style.transform = `rotate(${activeVehicle.heading_deg}deg)`;
     }
 

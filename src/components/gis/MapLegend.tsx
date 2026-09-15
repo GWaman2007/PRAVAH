@@ -42,39 +42,55 @@ export const MapLegend: React.FC = () => {
             </button>
           </div>
 
-          {/* Section 1: Fleet Vehicle Telemetry */}
+          {/* Section 1: Fleet Vehicle Telemetry & Routes */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block">
-              1. Fleet Convoys &amp; Heading
+              1. Fleet Convoys &amp; Active Routes
             </span>
             <div className="grid grid-cols-1 gap-1 text-[11px]">
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-xs bg-[#1B4B73] border border-white flex items-center justify-center text-white text-[9px] font-bold shrink-0 shadow-xs">
-                  ➤
+                <div className="w-5 h-5 rounded-full bg-[#1B4B73] border border-white flex items-center justify-center text-white shrink-0 shadow-xs">
+                  <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor">
+                    <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" />
+                  </svg>
                 </div>
                 <div>
-                  <span className="font-medium text-text-primary">Active Convoy Vehicle</span>
-                  <span className="text-text-tertiary block text-[10px]">Arrow rotates to live compass bearing direction</span>
+                  <span className="font-medium text-text-primary">Active Convoy Puck</span>
+                  <span className="text-text-tertiary block text-[10px]">Arrow rotates to live dynamic compass heading</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-xs bg-[#E06D10] border border-white flex items-center justify-center text-white text-[9px] font-bold shrink-0 shadow-xs">
-                  ➤
+                <div className="w-5 h-5 rounded-full bg-[#6B7280] border border-white flex items-center justify-center text-white shrink-0 shadow-xs">
+                  <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor">
+                    <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" />
+                  </svg>
                 </div>
                 <div>
                   <span className="font-medium text-text-primary">Dead-Reckoning (Cellular Blackout)</span>
-                  <span className="text-text-tertiary block text-[10px]">Extrapolating speed &amp; distance inside dead-zone</span>
+                  <span className="text-text-tertiary block text-[10px]">Extrapolating speed &amp; heading inside dead-zone</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-xs bg-[#B3261E] border border-white flex items-center justify-center text-white text-[9px] font-bold shrink-0 shadow-xs animate-pulse">
-                  ➤
+                <div className="w-5 h-5 rounded-full bg-[#D92D20] border border-white flex items-center justify-center text-white shrink-0 shadow-xs animate-pulse">
+                  <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor">
+                    <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" />
+                  </svg>
                 </div>
                 <div>
-                  <span className="font-medium text-status-blocked-text font-bold">Emergency SOS / Critical Halt</span>
+                  <span className="font-medium text-status-blocked-text font-bold">Emergency SOS / Halt</span>
                   <span className="text-text-tertiary block text-[10px]">Cabin distress beacon activated</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-0.5">
+                <div className="w-5 flex items-center justify-center shrink-0">
+                  <div className="w-5 h-1 rounded-full bg-[#2563EB] shadow-xs" />
+                </div>
+                <div>
+                  <span className="font-medium text-text-primary">Convoy Route Corridor</span>
+                  <span className="text-text-tertiary block text-[10px]">Highlighted corridor path from Depot to Destination</span>
                 </div>
               </div>
             </div>
