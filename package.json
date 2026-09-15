@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "start": "npm run dev",
     "server": "tsx server/index.ts",
     "client": "vite",
     "dev": "concurrently -k \"npm run server\" \"npm run client\"",
