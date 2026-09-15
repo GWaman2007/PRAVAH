@@ -731,7 +731,7 @@ export const TacticalMapDeck: React.FC = () => {
   const selectedRoute = candidateRoutes[selectedRouteIndex] || candidateRoutes[0];
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-105px)] overflow-hidden bg-page-bg relative">
+    <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden bg-page-bg relative">
       {/* Segment Inspection Modal */}
       <SegmentModal
         segment={inspectedSegment}
@@ -765,7 +765,7 @@ export const TacticalMapDeck: React.FC = () => {
       />
 
       {/* Left Sidebar: Controls & Predictive Routing */}
-      <div className="w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-y-auto z-10 shadow-xs custom-scrollbar">
+      <div className="w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-y-auto z-10 shadow-xs custom-scrollbar pb-16 lg:pb-6">
         {/* Route Selector Header */}
         <div className="p-4 border-b border-border bg-surface-subtle space-y-3">
           <div className="flex items-center justify-between">

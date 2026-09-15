@@ -34,16 +34,16 @@ const AppContent: React.FC = () => {
   ) || null;
 
   return (
-    <div className="min-h-screen bg-page-bg flex flex-col pb-24">
-      {/* Unified Sticky Platform Header & Navigation Deck */}
-      <header className="sticky top-0 z-50 bg-surface border-b border-border shadow-xs">
+    <div className="h-screen w-screen bg-page-bg flex flex-col overflow-hidden">
+      {/* Unified Platform Header & Navigation Deck */}
+      <header className="shrink-0 z-50 bg-surface border-b border-border shadow-xs">
         <Header />
         <Navigation />
       </header>
 
       {/* High-Priority Floating Alert Banner (GIGW / Section 7.4) */}
       {unacknowledgedCriticalAlert && !pendingSOSAlert && (
-        <div className="bg-status-blocked-solid text-white px-4 py-2.5 text-xs flex items-center justify-between shadow-md z-30 animate-siren">
+        <div className="shrink-0 bg-status-blocked-solid text-white px-4 py-2 text-xs flex items-center justify-between shadow-md z-40 animate-siren">
           <div className="flex items-center space-x-2 max-w-5xl">
             <AlertOctagon className="w-5 h-5 shrink-0 animate-pulse" />
             <div>
@@ -63,13 +63,33 @@ const AppContent: React.FC = () => {
       )}
 
       {/* Master View Routing */}
-      <main className="flex-1 overflow-x-hidden">
+      <main className="flex-1 min-h-0 relative w-full overflow-hidden">
         {activeView === 'GIS_COMMAND' && <TacticalMapDeck />}
-        {activeView === 'COMMUNITY_PRIORITY' && <CommunityPriorityDeck />}
-        {activeView === 'EXECUTIVE_INFRA' && <ExecutiveInfrastructureDeck />}
-        {activeView === 'GROUND_FEED' && <GroundIntelligenceFeed />}
-        {activeView === 'BROADCAST_CENTER' && <MultilingualBroadcastCenter />}
-        {activeView === 'MOBILE_COCKPIT' && <MobileMissionCockpit />}
+        {activeView === 'COMMUNITY_PRIORITY' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <CommunityPriorityDeck />
+          </div>
+        )}
+        {activeView === 'EXECUTIVE_INFRA' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <ExecutiveInfrastructureDeck />
+          </div>
+        )}
+        {activeView === 'GROUND_FEED' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <GroundIntelligenceFeed />
+          </div>
+        )}
+        {activeView === 'BROADCAST_CENTER' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <MultilingualBroadcastCenter />
+          </div>
+        )}
+        {activeView === 'MOBILE_COCKPIT' && (
+          <div className="h-full overflow-y-auto pb-24">
+            <MobileMissionCockpit />
+          </div>
+        )}
       </main>
 
       {/* Global SOS Distress Signal Intercept Modal - Command Roles (Super Admin / Dispatcher) Only */}

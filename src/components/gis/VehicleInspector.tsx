@@ -57,7 +57,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
   };
 
   return (
-    <div className="bg-surface border-t lg:border-t-0 lg:border-l border-border flex flex-col h-full overflow-y-auto text-text-primary select-none text-xs">
+    <div className="bg-surface border-t lg:border-t-0 lg:border-l border-border flex flex-col h-full overflow-y-auto text-text-primary select-none text-xs pb-20 custom-scrollbar">
       {/* Header */}
       <div className="p-4 border-b border-border bg-surface-subtle">
         <div className="flex items-center justify-between gap-2 mb-2">
