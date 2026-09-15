@@ -719,6 +719,15 @@ export const TacticalMapDeck: React.FC = () => {
     });
   }, [vehicles, selectedVehicleId, activeLayers.fleet, activeRole]);
 
+  // Invalidate map size when mission HUD bar toggles
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 150);
+    }
+  }, [activeDispatchedMission]);
+
   const selectedRoute = candidateRoutes[selectedRouteIndex] || candidateRoutes[0];
 
   return (
@@ -1165,7 +1174,7 @@ export const TacticalMapDeck: React.FC = () => {
       <div className="flex-1 relative flex flex-col h-full overflow-hidden isolate">
         {/* Active Dispatched Mission HUD Bar */}
         {activeDispatchedMission && (
-          <div className="bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-status-open-solid/40 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs z-30 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="shrink-0 bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-status-open-solid/40 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs z-20 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-status-open-solid animate-ping" />
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -1201,74 +1210,77 @@ export const TacticalMapDeck: React.FC = () => {
           </div>
         )}
 
-        {/* Map Container: rendered first in DOM with isolated z-0 layer */}
-        <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
+        {/* Map Viewport Area & Map-Relative Floating Controls */}
+        <div className="flex-1 relative w-full h-full overflow-hidden z-0 isolate">
+          {/* Map Container: rendered first in DOM with isolated z-0 layer */}
+          <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
 
-        {/* Top HUD Controls Bar: floats over map with z-30 */}
-        <div className="absolute top-3 right-3 z-30 flex flex-wrap gap-2 items-center bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md p-2 rounded-sm border border-border shadow-md">
-          {/* Layer Toggles */}
-          <div className="flex items-center space-x-1 text-xs">
+          {/* Top HUD Controls Bar: floats over the map, strictly below the Mission HUD bar */}
+          <div className="absolute top-3 right-3 z-30 flex flex-wrap gap-2 items-center bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md p-2 rounded-sm border border-border shadow-md">
+            {/* Layer Toggles */}
+            <div className="flex items-center space-x-1 text-xs">
+              <button
+                onClick={() => toggleLayer('lhz')}
+                className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                  activeLayers.lhz
+                    ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                ISRO LHZ
+              </button>
+
+              <button
+                onClick={() => toggleLayer('imd')}
+                className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                  activeLayers.imd
+                    ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                IMD Alerts
+              </button>
+
+              <button
+                onClick={() => toggleLayer('routes')}
+                className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                  activeLayers.routes
+                    ? 'bg-primary-tint text-primary border-primary'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                K-Routes
+              </button>
+
+              <button
+                onClick={() => toggleLayer('fleet')}
+                className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                  activeLayers.fleet
+                    ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                Telemetry
+              </button>
+            </div>
+
+            {/* Monsoon Simulation Toggle */}
             <button
-              onClick={() => toggleLayer('lhz')}
-              className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                activeLayers.lhz
-                  ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
+              onClick={toggleMonsoonDownpourSimulation}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-sm text-xs font-medium border transition-colors btn-press cursor-pointer ${
+                isMonsoonDownpourSimulated
+                  ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid animate-pulse'
                   : 'bg-surface text-text-secondary border-border'
               }`}
             >
-              ISRO LHZ
-            </button>
-
-            <button
-              onClick={() => toggleLayer('imd')}
-              className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                activeLayers.imd
-                  ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
-                  : 'bg-surface text-text-secondary border-border'
-              }`}
-            >
-              IMD Alerts
-            </button>
-
-            <button
-              onClick={() => toggleLayer('routes')}
-              className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                activeLayers.routes
-                  ? 'bg-primary-tint text-primary border-primary'
-                  : 'bg-surface text-text-secondary border-border'
-              }`}
-            >
-              K-Routes
-            </button>
-
-            <button
-              onClick={() => toggleLayer('fleet')}
-              className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                activeLayers.fleet
-                  ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
-                  : 'bg-surface text-text-secondary border-border'
-              }`}
-            >
-              Telemetry
+              <CloudRain className="w-3.5 h-3.5" />
+              <span>{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
             </button>
           </div>
 
-          {/* Monsoon Simulation Toggle */}
-          <button
-            onClick={toggleMonsoonDownpourSimulation}
-            className={`flex items-center space-x-1 px-2.5 py-1 rounded-sm text-xs font-medium border transition-colors btn-press cursor-pointer ${
-              isMonsoonDownpourSimulated
-                ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid animate-pulse'
-                : 'bg-surface text-text-secondary border-border'
-            }`}
-          >
-            <CloudRain className="w-3.5 h-3.5" />
-            <span>{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
-          </button>
+          {/* Interactive Tactical GIS Map Legend */}
+          <MapLegend />
         </div>
-
-        {/* Interactive Tactical GIS Map Legend */}
-        <MapLegend />
       </div>
 
       {/* Right Drawer: Vehicle Inspector */}
