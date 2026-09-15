@@ -1,17 +1,19 @@
-# PRAVAH: Predictive Resilient Accessibility & Logistics Intelligence Network for the North Eastern Region (NER) 🥀🥀
+# PRAVAH: Predictive Resilient Accessibility & Logistics Intelligence Network for the North Eastern Region (NER)
 
 <div align="center">
 
-![PRAVAH Header Banner](https://img.shields.io/badge/Platform-PRAVAH%20NER%20Logistics-1B4B73?style=for-the-badge)
-![Status](https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge)
-![React](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=for-the-badge&logo=typescript)
-![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?style=for-the-badge&logo=vite)
-![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?style=for-the-badge&logo=tailwind-css)
-![Test Suite](https://img.shields.io/badge/Tests-37%2F37%20Passing%20(100%25)-brightgreen?style=for-the-badge)
+[![Platform](https://img.shields.io/badge/Platform-PRAVAH%20NER%20Logistics-1B4B73?style=for-the-badge)](https://pravah-zeta.vercel.app)
+[![Vercel Deployment](https://img.shields.io/badge/Vercel-Live%20Production-black?style=for-the-badge&logo=vercel)](https://pravah-zeta.vercel.app)
+[![React](https://img.shields.io/badge/React-19.2-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?style=for-the-badge&logo=vite)](https://vite.dev)
+[![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.3-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
+[![Test Suite](https://img.shields.io/badge/Tests-37%2F37%20Passing%20(100%25)-brightgreen?style=for-the-badge)](test_all_engines.mjs)
 
 **Developed for the Ministry of Development of North Eastern Region (MDoNER)**  
 *An AI-Based Smart Logistics, Geo-Hazard Monitoring, Preemptive Depletion & Accessibility Intelligence Platform for India's 8 North Eastern States (Assam, Meghalaya, Tripura, Mizoram, Manipur, Nagaland, Arunachal Pradesh, and Sikkim).*
+
+👉 **Live Production URL**: [https://pravah-zeta.vercel.app](https://pravah-zeta.vercel.app)
 
 </div>
 
@@ -29,6 +31,8 @@
   - [5. Multilingual Regional Broadcast Dispatcher](#5-multilingual-regional-broadcast-dispatcher-module-5)
   - [6. Community Preemptive Depletion & Urgency Window Engine](#6-community-preemptive-depletion--urgency-window-engine-module-6)
   - [7. Executive Infrastructure Board & BRO Priority Matrix](#7-executive-infrastructure-board--bro-priority-matrix-module-7)
+- [1-Click Interactive Resilience Walkthrough](#-1-click-interactive-resilience-walkthrough)
+- [Real-Time WebSocket & Telemetry Backend](#-real-time-websocket--telemetry-backend)
 - [Mathematical Formulation Reference](#-mathematical-formulation-reference)
 - [Mission MZ-04 Closed-Loop Operational Flow](#-mission-mz-04-closed-loop-operational-flow)
 - [Repository Structure](#-repository-structure)
@@ -46,7 +50,7 @@ The North Eastern Region (NER) of India presents some of the most challenging te
 - **Cellular & Satellite Blackouts**: Steep mountain gorges (such as the Teesta River Gorge on NH-10 or Bilkhawthlir in Mizoram) block cellular signals, leaving relief convoys untracked.
 - **Preemptive vs. Reactive Logistics**: Traditional disaster logistics responds *after* a community stocks out. **PRAVAH** continuously forecasts consumption run-rates against projected road failure cutoff times, ensuring dispatch happens before the physical transit window closes.
 
-**PRAVAH** (*Predictive Resilient Accessibility & Logistics Intelligence Network*) consolidates all 7 reference prototypes into a unified, production-grade intelligence suite.
+**PRAVAH** (*Predictive Resilient Accessibility & Logistics Intelligence Network*) consolidates all intelligence prototypes into a unified, production-grade command and control platform.
 
 ---
 
@@ -62,10 +66,14 @@ flowchart TB
         MET["Open-Meteo Live API & Orographic Sim"]
     end
 
+    subgraph Backend_Sync ["Real-Time Telemetry & Socket Server (Node/Express/Socket.io)"]
+        SRV["server/index.ts<br/>Port 3001 Socket.io & REST<br/>State Broadcasting & Open-Meteo Proxy"]
+    end
+
     subgraph Intelligence_Engines ["Computational Intelligence Engines"]
         PE["Preemptive Depletion & Urgency Engine<br/>S_def, R_iso, I_vuln, T_window<br/>1.4x Monsoon Medical Surge"]
         RE["Vehicle-Aware Routing Engine<br/>Yen K-Shortest Paths K=5<br/>Physical Clearance Pruning"]
-        TE["Fleet Telemetry & Watchdog Engine<br/>Blackout Dead-Reckoning Extrapolation<br/>Amber and Red Watchdog SLA"]
+        TE["Fleet Telemetry & Watchdog Engine<br/>Blackout Dead-Reckoning Extrapolation<br/>Amber & Red Watchdog SLA"]
         OS["Ground Intelligence & Offline Sync<br/>Confidence Scoring & Verification<br/>IndexedDB Local Queue Buffer"]
         BC["Multilingual Broadcast Engine<br/>EN, HI, AS, BN, MN Translations<br/>Script Routing & Audio Alert Synthesizers"]
     end
@@ -77,13 +85,15 @@ flowchart TB
     subgraph User_Surfaces ["User Command Surfaces"]
         DECK["Central Web Command Console<br/>GIS, Priority, Feed, Infra & Broadcast"]
         PWA["Field Cockpit PWA<br/>Driver HUD, Offline GPS & Handover"]
+        DEMO["1-Click Resilience Demo Toolbar<br/>Role Switcher: Admin, Dispatcher, Officer, Driver"]
     end
 
     GEO --> STORE
     NET --> RE
     COMM --> PE
     FLEET --> TE
-    MET --> STORE
+    MET --> SRV
+    SRV <--> STORE
 
     PE --> STORE
     RE --> STORE
@@ -93,6 +103,7 @@ flowchart TB
 
     STORE --> DECK
     STORE --> PWA
+    STORE --> DEMO
 ```
 
 ---
@@ -103,6 +114,8 @@ flowchart TB
 - **ISRO Bhuvan Landslide Hazard Zonation (LHZ)**: Multi-polygon vector overlay displaying Very High, High, and Moderate landslide hazard corridors across Meghalaya, Sikkim, and Arunachal Pradesh.
 - **29 Strategic NER Choke Points**: Pinpoint telemetry for high-risk mountain sectors (Coronation Bridge, 29th Mile, Bilkhawthlir, Pagla Pahar, Haflong Ghat, etc.).
 - **Open-Meteo Live Weather & Monsoon Simulator**: Real-time batch weather retrieval for all 29 coordinates with precipitation ($0–50\text{ mm/h}$), wind speeds, and WMO codes, plus an orographic monsoon storm injector.
+- **Dynamic Compass Bearing & True North Heading**: Real-time SVG chevron markers aligned to exact vehicle directional bearing with active corridor highlighting.
+- **Interactive Symbology Legend**: Docked collapsible map legend drawer detailing choke point icons, route status colors, and dead-reckoning vectors.
 
 ### 2. Ground Intelligence Feed & Offline PWA Sync (Module 2)
 - **Crowdsourced Incident Feed**: Community ground reports for landslides, flash floods, bridge washouts, and single-lane blockages.
@@ -153,6 +166,33 @@ flowchart TB
 
 ---
 
+## 🎯 1-Click Interactive Resilience Walkthrough
+
+PRAVAH includes a persistent **1-Click Resilience Demo Script** docked at the bottom-right corner of the application for live presentations and stakeholder reviews:
+
+```
+[Step 0: Nominal State] ──> [Step 1: Monsoon Surge] ──> [Step 2: Preemptive Dispatch] ──> [Step 3: Dead-Zone Blackout] ──> [Step 4: Delivery Handover]
+```
+
+- **Step 0: Baseline State (P4 Nominal)**: All corridors operational, Kolasib East has 24h supply runway.
+- **Step 1: Monsoon Downpour & Choke Point Failure**: Injects $46\text{ mm/h}$ rainfall surge onto NH-306; landslide closes Bilkhawthlir Escarpment; road cutoff drops to $4.0\text{h}$; Kolasib escalates to **P1 Critical**.
+- **Step 2: Multi-Criteria Preemptive Triage & Dispatch**: Dispatch window closes to $1.5\text{h}$; dispatcher dispatches Convoy `Medic-01` with IV fluids and antivenom via mountain bypass.
+- **Step 3: Bilkhawthlir Cellular Blackout & Dead-Reckoning**: Convoy enters cellular shadow; live GPS cuts out; IMU mathematical dead-reckoning maintains tracking along NH-306; Watchdog SLA countdown active.
+- **Step 4: Closed-Loop Delivery Handover**: Driver marks delivery completed; Kolasib inventories restock to 100%; triage drops back to P4; district health index increments by $+12$ points.
+- **Role Switcher**: Switch views instantly between **Super Admin**, **Fleet Dispatcher**, **Field Officer**, and **Driver**.
+
+---
+
+## 📡 Real-Time WebSocket & Telemetry Backend
+
+PRAVAH features an integrated Node.js / Express / Socket.io server located in [`server/index.ts`](file:///d:/PRAVAH/server/index.ts):
+- **Socket.io Multi-Client Sync**: Broadcasts live vehicle telemetry updates, route progress, dead-reckoning extrapolation coordinates, and watchdog countdowns to all connected web consoles and mobile cockpits.
+- **External API Ingestion**: Integrates with Open-Meteo for real-time batch forecasts across all 29 strategic mountain choke points.
+- **State Store Persistence**: Maintains in-memory operational state including active disruptions, community inventories, convoy positions, and district accessibility indices.
+- **Execution**: Run with `npm run server` (port 3001) or concurrently with the frontend via `npm start` / `npm run dev`.
+
+---
+
 ## 📐 Mathematical Formulation Reference
 
 | Component | Mathematical Formula | Description |
@@ -199,74 +239,85 @@ PRAVAH provides end-to-end mission tracking for **Mission MZ-04** (Silchar Regio
 
 ```
 PRAVAH/
-├── index.html                    # Main HTML entry with Noto Sans font preconnects
-├── package.json                  # React 19, TypeScript, Lucide, Tailwind v4
-├── tsconfig.json                 # TypeScript strict project configuration
-├── vite.config.ts                # Vite config with Google TTS reverse-proxy plugin
-├── test_all_engines.mjs          # Comprehensive 37-point automated regression suite
+├── index.html                           # Main HTML entry with Noto Sans font preconnects & Leaflet CSS
+├── package.json                         # Scripts (start, dev, server, client, build, test) & dependencies
+├── tsconfig.json                        # TypeScript strict project configuration
+├── vite.config.ts                       # Vite 8 config with Tailwind v4 & Google TTS reverse-proxy plugin
+├── vercel.json                          # Vercel deployment and routing rules
+├── test_all_engines.mjs                 # Comprehensive 37-point automated regression suite
+│
+├── server/                              # Node.js / Express / Socket.io Backend
+│   └── index.ts                         # Real-time WebSocket server, telemetry broadcaster & REST APIs
 │
 ├── src/
-│   ├── App.tsx                   # Master view router with Resilience ErrorBoundary
-│   ├── main.tsx                  # React 19 application mount point
-│   ├── index.css                 # Core CSS design system & tokens
+│   ├── App.tsx                          # Master view router with Unified Sticky Header & Navigation
+│   ├── main.tsx                         # React 19 application mount point with Vercel Analytics
+│   ├── index.css                        # Design system, CSS variables, tokens & Leaflet container isolation
 │   │
 │   ├── components/
-│   │   ├── broadcast/            # Module 5: Multilingual Regional Dispatcher
+│   │   ├── admin/                       # Global Administrator & Alert Interception
+│   │   │   └── GlobalSOSInterceptModal.tsx
+│   │   ├── broadcast/                   # Module 5: Multilingual Regional Dispatcher
 │   │   │   └── MultilingualBroadcastCenter.tsx
-│   │   ├── cockpit/              # Module 4: Offline Field Cockpit PWA
+│   │   ├── cockpit/                     # Module 4: Offline Field Cockpit PWA
 │   │   │   └── MobileMissionCockpit.tsx
-│   │   ├── executive/            # Module 7: Executive Infrastructure Board
+│   │   ├── dispatcher/                  # Convoy Mission Dispatch & Customization
+│   │   │   ├── CustomizeMissionModal.tsx
+│   │   │   └── MissionSuggestionQueue.tsx
+│   │   ├── executive/                   # Module 7: Executive Infrastructure Board
 │   │   │   ├── DistrictDetailModal.tsx
 │   │   │   ├── EmergencyBriefingModal.tsx
 │   │   │   ├── ExecutiveInfrastructureDeck.tsx
 │   │   │   └── SupplyForecaster.tsx
-│   │   ├── feed/                 # Module 2: Ground Intelligence Incident Feed
+│   │   ├── feed/                        # Module 2: Ground Intelligence Incident Feed
 │   │   │   ├── CorridorFilterBar.tsx
 │   │   │   ├── GroundIntelligenceFeed.tsx
 │   │   │   ├── LightboxModal.tsx
 │   │   │   ├── OfflineQueueDrawer.tsx
 │   │   │   └── SyncNotificationToast.tsx
-│   │   ├── gis/                  # Module 1 & 3: Tactical GIS Map & Pathfinding
+│   │   ├── gis/                         # Module 1 & 3: Tactical GIS Map & Pathfinding
 │   │   │   ├── AlertFeedModal.tsx
+│   │   │   ├── MapLegend.tsx            # Collapsible Map Symbology Guide Drawer
 │   │   │   ├── SegmentModal.tsx
 │   │   │   ├── SOSModal.tsx
-│   │   │   ├── TacticalMapDeck.tsx
+│   │   │   ├── TacticalMapDeck.tsx      # Main GIS Map Deck with isolated stacking layer
 │   │   │   └── VehicleInspector.tsx
-│   │   ├── layout/               # Header, Navigation, Role Selectors
+│   │   ├── layout/                      # Application Navigation & Demo Toolbars
 │   │   │   ├── Header.tsx
+│   │   │   ├── InteractiveWalkthroughToolbar.tsx # 1-Click Resilience Demo Script Deck
 │   │   │   └── Navigation.tsx
-│   │   └── priority/             # Module 6: Preemptive Depletion Priority Deck
+│   │   └── priority/                    # Module 6: Preemptive Depletion Priority Deck
 │   │       ├── CommunityPriorityDeck.tsx
 │   │       ├── ExplainabilityPanel.tsx
 │   │       └── RestockToast.tsx
 │   │
-│   ├── data/                     # Geospatial, Routing & Incident Seed Datasets
-│   │   ├── communitiesData.ts    # Monitored NER communities, inventories & burn rates
-│   │   ├── executiveData.ts      # 28 NER districts, health scores & BRO bottlenecks
-│   │   ├── fleetData.ts          # Convoy telemetry, blackout zones & breadcrumbs
-│   │   ├── nerGeoJSON.ts         # ISRO Bhuvan LHZ & district boundary geometries
-│   │   ├── routingNetwork.ts     # NER highway graph nodes, segments & clearances
-│   │   └── translationsData.ts   # 5-language incident translation dictionaries
+│   ├── data/                            # Geospatial, Routing & Incident Datasets
+│   │   ├── communitiesData.ts           # Monitored NER communities, inventories & burn rates
+│   │   ├── executiveData.ts             # 28 NER districts, health scores & BRO bottlenecks
+│   │   ├── fleetData.ts                 # Convoy telemetry, blackout zones & breadcrumbs
+│   │   ├── nerGeoJSON.ts                # ISRO Bhuvan LHZ & district boundary geometries
+│   │   ├── routingNetwork.ts            # NER highway graph nodes, segments & clearances
+│   │   └── translationsData.ts          # 5-language incident translation dictionaries
 │   │
-│   ├── engine/                   # Pure Computational Mathematical Engines
-│   │   ├── gisMath.ts            # Haversine distance, bearing & cross-track calculations
-│   │   ├── offlineSync.ts        # IndexedDB/LocalStorage queue & confidence scoring
-│   │   ├── openMeteoService.ts   # Batch live weather fetcher & monsoon storm simulation
-│   │   ├── priorityEngine.ts     # Preemptive depletion, S_def, R_iso & triage formulation
-│   │   ├── routingEngine.ts      # Yen's K-Shortest Path & physical clearance pruning
-│   │   └── telemetryEngine.ts    # Dead-reckoning extrapolation & watchdog SLA timers
+│   ├── engine/                          # Pure Computational Mathematical Engines
+│   │   ├── gisMath.ts                   # Haversine distance, bearing & cross-track calculations
+│   │   ├── offlineSync.ts               # IndexedDB/LocalStorage queue & confidence scoring
+│   │   ├── openMeteoService.ts          # Batch live weather fetcher & monsoon storm simulation
+│   │   ├── priorityEngine.ts            # Preemptive depletion, S_def, R_iso & triage formulation
+│   │   ├── routingEngine.ts             # Yen's K-Shortest Path & physical clearance pruning
+│   │   └── telemetryEngine.ts           # Dead-reckoning extrapolation & watchdog SLA timers
 │   │
-│   ├── store/                    # Unified Reactive State Store
-│   │   └── usePravahStore.tsx    # Cross-module event cascade & scenario injectors
+│   ├── store/                           # Unified Reactive State Store
+│   │   └── usePravahStore.tsx           # Cross-module event cascade & scenario injectors
 │   │
-│   ├── styles/                   # Design Tokens
-│   │   └── tokens.css            # GIGW-compliant colors, status triplets & focus states
+│   ├── styles/                          # Design Tokens
+│   │   └── tokens.css                   # GIGW-compliant colors, status triplets & focus states
 │   │
-│   ├── types/                    # TypeScript Interfaces & Domain Definitions
-│   │   └── index.ts              # Complete type contracts across all 7 modules
+│   ├── types/                           # TypeScript Domain Definitions
+│   │   └── index.ts                     # Complete type contracts across all 7 modules
 │   │
-│   └── utils/                    # Audio Alerts & Procedural Synthesizers
-│       └── audioAlert.ts         # Siren, chirp & delivery ACK Web Audio generators
+│   └── utils/                           # Audio Alerts & Procedural Synthesizers
+│       └── audioAlert.ts                # Siren, chirp & delivery ACK Web Audio generators
 ```
 
 ---
@@ -286,17 +337,42 @@ npm install
 ```
 
 ### 2. Launch Local Development Server
+To launch both the backend WebSocket server and the Vite client simultaneously:
 ```bash
+npm start
+# or
 npm run dev
 ```
-Open your browser at:
-👉 **[http://localhost:5175/](http://localhost:5175/)** *(or the next available port indicated in terminal)*
 
-### 3. Run Production Build & Typecheck
+| Component | Port | Description |
+| :--- | :--- | :--- |
+| **Vite Client App** | `http://localhost:5173/` | Web Command Console & PWA Cockpit |
+| **Backend Telemetry Server** | `http://localhost:3001/` | Socket.io real-time bus & Open-Meteo API |
+
+You can also run them independently:
+```bash
+npm run server  # Start Node/Express/Socket.io backend on port 3001
+npm run client  # Start Vite frontend on port 5173
+```
+
+### 3. Run Automated Tests
+Run the standalone 37-point integration test suite:
+```bash
+npm test
+# or
+npx tsx test_all_engines.mjs
+```
+
+### 4. Production Build & Typecheck
 ```bash
 npm run build
 ```
 Generates an optimized, production-ready bundle in `dist/` with 0 TypeScript errors.
+
+To preview the production build locally:
+```bash
+npm run preview
+```
 
 ---
 
@@ -305,7 +381,7 @@ Generates an optimized, production-ready bundle in `dist/` with 0 TypeScript err
 PRAVAH includes a standalone automated regression suite verifying all algorithms, formulas, and edge cases. Run tests using:
 
 ```bash
-npx tsx test_all_engines.mjs
+npm test
 ```
 
 ### Verification Results
@@ -380,6 +456,7 @@ PRAVAH adheres strictly to the Ministry UI Guidelines and GIGW (Guidelines for I
   - **Blocked / Critical**: Tint `#FEF3F2`, Text `#B42318`, Solid `#F04438`
 - **Typography**: Clean `Noto Sans` font pairing with native UTF-8 support for English, Hindi (Devanagari), Assamese, Bengali, and Meitei Mayek scripts.
 - **Accessibility**: Minimum $44\times 44\text{px}$ touch targets on all interactive controls, clear focus rings, and WCAG AA contrast compliance.
+- **Stacking Context & Layer Hierarchy**: Strict isolation for Leaflet map canvases (`isolate; z-0`), floating controls (`z-30`), sticky headers and modals (`z-50`), interactive walkthrough toolbar (`z-[1100]`), and global SOS intercept (`z-[2000]`).
 
 ---
 
