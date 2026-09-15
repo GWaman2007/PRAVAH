@@ -1099,9 +1099,12 @@ export const TacticalMapDeck: React.FC = () => {
       </div>
 
       {/* Center: Leaflet Tactical Map Deck */}
-      <div className="flex-1 relative flex flex-col h-full">
-        {/* Top HUD Controls Bar */}
-        <div className="absolute top-3 right-3 z-20 flex flex-wrap gap-2 items-center bg-surface/90 backdrop-blur-md p-2 rounded-sm border border-border shadow-md">
+      <div className="flex-1 relative flex flex-col h-full overflow-hidden isolate">
+        {/* Map Container: rendered first in DOM with isolated z-0 layer */}
+        <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
+
+        {/* Top HUD Controls Bar: floats over map with z-30 */}
+        <div className="absolute top-3 right-3 z-30 flex flex-wrap gap-2 items-center bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md p-2 rounded-sm border border-border shadow-md">
           {/* Layer Toggles */}
           <div className="flex items-center space-x-1 text-xs">
             <button
@@ -1162,9 +1165,6 @@ export const TacticalMapDeck: React.FC = () => {
             <span>{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
           </button>
         </div>
-
-        {/* Map Container */}
-        <div ref={mapContainerRef} className="w-full h-full" />
 
         {/* Interactive Tactical GIS Map Legend */}
         <MapLegend />

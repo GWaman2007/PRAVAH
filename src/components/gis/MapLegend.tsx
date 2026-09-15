@@ -15,7 +15,7 @@ export const MapLegend: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="absolute bottom-4 left-4 z-20 select-none">
+    <div className="absolute bottom-4 left-4 z-30 select-none">
       {/* Toggle Pill */}
       <button
         onClick={() => setIsOpen(!isOpen)}
