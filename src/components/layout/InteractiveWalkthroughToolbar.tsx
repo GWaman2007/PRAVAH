@@ -68,28 +68,30 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
   return (
     <aside
       aria-label="Interactive Walkthrough Demo Toolbar"
-      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[1100] pointer-events-auto select-none"
+      className="fixed bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 z-[1100] pointer-events-auto select-none max-w-full px-2"
     >
       {/* Minimized Pill Button */}
       {!isExpanded && (
         <button
           onClick={() => setIsExpanded(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#1B4B73] hover:bg-[#123A5A] text-white font-semibold text-xs shadow-2xl border border-white/20 backdrop-blur-md transition-all duration-200 hover:scale-105 cursor-pointer ring-2 ring-primary/30 animate-pulse"
+          className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#1B4B73] hover:bg-[#123A5A] text-white font-semibold text-xs shadow-2xl border border-white/20 backdrop-blur-md transition-all duration-200 hover:scale-105 cursor-pointer ring-2 ring-primary/30 animate-pulse max-w-[95vw]"
         >
-          <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
-          <span className="tracking-wide font-medium">1-Click Resilience Demo Script</span>
+          <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 shrink-0" />
+          <span className="tracking-wide font-medium truncate max-w-[135px] sm:max-w-none text-[11px] sm:text-xs">
+            1-Click Resilience Demo
+          </span>
           {isP1 && (
-            <span className="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-mono font-bold">
+            <span className="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-mono font-bold shrink-0">
               P1 ACTIVE
             </span>
           )}
           {isMissionDispatched && (
-            <span className="px-1.5 py-0.5 rounded-full bg-blue-500 text-white text-[9px] font-mono font-bold">
+            <span className="px-1.5 py-0.5 rounded-full bg-blue-500 text-white text-[9px] font-mono font-bold shrink-0">
               EN ROUTE
             </span>
           )}
           {isMissionDelivered && (
-            <span className="px-1.5 py-0.5 rounded-full bg-green-600 text-white text-[9px] font-mono font-bold">
+            <span className="px-1.5 py-0.5 rounded-full bg-green-600 text-white text-[9px] font-mono font-bold shrink-0">
               DELIVERED
             </span>
           )}
@@ -99,30 +101,30 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
 
       {/* Expanded Floating Control Deck */}
       {isExpanded && (
-        <div className="w-[94vw] max-w-4xl bg-surface/98 dark:bg-slate-900/98 backdrop-blur-xl border-2 border-[#1B4B73]/60 dark:border-blue-400/40 rounded-lg shadow-2xl p-3 sm:p-4 space-y-3 animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-[95vw] sm:w-[92vw] max-w-4xl max-h-[85vh] overflow-y-auto custom-scrollbar bg-surface/98 dark:bg-slate-900/98 backdrop-blur-xl border-2 border-[#1B4B73]/60 dark:border-blue-400/40 rounded-lg shadow-2xl p-3 sm:p-4 space-y-2.5 sm:space-y-3 animate-in fade-in zoom-in-95 duration-200">
           {/* Header Row: Title + Role Pills + Collapse Button */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/80 pb-2.5">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-status-open-solid animate-ping" />
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/80 pb-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="w-2 h-2 rounded-full bg-status-open-solid animate-ping shrink-0" />
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold uppercase tracking-wider text-xs text-text-primary">
-                    1-Click Resilience Demo Script
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold uppercase tracking-wider text-[11px] sm:text-xs text-text-primary">
+                    Resilience Demo Script
                   </span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-xs bg-primary-tint text-primary font-bold hidden sm:inline">
-                    Kolasib NH-306 Monsoon Scenario
+                  <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded-xs bg-primary-tint text-primary font-bold hidden xs:inline">
+                    Kolasib NH-306
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               {/* Role Switcher Pills */}
-              <div className="flex items-center gap-1 bg-surface-subtle p-0.5 rounded-sm border border-border">
+              <div className="flex items-center gap-0.5 sm:gap-1 bg-surface-subtle p-0.5 rounded-sm border border-border">
                 {(
                   [
                     { role: 'SUPER_ADMIN', label: 'Admin', icon: Shield },
-                    { role: 'FLEET_DISPATCHER', label: 'Dispatcher', icon: Radio },
+                    { role: 'FLEET_DISPATCHER', label: 'Dispatch', icon: Radio },
                     { role: 'FIELD_OFFICER', label: 'Officer', icon: UserCheck },
                     { role: 'DRIVER', label: 'Driver', icon: Truck },
                   ] as const
@@ -133,14 +135,14 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                     <button
                       key={r.role}
                       onClick={() => switchRole(r.role as UserRole)}
-                      className={`px-2 py-1 rounded-xs text-[10px] font-medium flex items-center gap-1 transition-all cursor-pointer ${
+                      className={`px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-xs text-[9px] sm:text-[10px] font-medium flex items-center gap-1 transition-all cursor-pointer ${
                         isActive
                           ? 'bg-[#1B4B73] text-white font-bold shadow-xs'
                           : 'text-text-secondary hover:text-text-primary'
                       }`}
                     >
-                      <Icon className="w-3 h-3" />
-                      <span>{r.label}</span>
+                      <Icon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                      <span className="hidden xs:inline">{r.label}</span>
                     </button>
                   );
                 })}
@@ -158,7 +160,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
           </div>
 
           {/* 4 Action Cards Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
             {/* Step 1 Button */}
             <button
               onClick={handleStep1}

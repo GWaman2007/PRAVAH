@@ -33,7 +33,7 @@ const AppContent: React.FC = () => {
   ) || null;
 
   return (
-    <div className="min-h-screen bg-page-bg flex flex-col pb-24">
+    <div className={`min-h-screen bg-page-bg flex flex-col ${activeView === 'GIS_COMMAND' ? 'pb-16 lg:pb-0' : 'pb-28 sm:pb-24'}`}>
       {/* Global Header */}
       <Header />
 
@@ -42,19 +42,19 @@ const AppContent: React.FC = () => {
 
       {/* High-Priority Floating Alert Banner (GIGW / Section 7.4) */}
       {unacknowledgedCriticalAlert && !pendingSOSAlert && (
-        <div className="bg-status-blocked-solid text-white px-4 py-2.5 text-xs flex items-center justify-between shadow-md z-30 animate-siren">
-          <div className="flex items-center space-x-2 max-w-5xl">
-            <AlertOctagon className="w-5 h-5 shrink-0 animate-pulse" />
+        <div className="bg-status-blocked-solid text-white px-3 sm:px-4 py-2 sm:py-2.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-md z-30 animate-siren">
+          <div className="flex items-start sm:items-center space-x-2 max-w-5xl">
+            <AlertOctagon className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 animate-pulse mt-0.5 sm:mt-0" />
             <div>
               <span className="font-bold uppercase tracking-wider mr-2">
                 [{unacknowledgedCriticalAlert.severity}] {unacknowledgedCriticalAlert.title}:
               </span>
-              <span>{unacknowledgedCriticalAlert.message}</span>
+              <span className="leading-snug">{unacknowledgedCriticalAlert.message}</span>
             </div>
           </div>
           <button
             onClick={() => acknowledgeAlert(unacknowledgedCriticalAlert.id)}
-            className="px-2.5 py-1 rounded-sm bg-white/20 hover:bg-white/30 text-white font-medium ml-4 shrink-0 transition-colors btn-press"
+            className="w-full sm:w-auto px-3 py-1.5 rounded-sm bg-white/20 hover:bg-white/30 text-white font-medium sm:ml-4 shrink-0 transition-colors btn-press cursor-pointer text-center text-xs"
           >
             Acknowledge
           </button>

@@ -11,6 +11,11 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
   code, pre, .font-mono {
     font-family: var(--font-mono);
   }
@@ -21,10 +26,15 @@
     outline-offset: 2px;
   }
 
-  /* Touch Target minimums (Section 8) */
-  button, .touch-target {
+  /* Touch Target minimums for mobile actions (Section 8) */
+  .touch-target {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  /* Prevent text size adjustment on orientation change */
+  html {
+    -webkit-text-size-adjust: 100%;
   }
 }
 
@@ -131,3 +141,30 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Responsive Table Container */
+.responsive-table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Animation utilities */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+

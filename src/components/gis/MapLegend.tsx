@@ -15,20 +15,20 @@ export const MapLegend: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="absolute bottom-4 left-4 z-20 select-none">
+    <div className="absolute bottom-3 sm:bottom-4 left-2 sm:left-4 z-20 select-none max-w-[calc(100vw-16px)]">
       {/* Toggle Pill */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface/90 dark:bg-slate-900/90 backdrop-blur-md border border-border text-text-primary text-xs font-semibold shadow-lg hover:bg-surface transition-all cursor-pointer ring-1 ring-border/50"
+        className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md bg-surface/90 dark:bg-slate-900/90 backdrop-blur-md border border-border text-text-primary text-[11px] sm:text-xs font-semibold shadow-lg hover:bg-surface transition-all cursor-pointer ring-1 ring-border/50"
       >
         <Layers className="w-3.5 h-3.5 text-primary" />
-        <span>Tactical GIS Legend</span>
+        <span>Tactical Legend</span>
         {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-text-secondary" /> : <ChevronUp className="w-3.5 h-3.5 text-text-secondary" />}
       </button>
 
       {/* Expanded Legend Drawer */}
       {isOpen && (
-        <div className="mt-2 w-72 sm:w-80 bg-surface/95 dark:bg-slate-900/95 backdrop-blur-xl border border-border rounded-md shadow-2xl p-3.5 space-y-3 text-xs animate-in fade-in slide-in-from-bottom-2 duration-150">
+        <div className="mt-2 w-[calc(100vw-24px)] sm:w-80 max-h-[65vh] overflow-y-auto custom-scrollbar bg-surface/95 dark:bg-slate-900/95 backdrop-blur-xl border border-border rounded-md shadow-2xl p-3 sm:p-3.5 space-y-3 text-xs animate-in fade-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center justify-between border-b border-border/70 pb-2">
             <span className="font-bold uppercase tracking-wider text-[11px] text-text-primary flex items-center gap-1.5">
               <Info className="w-3.5 h-3.5 text-primary" />

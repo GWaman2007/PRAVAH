@@ -55,24 +55,24 @@ export const SegmentModal: React.FC<SegmentModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
       <div 
-        className="bg-surface border border-border rounded-md w-full max-w-lg shadow-2xl overflow-hidden flex flex-col text-text-primary text-xs"
+        className="bg-surface border border-border rounded-md w-full max-w-lg max-h-[90vh] shadow-2xl overflow-hidden flex flex-col text-text-primary text-xs"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 bg-surface-subtle border-b border-border flex items-center justify-between">
+        <div className="p-3 sm:p-4 bg-surface-subtle border-b border-border flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs px-2 py-0.5 rounded-xs bg-primary-tint text-primary font-bold border border-primary/30">
                 {segment.highway}
               </span>
-              <h3 className="text-sm font-semibold text-text-primary m-0 truncate max-w-[280px]">
+              <h3 className="text-xs sm:text-sm font-semibold text-text-primary m-0 truncate max-w-[180px] xs:max-w-[260px] sm:max-w-none">
                 {segment.name}
               </h3>
             </div>
-            <p className="text-[11px] text-text-secondary mt-1">
-              Corridor Segment Clearance & Structural Limits
+            <p className="text-[10px] sm:text-[11px] text-text-secondary mt-0.5">
+              Corridor Segment Clearance &amp; Structural Limits
             </p>
           </div>
 
@@ -84,24 +84,24 @@ export const SegmentModal: React.FC<SegmentModalProps> = ({
           </button>
         </div>
 
-        <div className="p-4 space-y-4 overflow-y-auto max-h-[80vh] custom-scrollbar">
+        <div className="p-3 sm:p-4 space-y-3 sm:space-y-4 overflow-y-auto max-h-[72vh] custom-scrollbar">
           {/* 1. Constraint Status Banner */}
           {evaluation.passHardConstraints ? (
-            <div className="p-3 bg-status-open-tint text-status-open-text border border-status-open-solid rounded-sm flex items-start gap-2.5">
-              <ShieldCheck className="w-5 h-5 shrink-0 text-status-open-solid mt-0.5" />
+            <div className="p-2.5 sm:p-3 bg-status-open-tint text-status-open-text border border-status-open-solid rounded-sm flex items-start gap-2 sm:gap-2.5">
+              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-status-open-solid mt-0.5" />
               <div>
                 <span className="font-bold text-xs block">Safe for {vehicle.name}</span>
-                <span className="text-[11px] text-text-secondary">
+                <span className="text-[10px] sm:text-[11px] text-text-secondary">
                   Vehicle gross tonnage ({vehicle.weight_tonnes}T) and dimensions ({vehicle.height_m}m H × {vehicle.width_m}m W) clear all structural safety limits.
                 </span>
               </div>
             </div>
           ) : (
-            <div className="p-3 bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid rounded-sm flex items-start gap-2.5">
-              <AlertTriangle className="w-5 h-5 shrink-0 text-status-blocked-solid mt-0.5" />
+            <div className="p-2.5 sm:p-3 bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid rounded-sm flex items-start gap-2 sm:gap-2.5">
+              <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-status-blocked-solid mt-0.5" />
               <div>
                 <span className="font-bold text-xs block">Hard Constraint Violations Detected!</span>
-                <ul className="list-disc pl-4 text-[11px] text-text-secondary space-y-0.5 mt-1">
+                <ul className="list-disc pl-4 text-[10px] sm:text-[11px] text-text-secondary space-y-0.5 mt-1">
                   {evaluation.hardConstraintFailures.map((fail, i) => (
                     <li key={i}>{fail}</li>
                   ))}
@@ -111,12 +111,12 @@ export const SegmentModal: React.FC<SegmentModalProps> = ({
           )}
 
           {/* 2. Structural Limits */}
-          <div className="p-3 bg-surface-subtle/50 rounded-sm border border-border space-y-2">
+          <div className="p-2.5 sm:p-3 bg-surface-subtle/50 rounded-sm border border-border space-y-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary block">
-              Physical Road & Structural Capacity
+              Physical Road &amp; Structural Capacity
             </span>
 
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-1 xs:grid-cols-3 gap-2 text-center">
               <div className="p-2 rounded-xs bg-surface border border-border">
                 <span className="text-text-secondary block text-[10px]">Max Weight</span>
                 <span className={`font-mono text-xs font-bold ${
@@ -138,6 +138,7 @@ export const SegmentModal: React.FC<SegmentModalProps> = ({
                 }`}>
                   {segment.max_height_limit} Meters
                 </span>
+              </div>
                 {segment.tunnelName && (
                   <span className="text-[9px] text-text-secondary truncate block mt-0.5">
                     {segment.tunnelName}

@@ -89,6 +89,7 @@ export const TacticalMapDeck: React.FC = () => {
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
   const [activeSOSVehicleId, setActiveSOSVehicleId] = useState<string | null>(null);
+  const [mobileViewTab, setMobileViewTab] = useState<'MAP' | 'CONTROLS'>('MAP');
 
   // Custom vehicle specifications state
   const [isCustomSpecsActive, setIsCustomSpecsActive] = useState<boolean>(false);
@@ -517,7 +518,43 @@ export const TacticalMapDeck: React.FC = () => {
   const selectedRoute = candidateRoutes[selectedRouteIndex] || candidateRoutes[0];
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-105px)] overflow-hidden bg-page-bg relative">
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-112px)] sm:h-[calc(100vh-105px)] overflow-hidden bg-page-bg relative">
+      {/* Mobile View Switcher Tab Bar (< lg) */}
+      <div className="lg:hidden flex items-center bg-surface border-b border-border p-1.5 shrink-0 z-20">
+        <button
+          onClick={() => {
+            setMobileViewTab('MAP');
+            setTimeout(() => {
+              mapInstanceRef.current?.invalidateSize();
+            }, 100);
+          }}
+          className={`flex-1 py-1.5 px-3 rounded-sm text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            mobileViewTab === 'MAP'
+              ? 'bg-[#1B4B73] text-white shadow-xs dark:bg-[#2E6B9E]'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-subtle'
+          }`}
+        >
+          <Navigation className="w-3.5 h-3.5" />
+          <span>Tactical Map Deck</span>
+        </button>
+        <button
+          onClick={() => setMobileViewTab('CONTROLS')}
+          className={`flex-1 py-1.5 px-3 rounded-sm text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            mobileViewTab === 'CONTROLS'
+              ? 'bg-[#1B4B73] text-white shadow-xs dark:bg-[#2E6B9E]'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-subtle'
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          <span>K-Routing & Controls</span>
+          {Object.keys(activeDisruptions).length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-xs bg-status-blocked-solid text-white text-[9px] font-mono font-bold">
+              {Object.keys(activeDisruptions).length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Segment Inspection Modal */}
       <SegmentModal
         segment={inspectedSegment}
@@ -551,7 +588,7 @@ export const TacticalMapDeck: React.FC = () => {
       />
 
       {/* Left Sidebar: Controls & Predictive Routing */}
-      <div className="w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-y-auto z-10 shadow-xs custom-scrollbar">
+      <div className={`w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-y-auto z-10 shadow-xs custom-scrollbar ${mobileViewTab === 'CONTROLS' ? 'block' : 'hidden lg:flex'}`}>
         {/* Route Selector Header */}
         <div className="p-4 border-b border-border bg-surface-subtle space-y-3">
           <div className="flex items-center justify-between">
@@ -911,14 +948,14 @@ export const TacticalMapDeck: React.FC = () => {
       </div>
 
       {/* Center: Leaflet Tactical Map Deck */}
-      <div className="flex-1 relative flex flex-col h-full">
+      <div className={`flex-1 relative flex flex-col h-full ${mobileViewTab === 'MAP' ? 'flex' : 'hidden lg:flex'}`}>
         {/* Top HUD Controls Bar */}
-        <div className="absolute top-3 right-3 z-20 flex flex-wrap gap-2 items-center bg-surface/90 backdrop-blur-md p-2 rounded-sm border border-border shadow-md">
+        <div className="absolute top-2 sm:top-3 left-2 sm:left-auto right-2 sm:right-3 z-20 flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1.5 sm:p-2 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
           {/* Layer Toggles */}
-          <div className="flex items-center space-x-1 text-xs">
+          <div className="flex items-center space-x-1 text-[11px] sm:text-xs shrink-0">
             <button
               onClick={() => toggleLayer('lhz')}
-              className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+              className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
                 activeLayers.lhz
                   ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
                   : 'bg-surface text-text-secondary border-border'
@@ -929,7 +966,7 @@ export const TacticalMapDeck: React.FC = () => {
 
             <button
               onClick={() => toggleLayer('imd')}
-              className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+              className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
                 activeLayers.imd
                   ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
                   : 'bg-surface text-text-secondary border-border'
@@ -940,7 +977,7 @@ export const TacticalMapDeck: React.FC = () => {
 
             <button
               onClick={() => toggleLayer('routes')}
-              className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+              className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
                 activeLayers.routes
                   ? 'bg-primary-tint text-primary border-primary'
                   : 'bg-surface text-text-secondary border-border'
@@ -951,7 +988,7 @@ export const TacticalMapDeck: React.FC = () => {
 
             <button
               onClick={() => toggleLayer('fleet')}
-              className={`px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+              className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
                 activeLayers.fleet
                   ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
                   : 'bg-surface text-text-secondary border-border'
@@ -964,14 +1001,15 @@ export const TacticalMapDeck: React.FC = () => {
           {/* Monsoon Simulation Toggle */}
           <button
             onClick={toggleMonsoonDownpourSimulation}
-            className={`flex items-center space-x-1 px-2.5 py-1 rounded-sm text-xs font-medium border transition-colors btn-press cursor-pointer ${
+            className={`flex items-center space-x-1 px-2 sm:px-2.5 py-1 rounded-sm text-[11px] sm:text-xs font-medium border transition-colors btn-press cursor-pointer shrink-0 ${
               isMonsoonDownpourSimulated
                 ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid animate-pulse'
                 : 'bg-surface text-text-secondary border-border'
             }`}
           >
             <CloudRain className="w-3.5 h-3.5" />
-            <span>{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
+            <span className="hidden xs:inline">{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
+            <span className="xs:hidden">{isMonsoonDownpourSimulated ? '58 mm/h' : 'Monsoon'}</span>
           </button>
         </div>
 
@@ -982,17 +1020,25 @@ export const TacticalMapDeck: React.FC = () => {
         <MapLegend />
       </div>
 
-      {/* Right Drawer: Vehicle Inspector */}
+      {/* Vehicle Inspector: Side panel on desktop, slide-up sheet on mobile */}
       {isInspectorOpen && activeVehicle && (
-        <div className="w-full lg:w-80 h-full z-10">
-          <VehicleInspector
-            vehicle={activeVehicle}
-            onClose={() => setIsInspectorOpen(false)}
-            onToggleHalt={(id) => toggleVehicleHalt(id)}
-            onToggleDeviation={(id) => toggleVehicleDeviation(id)}
-            onTriggerSOS={(id) => triggerVehicleSOS(id)}
+        <>
+          {/* Mobile Backdrop */}
+          <div
+            className="lg:hidden fixed inset-0 bg-black/50 z-30 backdrop-blur-2xs"
+            onClick={() => setIsInspectorOpen(false)}
+            aria-hidden="true"
           />
-        </div>
+          <div className="fixed inset-x-0 bottom-0 max-h-[82vh] lg:relative lg:inset-auto lg:max-h-none w-full lg:w-80 h-auto lg:h-full z-30 lg:z-10 shadow-2xl lg:shadow-none animate-fadeIn lg:animate-none">
+            <VehicleInspector
+              vehicle={activeVehicle}
+              onClose={() => setIsInspectorOpen(false)}
+              onToggleHalt={(id) => toggleVehicleHalt(id)}
+              onToggleDeviation={(id) => toggleVehicleDeviation(id)}
+              onTriggerSOS={(id) => triggerVehicleSOS(id)}
+            />
+          </div>
+        </>
       )}
     </div>
   );
