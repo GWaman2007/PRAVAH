@@ -25,6 +25,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
     resetDemoSimulation,
     activeMissions,
     communities,
+    activeView,
   } = usePravahStore();
 
   // Default to minimized so map and cockpit view are 100% visible and unoccluded
@@ -68,7 +69,9 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
   return (
     <aside
       aria-label="Interactive Walkthrough Demo Toolbar"
-      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[1100] pointer-events-auto select-none"
+      className={`fixed right-3 sm:right-5 z-[1100] pointer-events-auto select-none flex flex-col items-end transition-all duration-200 ${
+        activeView === 'MOBILE_COCKPIT' ? 'bottom-20' : 'bottom-3'
+      }`}
     >
       {/* Minimized Pill Button */}
       {!isExpanded && (
