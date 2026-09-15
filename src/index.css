@@ -1,6 +1,66 @@
 @import "tailwindcss";
 @import "./styles/tokens.css";
 
+@theme {
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-tint: var(--color-primary-tint);
+  --color-page-bg: var(--color-page-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-subtle: var(--color-surface-subtle);
+  --color-border: var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+
+  --color-status-open-tint: var(--status-open-tint);
+  --color-status-open-text: var(--status-open-text);
+  --color-status-open-solid: var(--status-open-solid);
+
+  --color-status-restricted-tint: var(--status-restricted-tint);
+  --color-status-restricted-text: var(--status-restricted-text);
+  --color-status-restricted-solid: var(--status-restricted-solid);
+
+  --color-status-highrisk-tint: var(--status-highrisk-tint);
+  --color-status-highrisk-text: var(--status-highrisk-text);
+  --color-status-highrisk-solid: var(--status-highrisk-solid);
+
+  --color-status-blocked-tint: var(--status-blocked-tint);
+  --color-status-blocked-text: var(--status-blocked-text);
+  --color-status-blocked-solid: var(--status-blocked-solid);
+
+  --color-status-unknown-tint: var(--status-unknown-tint);
+  --color-status-unknown-text: var(--status-unknown-text);
+  --color-status-unknown-solid: var(--status-unknown-solid);
+}
+
+/* Core Design Token Utilities (Guaranteed Solid Rendering & Dark Mode) */
+.bg-surface {
+  background-color: var(--color-surface);
+}
+.bg-surface-subtle {
+  background-color: var(--color-surface-subtle);
+}
+.bg-page-bg {
+  background-color: var(--color-page-bg);
+}
+.text-text-primary {
+  color: var(--color-text-primary);
+}
+.text-text-secondary {
+  color: var(--color-text-secondary);
+}
+.text-text-tertiary {
+  color: var(--color-text-tertiary);
+}
+.border-border {
+  border-color: var(--color-border);
+}
+.border-border-subtle {
+  border-color: var(--color-border-subtle);
+}
+
 @layer base {
   body {
     font-family: var(--font-sans);

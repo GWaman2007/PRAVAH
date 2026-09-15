@@ -34,11 +34,11 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-page-bg flex flex-col pb-24">
-      {/* Global Header */}
-      <Header />
-
-      {/* Global Navigation Tabs */}
-      <Navigation />
+      {/* Unified Sticky Platform Header & Navigation Deck */}
+      <header className="sticky top-0 z-40 bg-surface border-b border-border shadow-xs">
+        <Header />
+        <Navigation />
+      </header>
 
       {/* High-Priority Floating Alert Banner (GIGW / Section 7.4) */}
       {unacknowledgedCriticalAlert && !pendingSOSAlert && (

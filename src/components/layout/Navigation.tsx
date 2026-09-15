@@ -70,7 +70,7 @@ export const Navigation: React.FC = () => {
   });
 
   return (
-    <nav className="bg-surface border-b border-border">
+    <nav className="bg-surface border-t border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex space-x-1 sm:space-x-4 overflow-x-auto py-2 no-scrollbar">
           {filteredNavItems.map((item) => {
