@@ -1029,6 +1029,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       )
     );
 
+    // If mission is for Kolasib (MZ-04), link origin, destination, selected vehicle, and switch to GIS Command View
+    if (missionId === 'MISSION-MZ-04') {
+      setOriginHub('silchar');
+      setDestinationHub('kolasib');
+      setSelectedVehicleId('Medic-01');
+      setActiveView('GIS_COMMAND');
+    }
+
     setVehicles((prev) =>
       prev.map((v) =>
         v.vehicle_id === 'Medic-01'

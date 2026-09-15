@@ -31,6 +31,8 @@ import {
   Sliders,
   Maximize2,
   ExternalLink,
+  Crosshair,
+  Route,
 } from 'lucide-react';
 
 export const TacticalMapDeck: React.FC = () => {
@@ -82,7 +84,13 @@ export const TacticalMapDeck: React.FC = () => {
     toggleVehicleDeviation,
     triggerVehicleSOS,
     activeRole,
+    activeMissions,
   } = usePravahStore();
+
+  // Find any active in-transit relief mission
+  const activeDispatchedMission = useMemo(() => {
+    return activeMissions.find((m) => m.status === 'IN_TRANSIT') || null;
+  }, [activeMissions]);
 
   // Modals & Drawers state
   const [inspectedSegment, setInspectedSegment] = useState<Segment | null>(null);
@@ -193,6 +201,14 @@ export const TacticalMapDeck: React.FC = () => {
       mapInstanceRef.current = null;
     };
   }, []);
+
+  // Auto-focus map on active dispatched mission if available
+  useEffect(() => {
+    if (!mapInstanceRef.current || !activeDispatchedMission) return;
+    if (activeDispatchedMission.id === 'MISSION-MZ-04') {
+      mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.2 });
+    }
+  }, [activeDispatchedMission?.id, activeDispatchedMission?.status]);
 
   // 3. Render ISRO Bhuvan Landslide Hazard Layer
   useEffect(() => {
@@ -463,6 +479,7 @@ export const TacticalMapDeck: React.FC = () => {
       const isDeadReckon = veh.status === 'DEAD_ZONE_EXTRAPOLATING';
       const isSOS = veh.status === 'SOS_ALERT';
       const isOverdue = veh.is_watchdog_amber || veh.is_watchdog_red;
+      const isMissionActiveForVeh = veh.vehicle_id === 'Medic-01' && !!activeDispatchedMission;
 
       // 7a. Render Full Highlighted Route for Convoy
       const routeDef = FLEET_ROUTES[veh.assigned_route_id];
@@ -477,25 +494,25 @@ export const TacticalMapDeck: React.FC = () => {
           ? '#DC2626'
           : isDeadReckon
           ? '#EA580C'
-          : isSelected
+          : (isSelected || isMissionActiveForVeh)
           ? '#0284C7'
           : '#2563EB';
 
         // Outer glow corridor line
         const glowLine = L.polyline(routeCoords, {
-          color: isSelected ? '#38BDF8' : routeColor,
-          weight: isSelected ? 9 : 6,
-          opacity: isSelected ? 0.45 : 0.22,
+          color: (isSelected || isMissionActiveForVeh) ? '#38BDF8' : routeColor,
+          weight: (isSelected || isMissionActiveForVeh) ? 10 : 6,
+          opacity: (isSelected || isMissionActiveForVeh) ? 0.55 : 0.22,
           lineCap: 'round',
           lineJoin: 'round',
         }).addTo(group);
 
         // Main convoy route polyline (with dash for dead-reckoning or selected)
         const mainLine = L.polyline(routeCoords, {
-          color: routeColor,
-          weight: isSelected ? 4.5 : 3.5,
-          opacity: isSelected ? 0.95 : 0.75,
-          dashArray: isDeadReckon ? '6, 6' : isSelected ? '8, 6' : undefined,
+          color: isMissionActiveForVeh ? '#0284C7' : routeColor,
+          weight: (isSelected || isMissionActiveForVeh) ? 5 : 3.5,
+          opacity: (isSelected || isMissionActiveForVeh) ? 0.98 : 0.75,
+          dashArray: isDeadReckon ? '6, 6' : (isSelected || isMissionActiveForVeh) ? '8, 6' : undefined,
           lineCap: 'round',
           lineJoin: 'round',
         }).addTo(group);
@@ -526,8 +543,8 @@ export const TacticalMapDeck: React.FC = () => {
           </div>
         `, { sticky: true, offset: [0, -10] });
 
-        // Highlight Origin and Destination Hubs when vehicle is selected or inspected
-        if (isSelected && routeCoords.length >= 2) {
+        // Highlight Origin and Destination Hubs when vehicle is selected or inspected OR part of active mission
+        if ((isSelected || isMissionActiveForVeh) && routeCoords.length >= 2) {
           const originCoord = routeCoords[0];
           const destCoord = routeCoords[routeCoords.length - 1];
 
@@ -751,6 +768,52 @@ export const TacticalMapDeck: React.FC = () => {
               Top 5 Paths
             </span>
           </div>
+
+          {/* Active Dispatched Mission Link in Left Sidebar */}
+          {activeDispatchedMission && (
+            <div className="p-2.5 rounded-sm bg-status-open-tint border border-status-open-solid/50 text-xs space-y-1.5 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-status-open-text flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping" />
+                  <span>Approved Mission: {activeDispatchedMission.id}</span>
+                </span>
+                <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-xs bg-status-open-solid text-white">
+                  IN_TRANSIT
+                </span>
+              </div>
+              <p className="text-[11px] text-text-secondary">
+                {activeDispatchedMission.communityName} • {activeDispatchedMission.recommendedVehicleType}
+              </p>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => {
+                    setOriginHub('silchar');
+                    setDestinationHub('kolasib');
+                    setSelectedVehicleId('Medic-01');
+                    setIsInspectorOpen(true);
+                    if (mapInstanceRef.current) {
+                      mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.0 });
+                    }
+                  }}
+                  className="flex-1 py-1 text-[11px] font-semibold bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer"
+                >
+                  <Route className="w-3.5 h-3.5" />
+                  <span>Corridor (Silchar ➔ Kolasib)</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (mapInstanceRef.current) {
+                      mapInstanceRef.current.flyTo([24.38, 92.72], 11, { duration: 1.0 });
+                    }
+                  }}
+                  className="p-1 text-[11px] bg-surface border border-border rounded-xs hover:bg-surface-subtle text-text-primary flex items-center justify-center cursor-pointer"
+                  title="Center on Convoy"
+                >
+                  <Crosshair className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Origin & Destination */}
           <div className="space-y-2">
@@ -1100,6 +1163,44 @@ export const TacticalMapDeck: React.FC = () => {
 
       {/* Center: Leaflet Tactical Map Deck */}
       <div className="flex-1 relative flex flex-col h-full overflow-hidden isolate">
+        {/* Active Dispatched Mission HUD Bar */}
+        {activeDispatchedMission && (
+          <div className="bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-status-open-solid/40 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs z-30 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-status-open-solid animate-ping" />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-status-open-tint text-status-open-text border border-status-open-solid/40">
+                  {activeDispatchedMission.id} [IN_TRANSIT]
+                </span>
+                <span className="font-bold text-xs text-text-primary">
+                  {activeDispatchedMission.communityName}
+                </span>
+                <span className="text-[11px] text-text-secondary hidden md:inline">
+                  • Rig: <strong>{activeDispatchedMission.recommendedVehicleType}</strong> • Detour: <strong className="text-status-open-text">{activeDispatchedMission.suggestedDetour}</strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setOriginHub('silchar');
+                  setDestinationHub('kolasib');
+                  setSelectedVehicleId('Medic-01');
+                  setIsInspectorOpen(true);
+                  if (mapInstanceRef.current) {
+                    mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.0 });
+                  }
+                }}
+                className="px-2.5 py-1 text-xs font-semibold bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-xs flex items-center gap-1 btn-press cursor-pointer shadow-xs"
+              >
+                <Crosshair className="w-3.5 h-3.5" />
+                <span>Focus Convoy on Map</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Map Container: rendered first in DOM with isolated z-0 layer */}
         <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
 

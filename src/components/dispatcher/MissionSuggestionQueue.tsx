@@ -164,6 +164,23 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
                   </button>
                 </div>
               )}
+
+              {isInTransit && (
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border">
+                  <div className="flex items-center gap-1.5 text-status-open-text font-medium text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping" />
+                    <span>Convoy Medic-01 Live Tracking Active</span>
+                  </div>
+
+                  <button
+                    onClick={() => onApproveAndDispatch(mission.id)}
+                    className="px-3.5 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white font-semibold rounded-sm flex items-center gap-1.5 btn-press shadow-xs cursor-pointer text-xs"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>View &amp; Track on Tactical GIS Map ➔</span>
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
