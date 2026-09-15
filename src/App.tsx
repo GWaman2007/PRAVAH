@@ -35,7 +35,7 @@ const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-page-bg flex flex-col pb-24">
       {/* Unified Sticky Platform Header & Navigation Deck */}
-      <header className="sticky top-0 z-40 bg-surface border-b border-border shadow-xs">
+      <header className="sticky top-0 z-50 bg-surface border-b border-border shadow-xs">
         <Header />
         <Navigation />
       </header>

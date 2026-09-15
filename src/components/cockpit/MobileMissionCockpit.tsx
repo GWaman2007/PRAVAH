@@ -197,7 +197,7 @@ export const MobileMissionCockpit: React.FC = () => {
   };
 
   return (
-    <div className="max-w-md mx-auto px-3 py-4 space-y-3 pb-32 select-none text-xs text-text-primary">
+    <div className="max-w-md mx-auto px-3 py-4 space-y-3 pb-44 select-none text-xs text-text-primary">
       {/* 1. Google Maps Style Maneuver Banner */}
       <div className="bg-[#1B4B73] dark:bg-[#123A5A] text-white p-4 rounded-md shadow-md flex items-center justify-between gap-3 animate-fadeIn">
         <div className="flex items-center gap-3">
@@ -296,7 +296,7 @@ export const MobileMissionCockpit: React.FC = () => {
       </div>
 
       {/* 4. Center Interactive 2.5D Leaflet Navigation Map */}
-      <div className="bg-surface border border-border rounded-md shadow-xs overflow-hidden">
+      <div className="bg-surface border border-border rounded-md shadow-xs overflow-hidden relative isolate z-0">
         <div className="p-2.5 bg-surface-subtle border-b border-border flex items-center justify-between text-[11px]">
           <span className="font-semibold text-text-primary flex items-center gap-1.5">
             <Navigation className="w-3.5 h-3.5 text-primary" />
@@ -305,9 +305,9 @@ export const MobileMissionCockpit: React.FC = () => {
           <span className="font-mono text-[10px] text-primary">Heading: {Math.round(activeVehicle.heading_deg)}° S</span>
         </div>
 
-        {/* Embedded Map Canvas */}
-        <div className="relative h-64 w-full">
-          <div ref={mapContainerRef} className="w-full h-full" />
+        {/* Embedded Map Canvas strictly contained inside card */}
+        <div className="relative h-64 w-full overflow-hidden isolate z-0 rounded-b-md">
+          <div ref={mapContainerRef} className="w-full h-full rounded-b-md" />
 
           {/* Roadblock Ahead Simulated Alert Banner */}
           {roadblockAheadSimulated && (
@@ -402,7 +402,7 @@ export const MobileMissionCockpit: React.FC = () => {
       </div>
 
       {/* 7. BOTTOM FIXED ACTION HUD (Thumb-Reachable 44x44px Targets) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-md border-t border-border p-3 z-30 shadow-lg">
+      <div className="fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-md border-t border-border p-3 z-40 shadow-lg">
         <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
           {/* Action 1: SOS Beacon Button */}
           <button
