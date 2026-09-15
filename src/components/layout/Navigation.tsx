@@ -66,7 +66,8 @@ export const Navigation: React.FC = () => {
     if (activeRole === 'FIELD_OFFICER') {
       return item.id === 'MOBILE_COCKPIT' || item.id === 'GROUND_FEED' || item.id === 'GIS_COMMAND';
     }
-    return true; // SUPER_ADMIN & FLEET_DISPATCHER have full operational access
+    // SUPER_ADMIN & FLEET_DISPATCHER have full central command access; cockpit is dedicated to field roles
+    return item.id !== 'MOBILE_COCKPIT';
   });
 
   return (

@@ -17,6 +17,7 @@ import { AlertOctagon, X } from 'lucide-react';
 const AppContent: React.FC = () => {
   const {
     activeView,
+    activeRole,
     alerts,
     vehicles,
     acknowledgeAlert,
@@ -71,8 +72,8 @@ const AppContent: React.FC = () => {
         {activeView === 'MOBILE_COCKPIT' && <MobileMissionCockpit />}
       </main>
 
-      {/* Global SOS Distress Signal Intercept Modal */}
-      {pendingSOSAlert && (
+      {/* Global SOS Distress Signal Intercept Modal - Command Roles (Super Admin / Dispatcher) Only */}
+      {pendingSOSAlert && (activeRole === 'SUPER_ADMIN' || activeRole === 'FLEET_DISPATCHER') && (
         <GlobalSOSInterceptModal
           alert={pendingSOSAlert}
           vehicle={sosVehicle}

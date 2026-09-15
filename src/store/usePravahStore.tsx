@@ -96,6 +96,7 @@ interface PravahStoreContextType {
   toggleVehicleHalt: (id: string) => void;
   toggleVehicleDeviation: (id: string) => void;
   triggerVehicleSOS: (id: string) => void;
+  cancelVehicleSOS: (id: string) => void;
 
   // Priority Communities
   communities: CommunityWithCalculation[];
@@ -151,6 +152,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 1. UAC & Role Switcher
   const [activeRole, setActiveRole] = useState<UserRole>('SUPER_ADMIN');
+  const activeRoleRef = useRef<UserRole>(activeRole);
+  useEffect(() => {
+    activeRoleRef.current = activeRole;
+  }, [activeRole]);
+
   const userContext: UserContext = useMemo(() => {
     switch (activeRole) {
       case 'SUPER_ADMIN':
@@ -196,6 +202,8 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setActiveRole(role);
     if (role === 'DRIVER' || role === 'FIELD_OFFICER') {
       setActiveView('MOBILE_COCKPIT');
+    } else {
+      setActiveView((current) => (current === 'MOBILE_COCKPIT' ? 'GIS_COMMAND' : current));
     }
   }, []);
 
@@ -477,12 +485,27 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         acknowledged: false,
       };
       setAlerts((prev) => [sosAlert, ...prev]);
-      setPendingSOSAlert(sosAlert);
+
+      // RBAC: Only Super Admin and Fleet Dispatcher see the executive QRT dispatch modal
+      if (activeRoleRef.current === 'SUPER_ADMIN' || activeRoleRef.current === 'FLEET_DISPATCHER') {
+        setPendingSOSAlert(sosAlert);
+      }
+
       if (socketRef.current?.connected) {
         socketRef.current.emit('TRIGGER_DRIVER_SOS', { vehicleId: id, alert: sosAlert });
       }
     }
   }, [vehicles]);
+
+  const cancelVehicleSOS = useCallback((id: string) => {
+    setVehicles((prev) =>
+      prev.map((v) => (v.vehicle_id === id ? { ...v, is_sos_manual: false, status: 'ON_ROUTE' } : v))
+    );
+    setPendingSOSAlert((curr) => (curr?.vehicle_id === id ? null : curr));
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('CANCEL_DRIVER_SOS', { vehicleId: id });
+    }
+  }, []);
 
   // Telemetry simulation tick loop
   useEffect(() => {
@@ -1276,7 +1299,26 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         console.warn('🚨 RECEIVED SOS FROM WEBSOCKET:', payload);
         if (payload.alert) {
           setAlerts((prev) => [payload.alert, ...prev]);
-          setPendingSOSAlert(payload.alert);
+          // Only Command roles receive the modal to authorize QRT dispatch
+          if (activeRoleRef.current === 'SUPER_ADMIN' || activeRoleRef.current === 'FLEET_DISPATCHER') {
+            setPendingSOSAlert(payload.alert);
+          }
+        }
+        const vId = payload.vehicleId || payload.vehicle?.vehicle_id;
+        if (vId) {
+          setVehicles((prev) =>
+            prev.map((v) => (v.vehicle_id === vId ? { ...v, is_sos_manual: true, status: 'SOS_ALERT' } : v))
+          );
+        }
+      });
+
+      socket.on('DRIVER_SOS_CANCELLED', (payload: any) => {
+        const vId = payload.vehicleId;
+        if (vId) {
+          setVehicles((prev) =>
+            prev.map((v) => (v.vehicle_id === vId ? { ...v, is_sos_manual: false, status: 'ON_ROUTE' } : v))
+          );
+          setPendingSOSAlert((curr) => (curr?.vehicle_id === vId ? null : curr));
         }
       });
 
@@ -1374,6 +1416,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     toggleVehicleHalt,
     toggleVehicleDeviation,
     triggerVehicleSOS,
+    cancelVehicleSOS,
     communities,
     selectedCommunityId,
     setSelectedCommunityId,

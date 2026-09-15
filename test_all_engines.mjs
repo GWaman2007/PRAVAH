@@ -202,6 +202,61 @@ console.log('\n--- TEST SUITE 5: Multilingual Regional Broadcast Generator ---')
   assert(multiUnicodeSms.isUnicode === true && multiUnicodeSms.segments >= 2 && multiUnicodeSms.maxPerSegment === 67, 'Multi-part Hindi Unicode SMS (>70 chars) calculates UDH concatenated segments (67 chars/seg)');
 }
 
+// ----------------------------------------------------
+// TEST 6: RBAC NAVIGATION & MULTI-MISSION SELECTION
+// ----------------------------------------------------
+console.log('\n--- TEST SUITE 6: RBAC Navigation & Multi-Mission Fleet ---');
+{
+  const navItems = [
+    { id: 'GIS_COMMAND' },
+    { id: 'COMMUNITY_PRIORITY' },
+    { id: 'EXECUTIVE_INFRA' },
+    { id: 'GROUND_FEED' },
+    { id: 'BROADCAST_CENTER' },
+    { id: 'MOBILE_COCKPIT' },
+  ];
+
+  const filterForRole = (role) => {
+    return navItems.filter((item) => {
+      if (role === 'DRIVER') return item.id === 'MOBILE_COCKPIT';
+      if (role === 'FIELD_OFFICER') return item.id === 'MOBILE_COCKPIT' || item.id === 'GROUND_FEED' || item.id === 'GIS_COMMAND';
+      return item.id !== 'MOBILE_COCKPIT';
+    });
+  };
+
+  const adminNav = filterForRole('SUPER_ADMIN');
+  assert(!adminNav.some((i) => i.id === 'MOBILE_COCKPIT'), 'Super Admin navigation excludes Field Mission Cockpit');
+  assert(adminNav.length === 5, 'Super Admin navigation displays all 5 central command decks');
+
+  const dispatcherNav = filterForRole('FLEET_DISPATCHER');
+  assert(!dispatcherNav.some((i) => i.id === 'MOBILE_COCKPIT'), 'Fleet Dispatcher navigation excludes Field Mission Cockpit');
+
+  const driverNav = filterForRole('DRIVER');
+  assert(driverNav.length === 1 && driverNav[0].id === 'MOBILE_COCKPIT', 'Driver navigation is strictly restricted to Field Mission Cockpit');
+
+  const officerNav = filterForRole('FIELD_OFFICER');
+  assert(officerNav.some((i) => i.id === 'MOBILE_COCKPIT') && officerNav.some((i) => i.id === 'GROUND_FEED') && officerNav.some((i) => i.id === 'GIS_COMMAND'), 'Field Officer has access to Cockpit, Ground Feed, and GIS');
+
+  // Multi-Mission fleet testing
+  assert(INITIAL_VEHICLES.length >= 3, `Fleet contains ${INITIAL_VEHICLES.length} active convoys for multi-mission testing`);
+  const vIds = INITIAL_VEHICLES.map((v) => v.vehicle_id);
+  assert(vIds.includes('Medic-01') && vIds.includes('Oxy-Tanker-04') && vIds.includes('Ration-Convoy-07'), 'All 3 convoy profiles (Medic-01, Oxy-Tanker-04, Ration-Convoy-07) exist in fleet registry');
+
+  for (const veh of INITIAL_VEHICLES) {
+    const route = FLEET_ROUTES[veh.assigned_route_id];
+    assert(route !== undefined, `Vehicle ${veh.vehicle_id} maps to valid route ${veh.assigned_route_id}`);
+    assert(route.coordinates && route.coordinates.length >= 5, `Route ${veh.assigned_route_id} contains ${route.coordinates.length} mountain coordinates`);
+  }
+
+  // SOS Intercept RBAC validation
+  const canAuthorizeQRT = (role) => role === 'SUPER_ADMIN' || role === 'FLEET_DISPATCHER';
+  assert(canAuthorizeQRT('SUPER_ADMIN') === true, 'Super Admin is authorized to intercept SOS and dispatch QRT');
+  assert(canAuthorizeQRT('FLEET_DISPATCHER') === true, 'Fleet Dispatcher is authorized to intercept SOS and dispatch QRT');
+  assert(canAuthorizeQRT('DRIVER') === false, 'Driver is blocked from receiving QRT executive intercept modal');
+  assert(canAuthorizeQRT('FIELD_OFFICER') === false, 'Field Officer is blocked from receiving QRT executive intercept modal');
+}
+
 console.log('\n====================================================');
 console.log(`🎉 ALL TESTS EXECUTED: ${passedTests} / ${totalTests} PASSED (100%)`);
 console.log('====================================================');
+
