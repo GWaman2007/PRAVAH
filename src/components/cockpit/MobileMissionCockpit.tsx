@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
-import * as maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   Navigation,
   AlertTriangle,
@@ -23,6 +23,9 @@ import {
 } from 'lucide-react';
 import { playAckChime, playEmergencyAlertSound } from '../../utils/audioAlert';
 import { FLEET_ROUTES, BLACKOUT_ZONES } from '../../data/fleetData';
+import { IncidentReportModal } from '../feed/IncidentReportModal';
+import { DataStalenessChip } from '../layout/DataStalenessChip';
+import type { CorridorFlair } from '../../types';
 
 export const MobileMissionCockpit: React.FC = () => {
   const {
@@ -62,6 +65,7 @@ export const MobileMissionCockpit: React.FC = () => {
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const baseTileLayerRef = useRef<L.TileLayer | null>(null);
   const vehicleMarkerRef = useRef<L.Marker | null>(null);
   const routePolylineRef = useRef<L.Polyline | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
@@ -99,21 +103,31 @@ export const MobileMissionCockpit: React.FC = () => {
 
   const currentManeuver = getManeuverDetails(activeVehicle.vehicle_id);
 
-  // Initialize MapLibre GL Map
+  // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: [activeVehicle.current_coords[1], activeVehicle.current_coords[0]],
+    const map = L.map(mapContainerRef.current, {
+      center: activeVehicle.current_coords,
       zoom: 11,
+      zoomControl: false,
       attributionControl: false,
     });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const baseTileUrl =
+      theme === 'dark'
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+    const tileLayer = L.tileLayer(baseTileUrl, {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
       maxZoom: 18,
+      minZoom: 4,
+      subdomains: 'abcd',
+      crossOrigin: true,
     }).addTo(map);
+    tileLayer.bringToBack();
+    baseTileLayerRef.current = tileLayer;
 
     // Initial Route Polyline
     routePolylineRef.current = L.polyline(assignedRoute.coordinates, {
@@ -128,334 +142,291 @@ export const MobileMissionCockpit: React.FC = () => {
         activeVehicle.assigned_route_id.includes('SK')
           ? z.id === 'ZONE-BO-02'
           : activeVehicle.assigned_route_id.includes('NL')
-            ? z.id === 'ZONE-BO-03'
-            : z.id === 'ZONE-BO-01'
+          ? z.id === 'ZONE-BO-03'
+          : z.id === 'ZONE-BO-01'
       ) || BLACKOUT_ZONES[0];
 
-    map.addSource('cockpit-blackout', {
-      type: 'geojson',
-      data: {
-        type: 'Feature',
-        geometry: {
-          type: 'Polygon',
-          coordinates: [toGeoJSONLineString(blackoutZone.polygon)],
-        },
-        properties: {
-          name: blackoutZone.name,
-        },
-      },
-    });
+    blackoutPolygonRef.current = L.polygon(blackoutZone.polygon, {
+      color: '#B54708',
+      fillColor: '#FFFAEB',
+      fillOpacity: 0.35,
+      weight: 2,
+      dashArray: '4, 4',
+    })
+      .addTo(map)
+      .bindPopup(`${blackoutZone.name} (Expected transit: ${blackoutZone.expectedTransitMinutes}m)`);
 
-    map.addLayer({
-      id: 'cockpit-blackout-fill',
-      type: 'fill',
-      source: 'cockpit-blackout',
-      paint: {
-        'fill-color': '#B54708',
-        'fill-opacity': 0.25,
-      },
-    });
-
-    map.addLayer({
-      id: 'cockpit-blackout-line',
-      type: 'line',
-      source: 'cockpit-blackout',
-      paint: {
-        'line-color': '#D97706',
-        'line-width': 2,
-        'line-dasharray': [3, 2],
-      },
-    });
-
-    // Destination Pin Marker
+    // Destination Pin
     const destCoords = assignedRoute.coordinates[assignedRoute.coordinates.length - 1];
-    const destEl = document.createElement('div');
-    destEl.innerHTML = `<div style="background-color:#1B4B73;color:white;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:11px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);white-space:nowrap;">🏥 ${targetCommunity.name.split(' ')[0]}</div>`;
-    destMarkerRef.current = new maplibregl.Marker({ element: destEl })
-      .setLngLat([destCoords[1], destCoords[0]])
-      .addTo(map);
+    const destIcon = L.divIcon({
+      html: `<div style="background-color:#1B4B73;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;font-size:10px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);text-align:center;white-space:nowrap;">🏥 ${targetCommunity.name.split(' ')[0]}</div>`,
+      className: 'custom-hospital-icon',
+      iconSize: [80, 24],
+      iconAnchor: [40, 12],
+    });
+    destMarkerRef.current = L.marker(destCoords, { icon: destIcon }).addTo(map);
 
-    // Vehicle Marker with Dynamic Heading
-    const vehEl = document.createElement('div');
-    vehEl.className = 'cockpit-vehicle-marker';
-    vehEl.innerHTML = `
-        <div style="background:#1B4B73; border:2.5px solid white; border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(0,0,0,0.4);">
-          <div class="veh-arrow" style="transform: rotate(${activeVehicle.heading_deg}deg); transition: transform 0.4s ease; display:flex; align-items:center; justify-content:center;">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="#FFFFFF">
+    // Vehicle Marker with Heading
+    const truckIcon = L.divIcon({
+      html: `
+        <div style="background:#1B4B73; border:2.5px solid white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(0,0,0,0.4);">
+          <div style="transform: rotate(${activeVehicle.heading_deg}deg); transition: transform 0.3s ease; display:flex; align-items:center; justify-content:center;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="#FFFFFF">
               <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
             </svg>
           </div>
         </div>
-      `;
-    vehicleMarkerRef.current = new maplibregl.Marker({ element: vehEl })
-      .setLngLat([activeVehicle.current_coords[1], activeVehicle.current_coords[0]])
-      .addTo(map);
-  });
-
-  mapInstanceRef.current = map;
-
-  // Trigger size recalculation after layout settles
-  const initialResizeTimer = setTimeout(() => {
-    map.invalidateSize();
-  }, 150);
-
-  // Attach ResizeObserver to keep tiles rendered during tab toggling
-  const resizeObserver = new ResizeObserver(() => {
-    map.invalidateSize();
-  });
-  if (mapContainerRef.current) {
-    resizeObserver.observe(mapContainerRef.current);
-  }
-
-  return () => {
-    clearTimeout(initialResizeTimer);
-    resizeObserver.disconnect();
-    map.remove();
-    mapInstanceRef.current = null;
-  };
-}, []);
-
-// Dynamic Dark Mode Tile Layer Swap - Clean flush of stale raster tiles
-useEffect(() => {
-  if (mapInstanceRef.current) {
-    if (baseTileLayerRef.current) {
-      mapInstanceRef.current.removeLayer(baseTileLayerRef.current);
-    }
-    const tileUrl =
-      theme === 'dark'
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-    const newTileLayer = L.tileLayer(tileUrl, {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxZoom: 18,
-      minZoom: 4,
-      subdomains: 'abcd',
-      crossOrigin: true,
-    }).addTo(mapInstanceRef.current);
-    newTileLayer.bringToBack();
-    baseTileLayerRef.current = newTileLayer;
-
-    setTimeout(() => {
-      mapInstanceRef.current?.invalidateSize();
-    }, 150);
-  }
-}, [theme]);
-
-// Update Route, Destination, and Blackout when vehicle or route switches
-useEffect(() => {
-  const map = mapInstanceRef.current;
-  if (!map || !isMapLoadedRef.current) return;
-
-  // Update route source
-  const routeSource = map.getSource('cockpit-route') as maplibregl.GeoJSONSource;
-  if (routeSource) {
-    routeSource.setData({
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: toGeoJSONLineString(assignedRoute.coordinates),
-      },
-      properties: {},
+      `,
+      className: 'custom-truck-icon',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
     });
-  }
+    vehicleMarkerRef.current = L.marker(activeVehicle.current_coords, { icon: truckIcon }).addTo(map);
 
-  // Update destination marker
-  const destCoords = assignedRoute.coordinates[assignedRoute.coordinates.length - 1];
-  if (destMarkerRef.current) {
-    destMarkerRef.current.setLngLat([destCoords[1], destCoords[0]]);
-  }
+    mapInstanceRef.current = map;
 
-  // Update blackout polygon
-  const blackoutZone =
-    BLACKOUT_ZONES.find((z) =>
-      activeVehicle.assigned_route_id.includes('SK')
-        ? z.id === 'ZONE-BO-02'
-        : activeVehicle.assigned_route_id.includes('NL')
+    // Trigger size recalculation after layout settles
+    const initialResizeTimer = setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+
+    // Attach ResizeObserver to keep tiles rendered during tab toggling
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    if (mapContainerRef.current) {
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
+    return () => {
+      clearTimeout(initialResizeTimer);
+      resizeObserver.disconnect();
+      map.remove();
+      mapInstanceRef.current = null;
+      baseTileLayerRef.current = null;
+    };
+  }, []);
+
+  // Dynamic Dark Mode Tile Layer Swap - Clean flush of stale raster tiles
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      if (baseTileLayerRef.current) {
+        mapInstanceRef.current.removeLayer(baseTileLayerRef.current);
+      }
+      const tileUrl =
+        theme === 'dark'
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+      const newTileLayer = L.tileLayer(tileUrl, {
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        maxZoom: 18,
+        minZoom: 4,
+        subdomains: 'abcd',
+        crossOrigin: true,
+      }).addTo(mapInstanceRef.current);
+      newTileLayer.bringToBack();
+      baseTileLayerRef.current = newTileLayer;
+
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 150);
+    }
+  }, [theme]);
+
+  // Switch route and destination markers when activeVehicle changes
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    // Update route polyline
+    if (routePolylineRef.current) {
+      routePolylineRef.current.setLatLngs(assignedRoute.coordinates);
+    }
+
+    // Update destination marker
+    const destCoords = assignedRoute.coordinates[assignedRoute.coordinates.length - 1];
+    if (destMarkerRef.current) {
+      destMarkerRef.current.setLatLng(destCoords);
+      destMarkerRef.current.setIcon(
+        L.divIcon({
+          html: `<div style="background-color:#1B4B73;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;font-size:10px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);text-align:center;white-space:nowrap;">🏥 ${targetCommunity.name.split(' ')[0]}</div>`,
+          className: 'custom-hospital-icon',
+          iconSize: [80, 24],
+          iconAnchor: [40, 12],
+        })
+      );
+    }
+
+    // Update blackout polygon
+    const blackoutZone =
+      BLACKOUT_ZONES.find((z) =>
+        activeVehicle.assigned_route_id.includes('SK')
+          ? z.id === 'ZONE-BO-02'
+          : activeVehicle.assigned_route_id.includes('NL')
           ? z.id === 'ZONE-BO-03'
           : z.id === 'ZONE-BO-01'
-    ) || BLACKOUT_ZONES[0];
+      ) || BLACKOUT_ZONES[0];
 
-  const blackoutSource = map.getSource('cockpit-blackout') as maplibregl.GeoJSONSource;
-  if (blackoutSource) {
-    blackoutSource.setData({
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [toGeoJSONLineString(blackoutZone.polygon)],
-      },
-      properties: { name: blackoutZone.name },
-    });
-  }
-
-  map.easeTo({
-    center: [activeVehicle.current_coords[1], activeVehicle.current_coords[0]],
-    zoom: 11,
-    duration: 600,
-  });
-}, [activeVehicle.vehicle_id, activeVehicle.assigned_route_id, targetCommunity.name]);
-
-// Update vehicle position & heading rotation
-useEffect(() => {
-  const map = mapInstanceRef.current;
-  if (!map || !vehicleMarkerRef.current) return;
-
-  const [lat, lng] = activeVehicle.current_coords;
-  vehicleMarkerRef.current.setLngLat([lng, lat]);
-
-  const el = vehicleMarkerRef.current.getElement();
-  if (el) {
-    const arrow = el.querySelector('.veh-arrow') as HTMLElement;
-    if (arrow) {
-      arrow.style.transform = `rotate(${activeVehicle.heading_deg}deg)`;
+    if (blackoutPolygonRef.current) {
+      blackoutPolygonRef.current.setLatLngs(blackoutZone.polygon);
+      blackoutPolygonRef.current.setPopupContent(
+        `${blackoutZone.name} (Expected transit: ${blackoutZone.expectedTransitMinutes}m)`
+      );
     }
-  }
 
-  map.easeTo({ center: [lng, lat], zoom: 11, duration: 600 });
-}, [activeVehicle.current_coords, activeVehicle.heading_deg]);
+    // Re-center map
+    mapInstanceRef.current.setView(activeVehicle.current_coords, 11, { animate: true });
+  }, [activeVehicle.vehicle_id, activeVehicle.assigned_route_id, targetCommunity.name]);
 
-// ResizeObserver for responsive cockpit layout
-useEffect(() => {
-  if (!mapContainerRef.current) return;
-  const ro = new ResizeObserver(() => {
-    mapInstanceRef.current?.resize();
-  });
-  ro.observe(mapContainerRef.current);
-  return () => ro.disconnect();
-}, []);
+  // Update vehicle marker & re-center map on coordinates update
+  useEffect(() => {
+    if (!mapInstanceRef.current || !vehicleMarkerRef.current) return;
+    vehicleMarkerRef.current.setLatLng(activeVehicle.current_coords);
 
-const defaultCorridorFlair: CorridorFlair = activeVehicle.assigned_route_id.includes('SK')
-  ? 'r/NH-10-Sikkim'
-  : activeVehicle.assigned_route_id.includes('NL')
+    // Update marker heading rotation
+    const el = vehicleMarkerRef.current.getElement();
+    if (el) {
+      const inner = el.querySelector('svg')?.parentElement;
+      if (inner) inner.style.transform = `rotate(${activeVehicle.heading_deg}deg)`;
+    }
+
+    mapInstanceRef.current.panTo(activeVehicle.current_coords, { animate: true, duration: 0.8 });
+  }, [activeVehicle.current_coords, activeVehicle.heading_deg]);
+
+  const defaultCorridorFlair: CorridorFlair = activeVehicle.assigned_route_id.includes('SK')
+    ? 'r/NH-10-Sikkim'
+    : activeVehicle.assigned_route_id.includes('NL')
     ? 'r/NH-29-Nagaland'
     : 'r/Mizoram-NH-306';
 
-const defaultLocationName = `${assignedRoute.name} (en route to ${targetCommunity.name})`;
+  const defaultLocationName = `${assignedRoute.name} (en route to ${targetCommunity.name})`;
 
-return (
-  <div className="max-w-md mx-auto px-3 py-4 space-y-3 pb-44 select-none text-xs text-text-primary">
-    {/* 0. Multi-Mission Convoy Selector Strip */}
-    <div className="bg-surface border border-border p-2 rounded-md shadow-xs space-y-1.5">
-      <div className="flex items-center justify-between text-[11px] text-text-secondary px-0.5">
-        <span className="font-semibold text-text-primary flex items-center gap-1">
-          <Truck className="w-3.5 h-3.5 text-primary" />
-          <span>Assigned Mission Convoy</span>
-        </span>
-        <span className="font-mono text-[10px] text-text-secondary">
-          {vehicles.length} Active Missions (Switch for Field Testing)
-        </span>
-      </div>
-      <div className="grid grid-cols-3 gap-1.5">
-        {vehicles.map((veh) => {
-          const isSelected = veh.vehicle_id === activeVehicle.vehicle_id;
-          const hasSOS = veh.status === 'SOS_ALERT' || veh.is_sos_manual;
-          const isDead = veh.status === 'DEAD_ZONE_EXTRAPOLATING';
-          return (
-            <button
-              key={veh.vehicle_id}
-              onClick={() => setSelectedVehicleId(veh.vehicle_id)}
-              className={`p-2 rounded-sm text-left border transition-all btn-press cursor-pointer flex flex-col justify-between ${isSelected
-                  ? 'bg-primary-tint border-primary text-primary shadow-xs ring-1 ring-primary/40'
-                  : 'bg-surface-subtle hover:bg-surface border-border text-text-secondary'
+  return (
+    <div className="max-w-md mx-auto px-3 py-4 space-y-3 pb-44 select-none text-xs text-text-primary">
+      {/* 0. Multi-Mission Convoy Selector Strip */}
+      <div className="bg-surface border border-border p-2 rounded-md shadow-xs space-y-1.5">
+        <div className="flex items-center justify-between text-[11px] text-text-secondary px-0.5">
+          <span className="font-semibold text-text-primary flex items-center gap-1">
+            <Truck className="w-3.5 h-3.5 text-primary" />
+            <span>Assigned Mission Convoy</span>
+          </span>
+          <span className="font-mono text-[10px] text-text-secondary">
+            {vehicles.length} Active Missions (Switch for Field Testing)
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {vehicles.map((veh) => {
+            const isSelected = veh.vehicle_id === activeVehicle.vehicle_id;
+            const hasSOS = veh.status === 'SOS_ALERT' || veh.is_sos_manual;
+            const isDead = veh.status === 'DEAD_ZONE_EXTRAPOLATING';
+            return (
+              <button
+                key={veh.vehicle_id}
+                onClick={() => setSelectedVehicleId(veh.vehicle_id)}
+                className={`p-2 rounded-sm text-left border transition-all btn-press cursor-pointer flex flex-col justify-between ${
+                  isSelected
+                    ? 'bg-primary-tint border-primary text-primary shadow-xs ring-1 ring-primary/40'
+                    : 'bg-surface-subtle hover:bg-surface border-border text-text-secondary'
                 }`}
-            >
-              <div className="flex items-center justify-between w-full">
-                <span className="font-mono font-bold text-[11px] truncate">{veh.vehicle_id}</span>
-                {hasSOS ? (
-                  <span className="w-2 h-2 rounded-full bg-status-blocked-solid animate-ping" />
-                ) : isDead ? (
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                ) : (
-                  <span className="w-1.5 h-1.5 rounded-full bg-status-open-solid" />
-                )}
-              </div>
-              <div className="text-[9px] truncate font-medium mt-0.5 opacity-90">
-                Msn: {veh.mission_id}
-              </div>
-            </button>
-          );
-        })}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="font-mono font-bold text-[11px] truncate">{veh.vehicle_id}</span>
+                  {hasSOS ? (
+                    <span className="w-2 h-2 rounded-full bg-status-blocked-solid animate-ping" />
+                  ) : isDead ? (
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-status-open-solid" />
+                  )}
+                </div>
+                <div className="text-[9px] truncate font-medium mt-0.5 opacity-90">
+                  Msn: {veh.mission_id}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
-    </div>
 
-    {/* In-Cabin Emergency Distress Beacon Active Banner */}
-    {isSOS && (
-      <div className="bg-status-blocked-solid text-white p-3 rounded-md shadow-md flex items-center justify-between gap-3 animate-siren">
-        <div className="flex items-center gap-2">
-          <AlertOctagon className="w-5 h-5 shrink-0 animate-pulse text-white" />
+      {/* In-Cabin Emergency Distress Beacon Active Banner */}
+      {isSOS && (
+        <div className="bg-status-blocked-solid text-white p-3 rounded-md shadow-md flex items-center justify-between gap-3 animate-siren">
+          <div className="flex items-center gap-2">
+            <AlertOctagon className="w-5 h-5 shrink-0 animate-pulse text-white" />
+            <div>
+              <div className="font-bold text-xs uppercase tracking-wider text-white">
+                🚨 EMERGENCY DISTRESS BEACON ACTIVE
+              </div>
+              <div className="text-[10px] text-white/90 leading-tight">
+                Broadcasting coordinates to State Command &amp; QRT squads.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => cancelVehicleSOS(activeVehicle.vehicle_id)}
+            className="px-2.5 py-1 rounded-sm bg-white/20 hover:bg-white/30 text-white font-bold text-[10px] shrink-0 border border-white/30 transition-colors btn-press cursor-pointer"
+          >
+            Cancel SOS
+          </button>
+        </div>
+      )}
+
+      {/* 1. Google Maps Style Maneuver Banner */}
+      <div className="bg-[#1B4B73] dark:bg-[#123A5A] text-white p-4 rounded-md shadow-md flex items-center justify-between gap-3 animate-fadeIn">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-sm bg-white/15 flex items-center justify-center shrink-0 border border-white/20">
+            <CornerUpRight className="w-6 h-6 text-white" />
+          </div>
           <div>
-            <div className="font-bold text-xs uppercase tracking-wider text-white">
-              🚨 EMERGENCY DISTRESS BEACON ACTIVE
+            <div className="text-[10px] font-mono tracking-wider uppercase text-sky-200">
+              {currentManeuver.corridor}
             </div>
-            <div className="text-[10px] text-white/90 leading-tight">
-              Broadcasting coordinates to State Command &amp; QRT squads.
+            <h2 className="text-sm font-bold tracking-tight text-white leading-tight">
+              {currentManeuver.turn}
+            </h2>
+          </div>
+        </div>
+
+        <div className="text-right font-mono shrink-0">
+          <div className="text-base font-bold text-white">
+            {activeVehicle.speed_kmh || activeVehicle.current_speed_kmh || 38}{' '}
+            <span className="text-[10px] font-normal">km/h</span>
+          </div>
+          <div className="text-[10px] text-sky-200">ETA: {currentManeuver.eta}</div>
+        </div>
+      </div>
+
+      {/* 2. Mission ID & Offline Connectivity Pill */}
+      <div className="bg-surface border border-border p-2.5 sm:p-3 rounded-md shadow-xs flex items-center justify-between gap-2">
+        <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0">
+          <img
+            src={theme === 'dark' ? '/assets/pravah-emblem-white.png' : '/assets/pravah-emblem.png'}
+            alt="PRAVAH"
+            className="h-7 w-7 object-contain shrink-0"
+          />
+          <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping shrink-0" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-xs text-text-primary truncate">Mission {activeVehicle.mission_id}</span>
+              <span className="font-mono text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded-xs bg-primary-tint text-primary font-bold shrink-0">
+                {activeVehicle.vehicle_id}
+              </span>
             </div>
+            <p className="text-[10px] text-text-secondary truncate max-w-[120px] xs:max-w-[160px] sm:max-w-none">
+              Dest: <strong>{targetCommunity.name}</strong>
+            </p>
           </div>
         </div>
-        <button
-          onClick={() => cancelVehicleSOS(activeVehicle.vehicle_id)}
-          className="px-2.5 py-1 rounded-sm bg-white/20 hover:bg-white/30 text-white font-bold text-[10px] shrink-0 border border-white/30 transition-colors btn-press cursor-pointer"
-        >
-          Cancel SOS
-        </button>
-      </div>
-    )}
 
-    {/* 1. Google Maps Style Maneuver Banner */}
-    <div className="bg-[#1B4B73] dark:bg-[#123A5A] text-white p-4 rounded-md shadow-md flex items-center justify-between gap-3 animate-fadeIn">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-sm bg-white/15 flex items-center justify-center shrink-0 border border-white/20">
-          <CornerUpRight className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <div className="text-[10px] font-mono tracking-wider uppercase text-sky-200">
-            {currentManeuver.corridor}
-          </div>
-          <h2 className="text-sm font-bold tracking-tight text-white leading-tight">
-            {currentManeuver.turn}
-          </h2>
-        </div>
-      </div>
-
-      <div className="text-right font-mono shrink-0">
-        <div className="text-base font-bold text-white">
-          {activeVehicle.speed_kmh || activeVehicle.current_speed_kmh || 38}{' '}
-          <span className="text-[10px] font-normal">km/h</span>
-        </div>
-        <div className="text-[10px] text-sky-200">ETA: {currentManeuver.eta}</div>
-      </div>
-    </div>
-
-    {/* 2. Mission ID & Offline Connectivity Pill */}
-    <div className="bg-surface border border-border p-2.5 sm:p-3 rounded-md shadow-xs flex items-center justify-between gap-2">
-      <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0">
-        <img
-          src={theme === 'dark' ? '/assets/pravah-emblem-white.png' : '/assets/pravah-emblem.png'}
-          alt="PRAVAH"
-          className="h-7 w-7 object-contain shrink-0"
-        />
-        <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping shrink-0" />
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-xs text-text-primary truncate">Mission {activeVehicle.mission_id}</span>
-            <span className="font-mono text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded-xs bg-primary-tint text-primary font-bold shrink-0">
-              {activeVehicle.vehicle_id}
-            </span>
-          </div>
-          <p className="text-[10px] text-text-secondary truncate max-w-[120px] xs:max-w-[160px] sm:max-w-none">
-            Dest: <strong>{targetCommunity.name}</strong>
-          </p>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-        <DataStalenessChip compact />
-        <button
-          onClick={toggleSimulatedOffline}
-          className={`flex items-center space-x-1 px-2 py-1 rounded-sm text-[10px] font-semibold border btn-press ${isOnline
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <DataStalenessChip compact />
+          <button
+            onClick={toggleSimulatedOffline}
+            className={`flex items-center space-x-1 px-2 py-1 rounded-sm text-[10px] font-semibold border btn-press ${
+            isOnline
               ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
               : 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
-            }`}
+          }`}
         >
           {isOnline ? (
             <>
@@ -469,242 +440,246 @@ return (
             </>
           )}
         </button>
+        </div>
       </div>
-    </div>
 
-    {/* 3. Mountain Dead-Zone & Watchdog SLA Timer Card */}
-    <div
-      className={`p-3.5 rounded-md border shadow-xs space-y-1.5 ${isDeadZone
-          ? 'bg-status-highrisk-tint border-status-highrisk-solid text-status-highrisk-text'
-          : 'bg-surface border-border text-text-primary'
+      {/* 3. Mountain Dead-Zone & Watchdog SLA Timer Card */}
+      <div
+        className={`p-3.5 rounded-md border shadow-xs space-y-1.5 ${
+          isDeadZone
+            ? 'bg-status-highrisk-tint border-status-highrisk-solid text-status-highrisk-text'
+            : 'bg-surface border-border text-text-primary'
         }`}
-    >
-      <div className="flex items-center justify-between text-xs">
-        <div className="flex items-center space-x-1.5 font-bold">
-          <Radio className={`w-4 h-4 ${isDeadZone ? 'text-amber-600 animate-pulse' : 'text-primary'}`} />
-          <span>Cellular Dead-Zone Watchdog SLA</span>
-        </div>
-        <span className="font-mono text-[10px] font-bold">
-          {isDeadZone ? 'BLACKOUT EXTENUATION' : 'CELLULAR SATELLITE LOCK'}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-border/50">
-        <div>
-          <span className="text-text-secondary block">D-R Distance Extrapolated:</span>
-          <strong className="font-mono text-sm text-text-primary">
-            {activeVehicle.dead_reckoning_distance_m > 0
-              ? `${(activeVehicle.dead_reckoning_distance_m / 1000).toFixed(1)} km (IMU Dead-Reckoning)`
-              : '0.0 km (Real GPS)'}
-          </strong>
-        </div>
-        <div>
-          <span className="text-text-secondary block">Watchdog SLA Remaining:</span>
-          <strong className={`font-mono text-sm ${isDeadZone ? 'text-status-highrisk-text' : 'text-text-primary'}`}>
-            {isDeadZone ? '12 mins (Exit SLA: 28m)' : 'Nominal (0m Overdue)'}
-          </strong>
-        </div>
-      </div>
-    </div>
-
-    {/* 4. Center Interactive MapLibre Navigation Map */}
-    <div className="bg-surface border border-border rounded-md shadow-xs overflow-hidden relative isolate z-0">
-      <div className="p-2.5 bg-surface-subtle border-b border-border flex items-center justify-between text-[11px]">
-        <span className="font-semibold text-text-primary flex items-center gap-1.5 truncate mr-2">
-          <Navigation className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span className="truncate">Radar: {assignedRoute.name}</span>
-        </span>
-        <span className="font-mono text-[10px] text-primary shrink-0">
-          Heading: {Math.round(activeVehicle.heading_deg)}°
-        </span>
-      </div>
-
-      {/* Embedded Map Canvas strictly contained inside card */}
-      <div className="relative h-64 w-full overflow-hidden isolate z-0 rounded-b-md">
-        <div ref={mapContainerRef} className="w-full h-full rounded-b-md" />
-
-        {/* Roadblock Ahead Simulated Alert Banner */}
-        {roadblockAheadSimulated && (
-          <div className="absolute top-2 left-2 right-2 bg-status-blocked-solid text-white p-2.5 rounded-sm shadow-lg flex items-center justify-between text-xs animate-bounce z-20">
-            <div className="flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-white" />
-              <span className="font-bold">IMMINENT ROCKFALL 400m AHEAD</span>
-            </div>
-            <button
-              onClick={() => setRoadblockAheadSimulated(false)}
-              className="px-2 py-0.5 rounded-xs bg-surface text-status-blocked-text text-[10px] font-bold cursor-pointer hover:bg-surface-subtle"
-            >
-              Reroute Bypass
-            </button>
+      >
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-1.5 font-bold">
+            <Radio className={`w-4 h-4 ${isDeadZone ? 'text-amber-600 animate-pulse' : 'text-primary'}`} />
+            <span>Cellular Dead-Zone Watchdog SLA</span>
           </div>
-        )}
-      </div>
-    </div>
-
-    {/* 5. Floating Simulation Action Bar for Testing & Demo */}
-    <div className="bg-surface border border-border p-3 rounded-md shadow-xs space-y-2">
-      <div className="flex items-center justify-between text-[11px]">
-        <span className="font-semibold text-text-primary flex items-center gap-1">
-          <Sliders className="w-3 h-3 text-primary" />
-          <span>Telemetry Simulation &amp; Hazard Injection</span>
-        </span>
-        <span className="text-[10px] font-mono text-text-secondary">Speed: {simulationSpeed}x</span>
-      </div>
-
-      <div className="grid grid-cols-4 gap-1.5">
-        <button
-          onClick={toggleSimulation}
-          className={`py-1.5 px-2 rounded-xs font-semibold text-[10px] border flex items-center justify-center gap-1 btn-press cursor-pointer ${isSimulationRunning
-              ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
-              : 'bg-surface text-text-secondary border-border'
-            }`}
-        >
-          {isSimulationRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-          <span>{isSimulationRunning ? 'Pause' : 'Resume'}</span>
-        </button>
-
-        <button
-          onClick={() => setSimulationSpeed(simulationSpeed === 1 ? 2 : simulationSpeed === 2 ? 5 : 1)}
-          className="py-1.5 px-2 bg-surface hover:bg-surface-subtle text-text-primary rounded-xs border border-border font-mono text-[10px] font-bold btn-press cursor-pointer flex items-center justify-center gap-1"
-        >
-          <FastForward className="w-3 h-3 text-primary" />
-          <span>{simulationSpeed}x Spd</span>
-        </button>
-
-        <button
-          onClick={() => toggleVehicleHalt(activeVehicle.vehicle_id)}
-          className={`py-1.5 px-1.5 rounded-xs font-semibold text-[10px] border flex items-center justify-center gap-1 btn-press cursor-pointer ${isHalted
-              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40'
-              : 'bg-surface text-text-secondary border-border'
-            }`}
-        >
-          <AlertTriangle className="w-3 h-3" />
-          <span>{isHalted ? 'Resume' : 'Halt'}</span>
-        </button>
-
-        <button
-          onClick={() => setRoadblockAheadSimulated(!roadblockAheadSimulated)}
-          className="py-1.5 px-1.5 bg-surface hover:bg-surface-subtle text-text-primary rounded-xs border border-border text-[10px] font-semibold btn-press cursor-pointer flex items-center justify-center gap-1"
-        >
-          <AlertOctagon className="w-3 h-3 text-status-blocked-solid" />
-          <span>Roadblock</span>
-        </button>
-      </div>
-    </div>
-
-    {/* 6. Cargo Manifest Snapshot */}
-    <div className="bg-surface border border-border p-3 rounded-md shadow-xs space-y-1.5">
-      <div className="flex items-center justify-between text-[11px] font-semibold text-text-primary">
-        <span className="flex items-center gap-1.5">
-          <Package className="w-3.5 h-3.5 text-primary" />
-          <span>Relief Cargo Manifest ({activeVehicle.vehicle_id})</span>
-        </span>
-        <span className="text-[10px] font-mono text-status-open-text">VERIFIED</span>
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-        {activeVehicle.cargo_manifest && activeVehicle.cargo_manifest.length > 0 ? (
-          activeVehicle.cargo_manifest.slice(0, 4).map((c, idx) => (
-            <div
-              key={idx}
-              className="p-2 rounded-xs bg-surface-subtle border border-border flex items-center justify-between"
-            >
-              <span className="text-text-secondary truncate mr-1">{c.item.split('(')[0]}:</span>
-              <strong className="font-mono text-primary shrink-0">
-                {c.quantity} {c.unit}
-              </strong>
-            </div>
-          ))
-        ) : (
-          <div className="col-span-2 text-text-secondary italic">Standard Relief Supplies Manifested</div>
-        )}
-      </div>
-    </div>
-
-    {/* 7. BOTTOM FIXED ACTION HUD (Thumb-Reachable 44x44px Targets) */}
-    <div className="fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-md border-t border-border p-3 z-40 shadow-lg">
-      <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
-        {/* Action 1: SOS Beacon Button */}
-        <button
-          onClick={() => setIsSOSConfirmOpen(true)}
-          className="touch-target p-2 rounded-md bg-status-blocked-solid hover:bg-status-blocked-text text-white font-semibold text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer"
-        >
-          <AlertOctagon className="w-5 h-5 text-white animate-pulse" />
-          <span className="text-[11px]">Emergency SOS</span>
-        </button>
-
-        {/* Action 2: Field Officer Roadblock Clearance Report */}
-        <button
-          onClick={() => setClearanceModalOpen(true)}
-          className="touch-target p-2 rounded-md bg-surface border border-border text-text-primary hover:bg-surface-subtle font-medium text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer"
-        >
-          <ShieldCheck className="w-5 h-5 text-primary" />
-          <span className="text-[11px] text-center leading-tight">Report Roadblock</span>
-        </button>
-
-        {/* Action 3: Single-Tap MARK DELIVERED Handover */}
-        <button
-          onClick={() => {
-            playAckChime();
-            markMissionDelivered(targetCommunity.id, activeVehicle.vehicle_id);
-          }}
-          disabled={isDelivered}
-          className={`touch-target p-2 rounded-md font-semibold text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer ${isDelivered
-              ? 'bg-status-open-tint text-status-open-text border border-status-open-solid'
-              : 'bg-status-open-solid hover:bg-status-open-text text-white animate-pulse'
-            }`}
-        >
-          <CheckCircle2 className="w-5 h-5" />
-          <span className="text-[11px] text-center leading-tight">
-            {isDelivered ? 'Restock Complete' : 'CONFIRM DELIVERY'}
+          <span className="font-mono text-[10px] font-bold">
+            {isDeadZone ? 'BLACKOUT EXTENUATION' : 'CELLULAR SATELLITE LOCK'}
           </span>
-        </button>
-      </div>
-    </div>
+        </div>
 
-    {/* SOS Confirmation Modal */}
-    {isSOSConfirmOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
-        <div className="bg-surface border-2 border-status-blocked-solid rounded-md max-w-xs w-full p-5 space-y-4 text-center shadow-xl">
-          <AlertOctagon className="w-12 h-12 text-status-blocked-solid mx-auto animate-bounce" />
+        <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-border/50">
           <div>
-            <h3 className="text-base font-bold text-text-primary">Trigger Emergency SOS?</h3>
-            <p className="text-xs text-text-secondary mt-1">
-              Transmits distress beacon with GPS coordinates to MDoNER State Command &amp; Regional QRT squads.
-            </p>
+            <span className="text-text-secondary block">D-R Distance Extrapolated:</span>
+            <strong className="font-mono text-sm text-text-primary">
+              {activeVehicle.dead_reckoning_distance_m > 0
+                ? `${(activeVehicle.dead_reckoning_distance_m / 1000).toFixed(1)} km (IMU Dead-Reckoning)`
+                : '0.0 km (Real GPS)'}
+            </strong>
           </div>
-
-          <div className="grid grid-cols-2 gap-2 pt-2">
-            <button
-              onClick={() => setIsSOSConfirmOpen(false)}
-              className="py-2 rounded-sm border border-border text-xs font-semibold text-text-secondary hover:bg-surface-subtle btn-press cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                playEmergencyAlertSound();
-                triggerVehicleSOS(activeVehicle.vehicle_id);
-                setIsSOSConfirmOpen(false);
-              }}
-              className="py-2 rounded-sm bg-status-blocked-solid hover:bg-status-blocked-text text-white text-xs font-bold btn-press shadow-xs cursor-pointer"
-            >
-              Transmit SOS
-            </button>
+          <div>
+            <span className="text-text-secondary block">Watchdog SLA Remaining:</span>
+            <strong className={`font-mono text-sm ${isDeadZone ? 'text-status-highrisk-text' : 'text-text-primary'}`}>
+              {isDeadZone ? '12 mins (Exit SLA: 28m)' : 'Nominal (0m Overdue)'}
+            </strong>
           </div>
         </div>
       </div>
-    )}
 
-    {/* Unified Incident Report Modal with Mission Context */}
-    <IncidentReportModal
-      isOpen={clearanceModalOpen}
-      onClose={() => setClearanceModalOpen(false)}
-      defaultCorridor={defaultCorridorFlair}
-      defaultLocationName={defaultLocationName}
-      defaultCoords={activeVehicle.current_coords}
-      defaultCorridorId={activeVehicle.assigned_route_id}
-      defaultTitle={`Roadblock / Hazard on ${assignedRoute.name}`}
-    />
-  </div>
-);
+      {/* 4. Center Interactive 2.5D Leaflet Navigation Map */}
+      <div className="bg-surface border border-border rounded-md shadow-xs overflow-hidden relative isolate z-0">
+        <div className="p-2.5 bg-surface-subtle border-b border-border flex items-center justify-between text-[11px]">
+          <span className="font-semibold text-text-primary flex items-center gap-1.5 truncate mr-2">
+            <Navigation className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span className="truncate">Radar: {assignedRoute.name}</span>
+          </span>
+          <span className="font-mono text-[10px] text-primary shrink-0">
+            Heading: {Math.round(activeVehicle.heading_deg)}°
+          </span>
+        </div>
+
+        {/* Embedded Map Canvas strictly contained inside card */}
+        <div className="relative h-64 w-full overflow-hidden isolate z-0 rounded-b-md">
+          <div ref={mapContainerRef} className="w-full h-full rounded-b-md" />
+
+          {/* Roadblock Ahead Simulated Alert Banner */}
+          {roadblockAheadSimulated && (
+            <div className="absolute top-2 left-2 right-2 bg-status-blocked-solid text-white p-2.5 rounded-sm shadow-lg flex items-center justify-between text-xs animate-bounce z-20">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-white" />
+                <span className="font-bold">IMMINENT ROCKFALL 400m AHEAD</span>
+              </div>
+              <button
+                onClick={() => setRoadblockAheadSimulated(false)}
+                className="px-2 py-0.5 rounded-xs bg-surface text-status-blocked-text text-[10px] font-bold cursor-pointer hover:bg-surface-subtle"
+              >
+                Reroute Bypass
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 5. Floating Simulation Action Bar for Testing & Demo */}
+      <div className="bg-surface border border-border p-3 rounded-md shadow-xs space-y-2">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="font-semibold text-text-primary flex items-center gap-1">
+            <Sliders className="w-3 h-3 text-primary" />
+            <span>Telemetry Simulation &amp; Hazard Injection</span>
+          </span>
+          <span className="text-[10px] font-mono text-text-secondary">Speed: {simulationSpeed}x</span>
+        </div>
+
+        <div className="grid grid-cols-4 gap-1.5">
+          <button
+            onClick={toggleSimulation}
+            className={`py-1.5 px-2 rounded-xs font-semibold text-[10px] border flex items-center justify-center gap-1 btn-press cursor-pointer ${
+              isSimulationRunning
+                ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+                : 'bg-surface text-text-secondary border-border'
+            }`}
+          >
+            {isSimulationRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+            <span>{isSimulationRunning ? 'Pause' : 'Resume'}</span>
+          </button>
+
+          <button
+            onClick={() => setSimulationSpeed(simulationSpeed === 1 ? 2 : simulationSpeed === 2 ? 5 : 1)}
+            className="py-1.5 px-2 bg-surface hover:bg-surface-subtle text-text-primary rounded-xs border border-border font-mono text-[10px] font-bold btn-press cursor-pointer flex items-center justify-center gap-1"
+          >
+            <FastForward className="w-3 h-3 text-primary" />
+            <span>{simulationSpeed}x Spd</span>
+          </button>
+
+          <button
+            onClick={() => toggleVehicleHalt(activeVehicle.vehicle_id)}
+            className={`py-1.5 px-1.5 rounded-xs font-semibold text-[10px] border flex items-center justify-center gap-1 btn-press cursor-pointer ${
+              isHalted
+                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40'
+                : 'bg-surface text-text-secondary border-border'
+            }`}
+          >
+            <AlertTriangle className="w-3 h-3" />
+            <span>{isHalted ? 'Resume' : 'Halt'}</span>
+          </button>
+
+          <button
+            onClick={() => setRoadblockAheadSimulated(!roadblockAheadSimulated)}
+            className="py-1.5 px-1.5 bg-surface hover:bg-surface-subtle text-text-primary rounded-xs border border-border text-[10px] font-semibold btn-press cursor-pointer flex items-center justify-center gap-1"
+          >
+            <AlertOctagon className="w-3 h-3 text-status-blocked-solid" />
+            <span>Roadblock</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 6. Cargo Manifest Snapshot */}
+      <div className="bg-surface border border-border p-3 rounded-md shadow-xs space-y-1.5">
+        <div className="flex items-center justify-between text-[11px] font-semibold text-text-primary">
+          <span className="flex items-center gap-1.5">
+            <Package className="w-3.5 h-3.5 text-primary" />
+            <span>Relief Cargo Manifest ({activeVehicle.vehicle_id})</span>
+          </span>
+          <span className="text-[10px] font-mono text-status-open-text">VERIFIED</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+          {activeVehicle.cargo_manifest && activeVehicle.cargo_manifest.length > 0 ? (
+            activeVehicle.cargo_manifest.slice(0, 4).map((c, idx) => (
+              <div
+                key={idx}
+                className="p-2 rounded-xs bg-surface-subtle border border-border flex items-center justify-between"
+              >
+                <span className="text-text-secondary truncate mr-1">{c.item.split('(')[0]}:</span>
+                <strong className="font-mono text-primary shrink-0">
+                  {c.quantity} {c.unit}
+                </strong>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-2 text-text-secondary italic">Standard Relief Supplies Manifested</div>
+          )}
+        </div>
+      </div>
+
+      {/* 7. BOTTOM FIXED ACTION HUD (Thumb-Reachable 44x44px Targets) */}
+      <div className="fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-md border-t border-border p-3 z-40 shadow-lg">
+        <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
+          {/* Action 1: SOS Beacon Button */}
+          <button
+            onClick={() => setIsSOSConfirmOpen(true)}
+            className="touch-target p-2 rounded-md bg-status-blocked-solid hover:bg-status-blocked-text text-white font-semibold text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer"
+          >
+            <AlertOctagon className="w-5 h-5 text-white animate-pulse" />
+            <span className="text-[11px]">Emergency SOS</span>
+          </button>
+
+          {/* Action 2: Field Officer Roadblock Clearance Report */}
+          <button
+            onClick={() => setClearanceModalOpen(true)}
+            className="touch-target p-2 rounded-md bg-surface border border-border text-text-primary hover:bg-surface-subtle font-medium text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer"
+          >
+            <ShieldCheck className="w-5 h-5 text-primary" />
+            <span className="text-[11px] text-center leading-tight">Report Roadblock</span>
+          </button>
+
+          {/* Action 3: Single-Tap MARK DELIVERED Handover */}
+          <button
+            onClick={() => {
+              playAckChime();
+              markMissionDelivered(targetCommunity.id, activeVehicle.vehicle_id);
+            }}
+            disabled={isDelivered}
+            className={`touch-target p-2 rounded-md font-semibold text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer ${
+              isDelivered
+                ? 'bg-status-open-tint text-status-open-text border border-status-open-solid'
+                : 'bg-status-open-solid hover:bg-status-open-text text-white animate-pulse'
+            }`}
+          >
+            <CheckCircle2 className="w-5 h-5" />
+            <span className="text-[11px] text-center leading-tight">
+              {isDelivered ? 'Restock Complete' : 'CONFIRM DELIVERY'}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* SOS Confirmation Modal */}
+      {isSOSConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
+          <div className="bg-surface border-2 border-status-blocked-solid rounded-md max-w-xs w-full p-5 space-y-4 text-center shadow-xl">
+            <AlertOctagon className="w-12 h-12 text-status-blocked-solid mx-auto animate-bounce" />
+            <div>
+              <h3 className="text-base font-bold text-text-primary">Trigger Emergency SOS?</h3>
+              <p className="text-xs text-text-secondary mt-1">
+                Transmits distress beacon with GPS coordinates to MDoNER State Command &amp; Regional QRT squads.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                onClick={() => setIsSOSConfirmOpen(false)}
+                className="py-2 rounded-sm border border-border text-xs font-semibold text-text-secondary hover:bg-surface-subtle btn-press cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  playEmergencyAlertSound();
+                  triggerVehicleSOS(activeVehicle.vehicle_id);
+                  setIsSOSConfirmOpen(false);
+                }}
+                className="py-2 rounded-sm bg-status-blocked-solid hover:bg-status-blocked-text text-white text-xs font-bold btn-press shadow-xs cursor-pointer"
+              >
+                Transmit SOS
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unified Incident Report Modal with Mission Context */}
+      <IncidentReportModal
+        isOpen={clearanceModalOpen}
+        onClose={() => setClearanceModalOpen(false)}
+        defaultCorridor={defaultCorridorFlair}
+        defaultLocationName={defaultLocationName}
+        defaultCoords={activeVehicle.current_coords}
+        defaultCorridorId={activeVehicle.assigned_route_id}
+        defaultTitle={`Roadblock / Hazard on ${assignedRoute.name}`}
+      />
+    </div>
+  );
 };
