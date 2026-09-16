@@ -27,7 +27,20 @@ import { SUPPORTED_LANGUAGES, PRESET_TRANSLATIONS, PHONETIC_READINGS, generateBr
 import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngine';
 import { calculateCompositePriority } from '../engine/priorityEngine';
 import { stepVehicleSimulation, initRouteDistances } from '../engine/telemetryEngine';
-import { getOfflineQueue, queueIncidentOffline, clearOfflineQueue, calculateIncidentConfidence, STORAGE_KEYS } from '../engine/offlineSync';
+import {
+  getOfflineQueue,
+  queueIncidentOffline,
+  clearOfflineQueue,
+  calculateIncidentConfidence,
+  STORAGE_KEYS,
+  DEFAULT_INCIDENTS,
+  getPersistedIncidents,
+  persistIncidents,
+  getPersistedDisruptions,
+  persistDisruptions,
+  getPersistedMissions,
+  persistMissions,
+} from '../engine/offlineSync';
 
 interface PravahStoreContextType {
   // UAC & Role
@@ -277,7 +290,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           ...item,
           sync_status: 'SYNCED' as const,
         }));
-        return [...synced, ...prev];
+        const merged = [...synced, ...prev.filter((p) => !offlineQueue.some((q) => q.id === p.id))];
+        persistIncidents(merged);
+        return merged;
+      });
+      offlineQueue.forEach((item) => {
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('SUBMIT_INCIDENT', item);
+        }
       });
       clearOfflineQueue();
       setOfflineQueue([]);
@@ -308,7 +328,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         ...item,
         sync_status: 'SYNCED' as const,
       }));
-      return [...synced, ...prev.filter((p) => !queue.some((q) => q.id === p.id))];
+      const merged = [...synced, ...prev.filter((p) => !queue.some((q) => q.id === p.id))];
+      persistIncidents(merged);
+      return merged;
+    });
+    queue.forEach((item) => {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('SUBMIT_INCIDENT', item);
+      }
     });
     clearOfflineQueue();
     setOfflineQueue([]);
@@ -348,20 +375,27 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   // Active road disruptions map
-  const [activeDisruptions, setActiveDisruptions] = useState<Record<string, SegmentIncident>>({
-    'SEG-DIM-KOH-MAIN': {
-      status: 'TOTAL_BLOCKAGE',
-      cause: 'Landslide_Debris',
-      description: 'Major mudflow at Pagla Pahar KM-144',
-      reportedBy: 'Field Officer (BRO Project Sewak)',
-    },
-    'SEG-SIL-KOL': {
-      status: 'SINGLE_LANE_PASSABLE',
-      cause: 'Road_Subsidence',
-      description: 'Bilkhawthlir silt collapse - 18T load restriction',
-      reportedBy: 'Insp. L. Hmar',
-    },
+  const [activeDisruptions, setActiveDisruptions] = useState<Record<string, SegmentIncident>>(() => {
+    const persisted = typeof window !== 'undefined' ? getPersistedDisruptions() : null;
+    return persisted || {
+      'SEG-DIM-KOH-MAIN': {
+        status: 'TOTAL_BLOCKAGE',
+        cause: 'Landslide_Debris',
+        description: 'Major mudflow at Pagla Pahar KM-144',
+        reportedBy: 'Field Officer (BRO Project Sewak)',
+      },
+      'SEG-SIL-KOL': {
+        status: 'SINGLE_LANE_PASSABLE',
+        cause: 'Road_Subsidence',
+        description: 'Bilkhawthlir silt collapse - 18T load restriction',
+        reportedBy: 'Insp. L. Hmar',
+      },
+    };
   });
+
+  useEffect(() => {
+    persistDisruptions(activeDisruptions);
+  }, [activeDisruptions]);
 
   const setSegmentDisruption = useCallback((segmentId: string, disruption: SegmentIncident | null) => {
     setActiveDisruptions((prev) => {
@@ -443,12 +477,16 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
 
   // 6b. Preemptive Relief Missions (10 Ongoing + 3 Suggested)
-  const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(INITIAL_RELIEF_MISSIONS);
+  const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(() => {
+    const persisted = typeof window !== 'undefined' ? getPersistedMissions() : null;
+    return persisted && persisted.length > 0 ? persisted : INITIAL_RELIEF_MISSIONS;
+  });
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>('MISSION-MZ-04');
-  const activeMissionsRef = useRef<ReliefMission[]>(INITIAL_RELIEF_MISSIONS);
+  const activeMissionsRef = useRef<ReliefMission[]>(activeMissions);
 
   useEffect(() => {
     activeMissionsRef.current = activeMissions;
+    persistMissions(activeMissions);
   }, [activeMissions]);
 
   const [customizingMission, setCustomizingMission] = useState<ReliefMission | null>(null);
@@ -593,74 +631,16 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   // 8. Field Intelligence Feed
-  const [incidents, setIncidents] = useState<Incident[]>([
-    {
-      id: 'inc-01',
-      title: 'Massive Mudflow Severing NH-29 Pagla Pahar Sector',
-      corridorFlair: 'r/NH-29-Nagaland',
-      incidentType: 'Landslide',
-      severity: 'Total Blockage',
-      location: {
-        lat: 25.7500,
-        lng: 93.9800,
-        placeName: 'Pagla Pahar (Km 144), Kohima District',
-        state: 'Nagaland',
-        corridorId: 'SEG-DIM-KOH-MAIN',
-      },
-      author: {
-        name: 'Subedar K. Sema',
-        role: 'Field Officer (BRO/Police)',
-      },
-      timestamp: new Date(Date.now() - 45 * 60000).toISOString(),
-      mediaUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80',
-      votes: { upvotes: 38, downvotes: 2, userVote: null },
-      confidenceScore: 46, // 36 + 10 officer verification
-      hasOfficerVerified: true,
-      sync_status: 'SYNCED',
-      updates: [
-        {
-          id: 'u-1',
-          author: 'BRO Project Sewak Lead',
-          role: 'Field Officer (BRO/Police)',
-          message: 'Heavy bulldozer units deployed at southern shoulder. Est clearance: 6 hours.',
-          timestamp: new Date(Date.now() - 20 * 60000).toISOString(),
-        },
-      ],
-    },
-    {
-      id: 'inc-02',
-      title: 'Bilkhawthlir Silt Subsidence on NH-306',
-      corridorFlair: 'r/Mizoram-NH-306',
-      incidentType: 'Road Subsidence',
-      severity: 'Single Lane Passable',
-      location: {
-        lat: 24.2850,
-        lng: 92.7350,
-        placeName: 'Bilkhawthlir Escarpment, Kolasib District',
-        state: 'Mizoram',
-        corridorId: 'SEG-SIL-KOL',
-      },
-      author: {
-        name: 'Inspector L. Hmar',
-        role: 'Field Officer (BRO/Police)',
-      },
-      timestamp: new Date(Date.now() - 90 * 60000).toISOString(),
-      mediaUrl: 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80',
-      votes: { upvotes: 24, downvotes: 1, userVote: null },
-      confidenceScore: 33,
-      hasOfficerVerified: true,
-      sync_status: 'SYNCED',
-      updates: [
-        {
-          id: 'u-2',
-          author: 'Insp. L. Hmar',
-          role: 'Field Officer (BRO/Police)',
-          message: 'Single alternate lane opened. Axle limit strictly 18T. Medic-01 escorted through.',
-          timestamp: new Date(Date.now() - 30 * 60000).toISOString(),
-        },
-      ],
-    },
-  ]);
+  const [incidents, setIncidents] = useState<Incident[]>(() => {
+    if (typeof window !== 'undefined') {
+      return getPersistedIncidents();
+    }
+    return DEFAULT_INCIDENTS;
+  });
+
+  useEffect(() => {
+    persistIncidents(incidents);
+  }, [incidents]);
 
   // 9. Executive Macro Analytics & BRO Priority
   const [districtsHealth, setDistrictsHealth] = useState<DistrictHealth[]>(INITIAL_DISTRICTS_HEALTH);
@@ -824,19 +804,31 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     // 1. Add to incidents feed
-    setIncidents((prev) => [newIncident, ...prev]);
+    setIncidents((prev) => {
+      const next = [newIncident, ...prev];
+      persistIncidents(next);
+      return next;
+    });
 
     // 2. Cascade to Module 3 (Routing): Penalize or block road segment
     const matchedCorridor = incidentData.location.corridorId || 'SEG-SIL-KOL';
-    setActiveDisruptions((prev) => ({
-      ...prev,
-      [matchedCorridor]: {
-        status: incidentData.severity === 'Total Blockage' ? 'TOTAL_BLOCKAGE' : 'SINGLE_LANE_PASSABLE',
-        cause: incidentData.incidentType,
-        description: incidentData.title,
-        reportedBy: `${incidentData.author.name} (${incidentData.author.role})`,
-      },
-    }));
+    setActiveDisruptions((prev) => {
+      const next = {
+        ...prev,
+        [matchedCorridor]: {
+          status: incidentData.severity === 'Total Blockage' ? ('TOTAL_BLOCKAGE' as const) : ('SINGLE_LANE_PASSABLE' as const),
+          cause: incidentData.incidentType,
+          description: incidentData.title,
+          reportedBy: `${incidentData.author.name} (${incidentData.author.role})`,
+        },
+      };
+      persistDisruptions(next);
+      return next;
+    });
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('SUBMIT_INCIDENT', newIncident);
+    }
 
     // 3. Cascade to Module 6 (Priority): Shorten cutoff time and increase disruption probability
     setRawCommunities((prev) =>
@@ -925,8 +917,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Vote on incident
   const voteIncident = useCallback((incidentId: string, type: 'up' | 'down') => {
-    setIncidents((prev) =>
-      prev.map((inc) => {
+    setIncidents((prev) => {
+      let targetUpvotes = 0;
+      let targetDownvotes = 0;
+      let targetScore = 0;
+      let targetHasOfficer = false;
+
+      const next = prev.map((inc) => {
         if (inc.id !== incidentId) return inc;
         let upvotes = inc.votes.upvotes;
         let downvotes = inc.votes.downvotes;
@@ -948,36 +945,59 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const hasOfficer = inc.hasOfficerVerified || activeRole === 'FIELD_OFFICER';
         const score = upvotes - downvotes + (hasOfficer ? 10 : 0);
 
+        targetUpvotes = upvotes;
+        targetDownvotes = downvotes;
+        targetScore = score;
+        targetHasOfficer = Boolean(hasOfficer);
+
         return {
           ...inc,
           votes: { upvotes, downvotes, userVote },
           confidenceScore: score,
           hasOfficerVerified: hasOfficer,
         };
-      })
-    );
+      });
+
+      persistIncidents(next);
+
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('VOTE_INCIDENT', {
+          incidentId,
+          votes: { upvotes: targetUpvotes, downvotes: targetDownvotes },
+          confidenceScore: targetScore,
+          hasOfficerVerified: targetHasOfficer,
+        });
+      }
+
+      return next;
+    });
   }, [activeRole]);
 
   // Add nested ground update comment
   const addIncidentUpdate = useCallback((incidentId: string, message: string) => {
-    setIncidents((prev) =>
-      prev.map((inc) => {
+    const update = {
+      id: `u-${Date.now()}`,
+      author: userContext.name,
+      role: (userContext.role === 'FIELD_OFFICER' ? 'Field Officer (BRO/Police)' : 'Registered Driver') as any,
+      message,
+      timestamp: new Date().toISOString(),
+    };
+
+    setIncidents((prev) => {
+      const next = prev.map((inc) => {
         if (inc.id !== incidentId) return inc;
         return {
           ...inc,
-          updates: [
-            ...inc.updates,
-            {
-              id: `u-${Date.now()}`,
-              author: userContext.name,
-              role: userContext.role === 'FIELD_OFFICER' ? 'Field Officer (BRO/Police)' : 'Registered Driver',
-              message,
-              timestamp: new Date().toISOString(),
-            },
-          ],
+          updates: [...inc.updates, update],
         };
-      })
-    );
+      });
+      persistIncidents(next);
+      return next;
+    });
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('ADD_INCIDENT_UPDATE', { incidentId, update });
+    }
   }, [userContext]);
 
   // =========================================================================
@@ -1410,6 +1430,162 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       socket.on('connect', () => {
         console.log(`✅ Connected to PRAVAH Realtime Event Bus at ${socketUrl}`);
+      });
+
+      socket.on('INITIAL_STATE_SYNC', (serverState: any) => {
+        console.log('📡 [PRAVAH Socket] Received INITIAL_STATE_SYNC');
+        if (serverState?.groundReports && Array.isArray(serverState.groundReports)) {
+          setIncidents((prev) => {
+            const userVoteMap = new Map<string, null | 'up' | 'down'>();
+            prev.forEach((p) => {
+              if (p.votes?.userVote) {
+                userVoteMap.set(p.id, p.votes.userVote);
+              }
+            });
+
+            const serverReports: Incident[] = serverState.groundReports.map((r: any) => ({
+              id: r.id,
+              title: r.title,
+              corridorFlair: r.corridorFlair || 'r/Mizoram-NH-306',
+              incidentType: r.incidentType || 'Landslide',
+              severity: r.severity || 'Total Blockage',
+              location: r.location || {
+                lat: 25.75,
+                lng: 93.98,
+                placeName: r.placeName || 'NH-29 Sector',
+                corridorId: r.corridorId || 'SEG-DIM-KOH-MAIN',
+              },
+              author: r.author && typeof r.author === 'object' ? r.author : {
+                name: r.author || 'Field Reporter',
+                role: r.role || 'Citizen Driver',
+              },
+              timestamp: r.timestamp || new Date().toISOString(),
+              mediaUrl: r.mediaUrl || '',
+              votes: {
+                upvotes: r.votes?.upvotes ?? 1,
+                downvotes: r.votes?.downvotes ?? 0,
+                userVote: userVoteMap.get(r.id) || r.votes?.userVote || null,
+              },
+              confidenceScore: r.confidenceScore ?? 1,
+              hasOfficerVerified: Boolean(r.hasOfficerVerified),
+              sync_status: 'SYNCED' as const,
+              updates: Array.isArray(r.updates) ? r.updates : [],
+            }));
+
+            const serverIds = new Set(serverReports.map((s) => s.id));
+            const localOnly = prev.filter((p) => !serverIds.has(p.id));
+            const merged = [...serverReports, ...localOnly];
+            persistIncidents(merged);
+            return merged;
+          });
+        }
+
+        if (serverState?.disruptions && Object.keys(serverState.disruptions).length > 0) {
+          setActiveDisruptions((prev) => {
+            const next = { ...prev, ...serverState.disruptions };
+            persistDisruptions(next);
+            return next;
+          });
+        }
+
+        if (serverState?.activeMissions && typeof serverState.activeMissions === 'object') {
+          const missionsArr = Object.values(serverState.activeMissions) as any[];
+          if (missionsArr.length > 0) {
+            setActiveMissions((prev) => {
+              const prevIds = new Set(prev.map((m) => m.id));
+              const merged = [...prev];
+              missionsArr.forEach((sm) => {
+                if (!prevIds.has(sm.id)) {
+                  merged.unshift(sm);
+                }
+              });
+              persistMissions(merged);
+              return merged;
+            });
+          }
+        }
+      });
+
+      socket.on('INCIDENT_ADDED', (payload: any) => {
+        if (payload.incident) {
+          const inc = payload.incident;
+          setIncidents((prev) => {
+            const exists = prev.some((p) => p.id === inc.id);
+            if (exists) return prev;
+            const next = [inc, ...prev];
+            persistIncidents(next);
+            return next;
+          });
+        }
+        if (payload.disruptions) {
+          setActiveDisruptions((prev) => {
+            const next = { ...prev, ...payload.disruptions };
+            persistDisruptions(next);
+            return next;
+          });
+        }
+      });
+
+      socket.on('INCIDENT_VERIFIED', (payload: any) => {
+        if (payload.incident) {
+          const inc = payload.incident;
+          setIncidents((prev) => {
+            const exists = prev.some((p) => p.id === inc.id);
+            const next = exists
+              ? prev.map((p) => (p.id === inc.id ? { ...p, ...inc, votes: { ...inc.votes, userVote: p.votes?.userVote || null } } : p))
+              : [inc, ...prev];
+            persistIncidents(next);
+            return next;
+          });
+        }
+        if (payload.disruptions) {
+          setActiveDisruptions((prev) => {
+            const next = { ...prev, ...payload.disruptions };
+            persistDisruptions(next);
+            return next;
+          });
+        }
+      });
+
+      socket.on('INCIDENT_VOTED', (payload: any) => {
+        if (payload.incidentId) {
+          setIncidents((prev) => {
+            const next = prev.map((p) => {
+              if (p.id !== payload.incidentId) return p;
+              return {
+                ...p,
+                votes: {
+                  upvotes: payload.votes?.upvotes ?? p.votes.upvotes,
+                  downvotes: payload.votes?.downvotes ?? p.votes.downvotes,
+                  userVote: p.votes.userVote,
+                },
+                confidenceScore: payload.confidenceScore ?? p.confidenceScore,
+                hasOfficerVerified: payload.hasOfficerVerified ?? p.hasOfficerVerified,
+              };
+            });
+            persistIncidents(next);
+            return next;
+          });
+        }
+      });
+
+      socket.on('INCIDENT_UPDATE_ADDED', (payload: any) => {
+        if (payload.incidentId && payload.update) {
+          setIncidents((prev) => {
+            const next = prev.map((p) => {
+              if (p.id !== payload.incidentId) return p;
+              const updates = Array.isArray(payload.updates)
+                ? payload.updates
+                : [...p.updates, payload.update];
+              return {
+                ...p,
+                updates,
+              };
+            });
+            persistIncidents(next);
+            return next;
+          });
+        }
       });
 
       socket.on('DRIVER_SOS_SIGNAL', (payload: any) => {

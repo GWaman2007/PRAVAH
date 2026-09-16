@@ -70,3 +70,7 @@ __pycache__/
 .venv/
 venv/
 env/
+
+# Server local database store
+server/data/
+

@@ -2,6 +2,14 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DATA_DIR = path.join(__dirname, 'data');
+const DB_FILE = path.join(DATA_DIR, 'pravah_store.json');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
@@ -16,6 +24,7 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
   },
 });
+
 
 // ==========================================
 // Extensible Configuration Schemas
@@ -209,19 +218,70 @@ const state: StateStore = {
   },
   groundReports: [
     {
-      id: 'rep-01',
-      title: 'Active Slope Creep & Rockfall on NH-29 Pagla Pahar',
+      id: 'inc-01',
+      title: 'Massive Mudflow Severing NH-29 Pagla Pahar Sector',
       corridorFlair: 'r/NH-29-Nagaland',
       incidentType: 'Landslide',
       severity: 'Total Blockage',
-      placeName: 'Pagla Pahar (Km 144), Kohima District',
-      author: 'Subedar K. Sema',
-      role: 'Field Officer (BRO/Police)',
-      timestamp: new Date(Date.now() - 30 * 60000).toISOString(),
-      votes: { upvotes: 42, downvotes: 1 },
-      confidenceScore: 51,
+      location: {
+        lat: 25.7500,
+        lng: 93.9800,
+        placeName: 'Pagla Pahar (Km 144), Kohima District',
+        state: 'Nagaland',
+        corridorId: 'SEG-DIM-KOH-MAIN',
+      },
+      author: {
+        name: 'Subedar K. Sema',
+        role: 'Field Officer (BRO/Police)',
+      },
+      timestamp: new Date(Date.now() - 45 * 60000).toISOString(),
+      mediaUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80',
+      votes: { upvotes: 38, downvotes: 2, userVote: null },
+      confidenceScore: 46,
       hasOfficerVerified: true,
-      corridorId: 'SEG-DIM-KOH-MAIN',
+      sync_status: 'SYNCED',
+      updates: [
+        {
+          id: 'u-1',
+          author: 'BRO Project Sewak Lead',
+          role: 'Field Officer (BRO/Police)',
+          message: 'Heavy bulldozer units deployed at southern shoulder. Est clearance: 6 hours.',
+          timestamp: new Date(Date.now() - 20 * 60000).toISOString(),
+        },
+      ],
+    },
+    {
+      id: 'inc-02',
+      title: 'Bilkhawthlir Silt Subsidence on NH-306',
+      corridorFlair: 'r/Mizoram-NH-306',
+      incidentType: 'Road Subsidence',
+      severity: 'Single Lane Passable',
+      location: {
+        lat: 24.2850,
+        lng: 92.7350,
+        placeName: 'Bilkhawthlir Escarpment, Kolasib District',
+        state: 'Mizoram',
+        corridorId: 'SEG-SIL-KOL',
+      },
+      author: {
+        name: 'Inspector L. Hmar',
+        role: 'Field Officer (BRO/Police)',
+      },
+      timestamp: new Date(Date.now() - 90 * 60000).toISOString(),
+      mediaUrl: 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80',
+      votes: { upvotes: 24, downvotes: 1, userVote: null },
+      confidenceScore: 33,
+      hasOfficerVerified: true,
+      sync_status: 'SYNCED',
+      updates: [
+        {
+          id: 'u-2',
+          author: 'Insp. L. Hmar',
+          role: 'Field Officer (BRO/Police)',
+          message: 'Single alternate lane opened. Axle limit strictly 18T. Medic-01 escorted through.',
+          timestamp: new Date(Date.now() - 30 * 60000).toISOString(),
+        },
+      ],
     },
   ],
   alerts: [],
@@ -230,6 +290,61 @@ const state: StateStore = {
     kohima: { id: 'kohima', name: 'Kohima', state: 'Nagaland', accessibilityScore: 42, category: 'CRITICAL', minDaysSupply: 2.8 },
   },
 };
+
+// ==========================================
+// Database Persistence Engine (JSON File Store)
+// ==========================================
+function saveDb() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('💾 [DB] Failed to persist state to disk:', err);
+  }
+}
+
+function loadDb() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed) {
+        if (Array.isArray(parsed.groundReports) && parsed.groundReports.length > 0) {
+          state.groundReports = parsed.groundReports;
+        }
+        if (parsed.disruptions && Object.keys(parsed.disruptions).length > 0) {
+          state.disruptions = { ...state.disruptions, ...parsed.disruptions };
+        }
+        if (parsed.communities && Object.keys(parsed.communities).length > 0) {
+          state.communities = { ...state.communities, ...parsed.communities };
+        }
+        if (parsed.activeMissions && Object.keys(parsed.activeMissions).length > 0) {
+          state.activeMissions = { ...state.activeMissions, ...parsed.activeMissions };
+        }
+        if (parsed.fleetTelemetry && Object.keys(parsed.fleetTelemetry).length > 0) {
+          state.fleetTelemetry = { ...state.fleetTelemetry, ...parsed.fleetTelemetry };
+        }
+        if (Array.isArray(parsed.alerts)) {
+          state.alerts = parsed.alerts;
+        }
+        if (parsed.districtHealth) {
+          state.districtHealth = { ...state.districtHealth, ...parsed.districtHealth };
+        }
+        console.log(`💾 [DB] Hydrated state from ${DB_FILE} (${state.groundReports.length} reports, ${Object.keys(state.disruptions).length} disruptions)`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('💾 [DB] Failed to load pravah_store.json, initializing baseline state:', err);
+  }
+  saveDb();
+}
+
+// Hydrate DB on module evaluation
+loadDb();
+
 
 // ==========================================
 // Preemptive Depletion & Urgency Formulation
@@ -379,6 +494,149 @@ app.post('/api/weather/multiplier', (req, res) => {
   }
 });
 
+// REST Endpoints for Data Persistence & Direct Inspection
+app.get('/api/incidents', (req, res) => {
+  res.json(state.groundReports);
+});
+
+app.post('/api/incidents', (req, res) => {
+  const data = req.body;
+  const isOfficer =
+    data.author?.role?.includes('Officer') ||
+    data.authorRole?.includes('Officer') ||
+    data.isOfficer ||
+    data.hasOfficerVerified;
+  const confidence = isOfficer ? 11 : 1;
+  const incidentId = data.id || `inc-${Date.now()}`;
+  const corridorId = data.location?.corridorId || data.corridorId || 'SEG-SIL-KOL';
+  const placeName = data.location?.placeName || data.placeName || 'NH-306 Sector';
+  const severity = data.severity || 'Total Blockage';
+  const incidentType = data.incidentType || 'Landslide';
+
+  const newIncident = {
+    id: incidentId,
+    title: data.title || 'Roadblock Incident',
+    corridorFlair: data.corridorFlair || 'r/Mizoram-NH-306',
+    incidentType,
+    severity,
+    location: {
+      lat: data.location?.lat ?? 24.2850,
+      lng: data.location?.lng ?? 92.7350,
+      placeName,
+      state: data.location?.state || 'Mizoram',
+      corridorId,
+    },
+    author: {
+      name: data.author?.name || data.authorName || 'Field Reporter',
+      role: isOfficer ? 'Field Officer (BRO/Police)' : (data.author?.role || 'Citizen Driver'),
+    },
+    timestamp: data.timestamp || new Date().toISOString(),
+    mediaUrl: data.mediaUrl || '',
+    votes: data.votes || { upvotes: 1, downvotes: 0, userVote: null },
+    confidenceScore: data.confidenceScore ?? confidence,
+    hasOfficerVerified: Boolean(isOfficer),
+    sync_status: 'SYNCED',
+    updates: Array.isArray(data.updates) ? data.updates : [],
+  };
+
+  const existingIdx = state.groundReports.findIndex((r) => r.id === incidentId);
+  if (existingIdx >= 0) {
+    state.groundReports[existingIdx] = newIncident;
+  } else {
+    state.groundReports.unshift(newIncident);
+  }
+
+  if (severity === 'Total Blockage' || isOfficer) {
+    state.disruptions[corridorId] = {
+      status: severity === 'Total Blockage' ? 'TOTAL_BLOCKAGE' : 'SINGLE_LANE_PASSABLE',
+      cause: incidentType,
+      description: newIncident.title,
+      reportedBy: `${newIncident.author.name} (${newIncident.author.role})`,
+    };
+  }
+
+  saveDb();
+  io.emit('INCIDENT_ADDED', { incident: newIncident, disruptions: state.disruptions });
+  io.emit('INCIDENT_VERIFIED', { incident: newIncident, disruptions: state.disruptions });
+  io.emit('STATE_UPDATED', state);
+  res.json({ success: true, incident: newIncident });
+});
+
+app.post('/api/incidents/:id/vote', (req, res) => {
+  const { id } = req.params;
+  const { type, role } = req.body;
+  const report = state.groundReports.find((r) => r.id === id);
+  if (!report) {
+    return res.status(404).json({ error: 'Incident not found' });
+  }
+
+  if (type === 'up') {
+    report.votes.upvotes = (report.votes.upvotes || 0) + 1;
+  } else if (type === 'down') {
+    report.votes.downvotes = (report.votes.downvotes || 0) + 1;
+  }
+
+  const isOfficer = role?.includes('Officer') || report.hasOfficerVerified;
+  report.confidenceScore = (report.votes.upvotes || 0) - (report.votes.downvotes || 0) + (isOfficer ? 10 : 0);
+  report.hasOfficerVerified = isOfficer;
+
+  saveDb();
+  io.emit('INCIDENT_VOTED', {
+    incidentId: id,
+    votes: report.votes,
+    confidenceScore: report.confidenceScore,
+    hasOfficerVerified: report.hasOfficerVerified,
+  });
+  io.emit('STATE_UPDATED', state);
+  res.json({ success: true, incident: report });
+});
+
+app.post('/api/incidents/:id/updates', (req, res) => {
+  const { id } = req.params;
+  const { message, author, role } = req.body;
+  const report = state.groundReports.find((r) => r.id === id);
+  if (!report) {
+    return res.status(404).json({ error: 'Incident not found' });
+  }
+
+  const update = {
+    id: `u-${Date.now()}`,
+    author: author || 'Ground Observer',
+    role: role || 'Registered Driver',
+    message: message || '',
+    timestamp: new Date().toISOString(),
+  };
+
+  if (!Array.isArray(report.updates)) {
+    report.updates = [];
+  }
+  report.updates.push(update);
+
+  saveDb();
+  io.emit('INCIDENT_UPDATE_ADDED', { incidentId: id, update, updates: report.updates });
+  io.emit('STATE_UPDATED', state);
+  res.json({ success: true, update, incident: report });
+});
+
+app.get('/api/disruptions', (req, res) => {
+  res.json(state.disruptions);
+});
+
+app.get('/api/missions', (req, res) => {
+  res.json(state.activeMissions);
+});
+
+app.post('/api/reset-db', (req, res) => {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      fs.unlinkSync(DB_FILE);
+    }
+  } catch {}
+  loadDb();
+  io.emit('INITIAL_STATE_SYNC', state);
+  res.json({ success: true, message: 'Database reset to initial baseline' });
+});
+
 // ==========================================
 // WebSockets Real-Time Bus (Socket.io)
 // ==========================================
@@ -390,38 +648,62 @@ io.on('connection', (socket: Socket) => {
 
   // 1. Ground Incident Submission
   socket.on('SUBMIT_INCIDENT', (data: any) => {
-    const isOfficer = data.authorRole?.includes('Officer') || data.isOfficer;
+    const isOfficer =
+      data.author?.role?.includes('Officer') ||
+      data.authorRole?.includes('Officer') ||
+      data.isOfficer ||
+      data.hasOfficerVerified;
     const confidence = isOfficer ? 11 : 1;
+    const incidentId = data.id || `inc-${Date.now()}`;
+    const corridorId = data.location?.corridorId || data.corridorId || 'SEG-SIL-KOL';
+    const placeName = data.location?.placeName || data.placeName || 'NH-306 Sector';
+    const severity = data.severity || 'Total Blockage';
+    const incidentType = data.incidentType || 'Landslide';
 
     const incident = {
-      id: `inc-${Date.now()}`,
-      title: data.title,
+      id: incidentId,
+      title: data.title || 'Road Hazard Incident',
       corridorFlair: data.corridorFlair || 'r/Mizoram-NH-306',
-      incidentType: data.incidentType || 'Landslide',
-      severity: data.severity || 'Total Blockage',
-      placeName: data.placeName || 'NH-306 Kolasib Sector',
-      author: data.authorName || 'Field Reporter',
-      role: isOfficer ? 'Field Officer (BRO/Police)' : 'Citizen Driver',
-      timestamp: new Date().toISOString(),
-      votes: { upvotes: 1, downvotes: 0 },
-      confidenceScore: confidence,
-      hasOfficerVerified: isOfficer,
-      corridorId: data.corridorId || 'SEG-SIL-KOL',
+      incidentType,
+      severity,
+      location: {
+        lat: data.location?.lat ?? 24.2850,
+        lng: data.location?.lng ?? 92.7350,
+        placeName,
+        state: data.location?.state || 'Mizoram',
+        corridorId,
+      },
+      author: {
+        name: data.author?.name || data.authorName || 'Field Reporter',
+        role: isOfficer ? 'Field Officer (BRO/Police)' : (data.author?.role || 'Citizen Driver'),
+      },
+      timestamp: data.timestamp || new Date().toISOString(),
+      mediaUrl: data.mediaUrl || '',
+      votes: data.votes || { upvotes: 1, downvotes: 0, userVote: null },
+      confidenceScore: data.confidenceScore ?? confidence,
+      hasOfficerVerified: Boolean(isOfficer),
+      sync_status: 'SYNCED',
+      updates: Array.isArray(data.updates) ? data.updates : [],
     };
 
-    state.groundReports.unshift(incident);
+    const existingIdx = state.groundReports.findIndex((r) => r.id === incidentId);
+    if (existingIdx >= 0) {
+      state.groundReports[existingIdx] = incident;
+    } else {
+      state.groundReports.unshift(incident);
+    }
 
     // If verified or Total Blockage, cascade segment blockage
     if (incident.severity === 'Total Blockage' || isOfficer) {
-      state.disruptions[incident.corridorId] = {
-        status: 'TOTAL_BLOCKAGE',
+      state.disruptions[corridorId] = {
+        status: incident.severity === 'Total Blockage' ? 'TOTAL_BLOCKAGE' : 'SINGLE_LANE_PASSABLE',
         cause: incident.incidentType,
         description: incident.title,
-        reportedBy: `${incident.author} (${incident.role})`,
+        reportedBy: `${incident.author.name} (${incident.author.role})`,
       };
 
       // Cascade to Kolasib East community: cut off road & surge to P1
-      if (incident.corridorId === 'SEG-SIL-KOL' || incident.placeName.includes('Kolasib')) {
+      if (corridorId === 'SEG-SIL-KOL' || placeName.includes('Kolasib')) {
         const kol = state.communities['MZ-KOL-004'];
         if (kol) {
           kol.cutoffTimeHours = 3.5;
@@ -463,11 +745,63 @@ io.on('connection', (socket: Socket) => {
       }
     }
 
+    saveDb();
+
+    io.emit('INCIDENT_ADDED', { incident, disruptions: state.disruptions });
     io.emit('INCIDENT_VERIFIED', { incident, disruptions: state.disruptions });
     io.emit('STATE_UPDATED', state);
   });
 
+  // 1b. Incident Voting
+  socket.on('VOTE_INCIDENT', (data: any) => {
+    const report = state.groundReports.find((r) => r.id === data.incidentId);
+    if (report) {
+      if (data.votes) {
+        report.votes = {
+          ...report.votes,
+          upvotes: data.votes.upvotes,
+          downvotes: data.votes.downvotes,
+        };
+      }
+      if (data.confidenceScore !== undefined) {
+        report.confidenceScore = data.confidenceScore;
+      }
+      if (data.hasOfficerVerified !== undefined) {
+        report.hasOfficerVerified = data.hasOfficerVerified;
+      }
+      saveDb();
+
+      io.emit('INCIDENT_VOTED', {
+        incidentId: data.incidentId,
+        votes: report.votes,
+        confidenceScore: report.confidenceScore,
+        hasOfficerVerified: report.hasOfficerVerified,
+      });
+      io.emit('STATE_UPDATED', state);
+    }
+  });
+
+  // 1c. Add Incident Ground Clearance Update
+  socket.on('ADD_INCIDENT_UPDATE', (data: any) => {
+    const report = state.groundReports.find((r) => r.id === data.incidentId);
+    if (report) {
+      if (!Array.isArray(report.updates)) {
+        report.updates = [];
+      }
+      report.updates.push(data.update);
+      saveDb();
+
+      io.emit('INCIDENT_UPDATE_ADDED', {
+        incidentId: data.incidentId,
+        update: data.update,
+        updates: report.updates,
+      });
+      io.emit('STATE_UPDATED', state);
+    }
+  });
+
   // 2. Mission Dispatch Approval / Customization
+
   socket.on('DISPATCH_MISSION', (data: any) => {
     const { missionId, vehicleId, routeId, cargoManifest } = data;
     const mission = state.activeMissions[missionId] || state.activeMissions['MISSION-MZ-04'];
@@ -486,6 +820,7 @@ io.on('connection', (socket: Socket) => {
       veh.assigned_route_id = routeId || 'ROUTE-MZ-04-BYPASS';
     }
 
+    saveDb();
     io.emit('MISSION_DISPATCHED', { mission, vehicle: veh });
     io.emit('STATE_UPDATED', state);
   });
@@ -533,6 +868,7 @@ io.on('connection', (socket: Socket) => {
     };
     state.alerts.unshift(alert);
 
+    saveDb();
     io.emit('DRIVER_SOS_SIGNAL', { vehicleId, vehicle: veh, alert });
     io.emit('STATE_UPDATED', state);
   });
@@ -546,6 +882,7 @@ io.on('connection', (socket: Socket) => {
       veh.is_sos_manual = false;
     }
     state.alerts = state.alerts.filter((a: any) => !(a.vehicle_id === vehicleId && a.type === 'SOS_TRIGGERED'));
+    saveDb();
     io.emit('DRIVER_SOS_CANCELLED', { vehicleId });
     io.emit('STATE_UPDATED', state);
   });
@@ -596,6 +933,7 @@ io.on('connection', (socket: Socket) => {
       state.districtHealth.kolasib.minDaysSupply = 14.0;
     }
 
+    saveDb();
     io.emit('MISSION_DELIVERED_RESTOCK', {
       communityId: cId,
       vehicleId: vId,
@@ -728,6 +1066,7 @@ io.on('connection', (socket: Socket) => {
       }
     }
 
+    saveDb();
     io.emit('STATE_UPDATED', state);
   });
 
