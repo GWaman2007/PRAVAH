@@ -27,6 +27,7 @@ export const Header: React.FC = () => {
     isSimulatedOffline,
     offlineQueueCount,
     toggleSimulatedOffline,
+    isSupabaseConfigured,
     incidents,
     communities,
     vehicles,
@@ -77,7 +78,11 @@ export const Header: React.FC = () => {
             {/* Network / Offline PWA Status Pill */}
             <button
               onClick={toggleSimulatedOffline}
-              title="Click to toggle simulated offline mountain dead-zone mode"
+              title={
+                isSupabaseConfigured
+                  ? "Connected to Supabase Cloud Database & Realtime Bus. Click to toggle simulated offline mountain dead-zone mode."
+                  : "Running local/offline mode. Connect Supabase to sync across devices on Vercel. Click to toggle simulated offline."
+              }
               className={`flex items-center space-x-1 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-sm text-[11px] sm:text-xs font-medium border transition-colors btn-press cursor-pointer shrink-0 ${
                 isOnline
                   ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
@@ -87,8 +92,12 @@ export const Header: React.FC = () => {
               {isOnline ? (
                 <>
                   <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-open-solid animate-pulse" />
-                  <span className="font-medium hidden sm:inline">Online / Live Sync</span>
-                  <span className="font-medium sm:hidden text-[10px]">Live</span>
+                  <span className="font-medium hidden sm:inline">
+                    {isSupabaseConfigured ? 'Supabase Live Cloud' : 'Online / Live Sync'}
+                  </span>
+                  <span className="font-medium sm:hidden text-[10px]">
+                    {isSupabaseConfigured ? 'Cloud Live' : 'Live'}
+                  </span>
                 </>
               ) : (
                 <>

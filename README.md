@@ -8,7 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?style=for-the-badge&logo=vite)](https://vite.dev)
 [![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.3-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
-[![Test Suite](https://img.shields.io/badge/Tests-37%2F37%20Passing%20(100%25)-brightgreen?style=for-the-badge)](test_all_engines.mjs)
+[![Test Suite](https://img.shields.io/badge/Tests-74%2F74%20Passing%20(100%25)-brightgreen?style=for-the-badge)](test_all_engines.mjs)
 
 **Developed for the Ministry of Development of North Eastern Region (MDoNER)**  
 *An AI-Based Smart Logistics, Geo-Hazard Monitoring, Preemptive Depletion & Accessibility Intelligence Platform for India's 8 North Eastern States (Assam, Meghalaya, Tripura, Mizoram, Manipur, Nagaland, Arunachal Pradesh, and Sikkim).*
@@ -374,11 +374,27 @@ To preview the production build locally:
 npm run preview
 ```
 
+### 5. Multi-User Real-Time Cloud Synchronization (Supabase)
+By default, PRAVAH runs locally in offline-first mode using browser `localStorage` and the local Socket.io server. When deployed across multiple machines or deployed on **Vercel**, integrate **Supabase** (free tier PostgreSQL + Realtime WebSockets) so all users across the world see updates, upvotes, downvotes, road disruptions, and emergency driver SOS alerts in real time:
+
+1. **Create a Free Supabase Project**: Sign in at [supabase.com](https://supabase.com) and create a project.
+2. **Execute Database Schema**:
+   - In your Supabase dashboard, navigate to the **SQL Editor**.
+   - Copy the contents of [`supabase_schema.sql`](supabase_schema.sql) and click **Run**.
+   - This provisions the `incidents` and `disruptions` tables, configures Row Level Security (RLS), and enables Supabase Realtime broadcast channels.
+3. **Configure Environment Variables**:
+   - In **Vercel**: Go to Project Settings -> Environment Variables, and add:
+     - `VITE_SUPABASE_URL` = `https://<your-project-id>.supabase.co`
+     - `VITE_SUPABASE_ANON_KEY` = `<your-supabase-anon-key>`
+   - For **local multi-device testing**, place these variables in `.env.local`.
+4. **Trigger Deployment**:
+   - Redeploy the application on Vercel. PRAVAH will automatically detect the credentials, display `Supabase Live Cloud` in the header, and sync all operational intelligence across all browsers with sub-100ms latency.
+
 ---
 
 ## 🧪 Test Suite & Quality Verification
 
-PRAVAH includes a standalone automated regression suite verifying all algorithms, formulas, and edge cases. Run tests using:
+PRAVAH includes a standalone automated regression suite verifying all algorithms, formulas, role-based access control, and edge cases. Run tests using:
 
 ```bash
 npm test
@@ -437,8 +453,47 @@ npm test
   ✅ PASS: Short Hindi Unicode SMS (<=70 chars) calculates 1 segment with 70 maxPerSegment
   ✅ PASS: Multi-part Hindi Unicode SMS (>70 chars) calculates UDH concatenated segments (67 chars/seg)
 
+--- TEST SUITE 6: RBAC Navigation & Multi-Mission Fleet ---
+  ✅ PASS: Super Admin navigation excludes Field Mission Cockpit
+  ✅ PASS: Super Admin navigation displays all 5 central command decks
+  ✅ PASS: Fleet Dispatcher navigation excludes Field Mission Cockpit
+  ✅ PASS: Driver navigation is strictly restricted to Field Mission Cockpit
+  ✅ PASS: Field Officer has access to Cockpit, Ground Feed, and GIS
+  ✅ PASS: Fleet contains 13 active convoys for multi-mission testing
+  ✅ PASS: All 3 convoy profiles (Medic-01, Oxy-Tanker-04, Ration-Convoy-07) exist in fleet registry
+  ✅ PASS: Vehicle Medic-01 maps to valid route ROUTE-MZ-04
+  ✅ PASS: Route ROUTE-MZ-04 contains 3487 mountain coordinates
+  ✅ PASS: Vehicle Medic-02 maps to valid route ROUTE-MZ-02
+  ✅ PASS: Route ROUTE-MZ-02 contains 3498 mountain coordinates
+  ✅ PASS: Vehicle Supply-03 maps to valid route ROUTE-AS-03
+  ✅ PASS: Route ROUTE-AS-03 contains 3582 mountain coordinates
+  ✅ PASS: Vehicle Ration-Convoy-07 maps to valid route ROUTE-NL-01
+  ✅ PASS: Route ROUTE-NL-01 contains 2423 mountain coordinates
+  ✅ PASS: Vehicle Rescue-01 maps to valid route ROUTE-NL-02
+  ✅ PASS: Route ROUTE-NL-02 contains 2057 mountain coordinates
+  ✅ PASS: Vehicle Supply-01 maps to valid route ROUTE-AS-01
+  ✅ PASS: Route ROUTE-AS-01 contains 10455 mountain coordinates
+  ✅ PASS: Vehicle Supply-02 maps to valid route ROUTE-ML-01
+  ✅ PASS: Route ROUTE-ML-01 contains 3440 mountain coordinates
+  ✅ PASS: Vehicle Command-01 maps to valid route ROUTE-ML-02
+  ✅ PASS: Route ROUTE-ML-02 contains 4728 mountain coordinates
+  ✅ PASS: Vehicle Medic-03 maps to valid route ROUTE-MN-01
+  ✅ PASS: Route ROUTE-MN-01 contains 9444 mountain coordinates
+  ✅ PASS: Vehicle Oxy-Tanker-04 maps to valid route ROUTE-SK-02
+  ✅ PASS: Route ROUTE-SK-02 contains 3083 mountain coordinates
+  ✅ PASS: Vehicle Medic-04 maps to valid route ROUTE-SUG-01
+  ✅ PASS: Route ROUTE-SUG-01 contains 3248 mountain coordinates
+  ✅ PASS: Vehicle Rescue-02 maps to valid route ROUTE-SUG-02
+  ✅ PASS: Route ROUTE-SUG-02 contains 3083 mountain coordinates
+  ✅ PASS: Vehicle Supply-04 maps to valid route ROUTE-SUG-03
+  ✅ PASS: Route ROUTE-SUG-03 contains 7536 mountain coordinates
+  ✅ PASS: Super Admin is authorized to intercept SOS and dispatch QRT
+  ✅ PASS: Fleet Dispatcher is authorized to intercept SOS and dispatch QRT
+  ✅ PASS: Driver is blocked from receiving QRT executive intercept modal
+  ✅ PASS: Field Officer is blocked from receiving QRT executive intercept modal
+
 ====================================================
-🎉 ALL TESTS EXECUTED: 37 / 37 PASSED (100%)
+🎉 ALL TESTS EXECUTED: 74 / 74 PASSED (100%)
 ====================================================
 ```
 

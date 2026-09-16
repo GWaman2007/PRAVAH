@@ -38,6 +38,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
     offlineQueue,
     offlineQueueCount,
     flushOfflineQueue,
+    isSupabaseConfigured,
   } = usePravahStore();
 
   const [selectedFlair, setSelectedFlair] = useState<string>('ALL');
@@ -156,9 +157,22 @@ export const GroundIntelligenceFeed: React.FC = () => {
             <MessageSquare className="w-5 h-5 text-primary" />
             <span>Ground Intelligence & Road Verification Feed</span>
           </h1>
-          <p className="text-xs text-text-secondary mt-0.5">
-            Crowdsourced and officer-verified road disruptions with offline local queueing and photo proof.
-          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+            <p className="text-xs text-text-secondary">
+              Crowdsourced and officer-verified road disruptions with offline local queueing and photo proof.
+            </p>
+            {isSupabaseConfigured ? (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Supabase Realtime Cloud DB
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20 whitespace-nowrap" title="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable cross-device live sync on Vercel">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                Local Mode
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

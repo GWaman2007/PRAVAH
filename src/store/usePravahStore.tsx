@@ -41,6 +41,19 @@ import {
   getPersistedMissions,
   persistMissions,
 } from '../engine/offlineSync';
+import {
+  isSupabaseConfigured,
+  supabase,
+  getRealtimeChannel,
+  fetchCloudIncidents,
+  upsertCloudIncident,
+  voteCloudIncident,
+  addCloudIncidentUpdate,
+  fetchCloudDisruptions,
+  upsertCloudDisruption,
+  broadcastCloudSOS,
+  cancelCloudSOS,
+} from '../engine/supabaseClient';
 
 interface PravahStoreContextType {
   // UAC & Role
@@ -65,6 +78,7 @@ interface PravahStoreContextType {
   lastOfflineTransitionTime: number | null;
   toggleSimulatedOffline: () => void;
   flushOfflineQueue: () => { syncedCount: number; details: string[] };
+  isSupabaseConfigured: boolean;
 
   // Routing State
   originHub: string;
@@ -540,6 +554,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (socketRef.current?.connected) {
         socketRef.current.emit('TRIGGER_DRIVER_SOS', { vehicleId: id, alert: sosAlert });
       }
+      if (isSupabaseConfigured) {
+        broadcastCloudSOS(id, sosAlert);
+      }
     }
   }, [vehicles]);
 
@@ -550,6 +567,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setPendingSOSAlert((curr) => (curr?.vehicle_id === id ? null : curr));
     if (socketRef.current?.connected) {
       socketRef.current.emit('CANCEL_DRIVER_SOS', { vehicleId: id });
+    }
+    if (isSupabaseConfigured) {
+      cancelCloudSOS(id);
     }
   }, []);
 
@@ -829,6 +849,15 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (socketRef.current?.connected) {
       socketRef.current.emit('SUBMIT_INCIDENT', newIncident);
     }
+    if (isSupabaseConfigured) {
+      upsertCloudIncident(newIncident);
+      upsertCloudDisruption(matchedCorridor, {
+        status: incidentData.severity === 'Total Blockage' ? ('TOTAL_BLOCKAGE' as const) : ('SINGLE_LANE_PASSABLE' as const),
+        cause: incidentData.incidentType,
+        description: incidentData.title,
+        reportedBy: `${incidentData.author.name} (${incidentData.author.role})`,
+      });
+    }
 
     // 3. Cascade to Module 6 (Priority): Shorten cutoff time and increase disruption probability
     setRawCommunities((prev) =>
@@ -969,6 +998,15 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
       }
 
+      if (isSupabaseConfigured) {
+        voteCloudIncident(
+          incidentId,
+          { upvotes: targetUpvotes, downvotes: targetDownvotes },
+          targetScore,
+          targetHasOfficer
+        );
+      }
+
       return next;
     });
   }, [activeRole]);
@@ -998,7 +1036,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (socketRef.current?.connected) {
       socketRef.current.emit('ADD_INCIDENT_UPDATE', { incidentId, update });
     }
-  }, [userContext]);
+    if (isSupabaseConfigured) {
+      const inc = incidents.find((i) => i.id === incidentId);
+      const allUpdates = inc ? [...inc.updates, update] : [update];
+      addCloudIncidentUpdate(incidentId, update, allUpdates);
+    }
+  }, [incidents, userContext]);
 
   // =========================================================================
   // 12. CLOSED-LOOP GROUND TRUTH: Mark Mission Delivered
@@ -1660,6 +1703,141 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, [markMissionDelivered]);
 
+  // 16. Supabase Cloud Realtime Multi-Device Synchronization
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      console.log('ℹ️ Supabase not configured: running local offline / socket fallback');
+      return;
+    }
+
+    console.log('⚡ Connected to Supabase Cloud Database & Realtime Event Bus');
+
+    // 1. Initial hydration from cloud
+    fetchCloudIncidents().then((cloudIncidents) => {
+      if (cloudIncidents && cloudIncidents.length > 0) {
+        setIncidents((prev) => {
+          const userVoteMap = new Map<string, null | 'up' | 'down'>();
+          prev.forEach((p) => {
+            if (p.votes?.userVote) userVoteMap.set(p.id, p.votes.userVote);
+          });
+          const merged = cloudIncidents.map((c) => ({
+            ...c,
+            votes: {
+              ...c.votes,
+              userVote: userVoteMap.get(c.id) || c.votes.userVote || null,
+            },
+          }));
+          persistIncidents(merged);
+          return merged;
+        });
+      }
+    });
+
+    fetchCloudDisruptions().then((cloudDisruptions) => {
+      if (cloudDisruptions && Object.keys(cloudDisruptions).length > 0) {
+        setActiveDisruptions((prev) => {
+          const next = { ...prev, ...cloudDisruptions };
+          persistDisruptions(next);
+          return next;
+        });
+      }
+    });
+
+    // 2. Realtime Broadcast Channel Listener
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel
+        .on('broadcast', { event: 'INCIDENT_ADDED' }, ({ payload }) => {
+          if (payload?.incident) {
+            setIncidents((prev) => {
+              if (prev.some((p) => p.id === payload.incident.id)) return prev;
+              const next = [payload.incident, ...prev];
+              persistIncidents(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'INCIDENT_VOTED' }, ({ payload }) => {
+          if (payload?.incidentId) {
+            setIncidents((prev) => {
+              const next = prev.map((p) => {
+                if (p.id !== payload.incidentId) return p;
+                return {
+                  ...p,
+                  votes: {
+                    upvotes: payload.votes?.upvotes ?? p.votes.upvotes,
+                    downvotes: payload.votes?.downvotes ?? p.votes.downvotes,
+                    userVote: p.votes.userVote,
+                  },
+                  confidenceScore: payload.confidenceScore ?? p.confidenceScore,
+                  hasOfficerVerified: payload.hasOfficerVerified ?? p.hasOfficerVerified,
+                };
+              });
+              persistIncidents(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'INCIDENT_UPDATE_ADDED' }, ({ payload }) => {
+          if (payload?.incidentId && payload?.update) {
+            setIncidents((prev) => {
+              const next = prev.map((p) => {
+                if (p.id !== payload.incidentId) return p;
+                const updates = Array.isArray(payload.updates)
+                  ? payload.updates
+                  : [...p.updates, payload.update];
+                return { ...p, updates };
+              });
+              persistIncidents(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'DISRUPTION_UPDATED' }, ({ payload }) => {
+          if (payload?.corridorId) {
+            setActiveDisruptions((prev) => {
+              const next = { ...prev };
+              if (!payload.disruption) {
+                delete next[payload.corridorId];
+              } else {
+                next[payload.corridorId] = payload.disruption;
+              }
+              persistDisruptions(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'DRIVER_SOS_SIGNAL' }, ({ payload }) => {
+          if (payload?.alert) {
+            setAlerts((prev) => [payload.alert, ...prev]);
+            if (activeRoleRef.current === 'SUPER_ADMIN' || activeRoleRef.current === 'FLEET_DISPATCHER') {
+              setPendingSOSAlert(payload.alert);
+            }
+          }
+          if (payload?.vehicleId) {
+            setVehicles((prev) =>
+              prev.map((v) => (v.vehicle_id === payload.vehicleId ? { ...v, is_sos_manual: true, status: 'SOS_ALERT' } : v))
+            );
+          }
+        })
+        .on('broadcast', { event: 'DRIVER_SOS_CANCELLED' }, ({ payload }) => {
+          if (payload?.vehicleId) {
+            setVehicles((prev) =>
+              prev.map((v) => (v.vehicle_id === payload.vehicleId ? { ...v, is_sos_manual: false, status: 'ON_ROUTE' } : v))
+            );
+            setPendingSOSAlert((curr) => (curr?.vehicle_id === payload.vehicleId ? null : curr));
+          }
+        })
+        .subscribe();
+    }
+
+    return () => {
+      if (channel) {
+        channel.unsubscribe();
+      }
+    };
+  }, []);
+
   const value = {
     userContext,
     activeRole,
@@ -1676,6 +1854,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     lastOfflineTransitionTime,
     toggleSimulatedOffline,
     flushOfflineQueue,
+    isSupabaseConfigured,
     originHub,
     setOriginHub,
     destinationHub,
