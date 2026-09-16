@@ -23,6 +23,7 @@ interface VehicleInspectorProps {
   onToggleHalt: (id: string) => void;
   onToggleDeviation: (id: string) => void;
   onTriggerSOS: (id: string) => void;
+  onFocusMission?: (missionId: string) => void;
 }
 
 export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
@@ -31,6 +32,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
   onToggleHalt,
   onToggleDeviation,
   onTriggerSOS,
+  onFocusMission,
 }) => {
   if (!vehicle) return null;
 
@@ -92,6 +94,24 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
             {v.cargo_type}
           </span>
         </div>
+
+        {/* Assigned Mission & Direct Focus */}
+        {v.mission_id && (
+          <div className="mt-2 p-2 rounded-xs bg-primary-tint/30 border border-primary/30 flex items-center justify-between gap-2">
+            <div>
+              <span className="text-[10px] text-text-secondary block">Assigned Mission:</span>
+              <strong className="font-mono text-xs text-primary font-bold">{v.mission_id}</strong>
+            </div>
+            {onFocusMission && (
+              <button
+                onClick={() => onFocusMission(v.mission_id)}
+                className="py-1 px-2 rounded-xs bg-[#1B4B73] hover:bg-[#123A5A] text-white text-[10px] font-semibold btn-press cursor-pointer transition-colors shadow-xs"
+              >
+                Focus Mission ➔
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="p-4 space-y-4 flex-1">

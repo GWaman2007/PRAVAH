@@ -493,6 +493,20 @@ export interface ReliefMission {
   deliveredAt?: string;
   assignedDriver?: string;
   assignedOfficer?: string;
+
+  // Real Logistics & GIS Mission Flow (Warehouse Origin -> Disaster Destination)
+  originWarehouseId: string;
+  originWarehouseName: string;
+  originCoords: [number, number];
+  disasterZoneId: string;
+  disasterZoneName: string;
+  destinationEndpoint: [number, number];
+  destinationName: string;
+  assignedVehicleId?: string;
+  routeGeometry?: [number, number][]; // [lat, lng] road-following coordinates
+  routeDistanceKm?: number;
+  routeDurationMinutes?: number;
+  routeStatus?: 'OPTIMAL' | 'DEGRADED' | 'UNAVAILABLE' | 'COMPUTED';
 }
 
 // ==========================================

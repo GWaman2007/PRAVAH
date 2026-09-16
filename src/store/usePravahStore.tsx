@@ -19,7 +19,7 @@ import type {
 } from '../types';
 import { NER_SEGMENTS, NER_NODES, VEHICLE_PROFILES } from '../data/routingNetwork';
 import { INITIAL_COMMUNITIES } from '../data/communitiesData';
-import { INITIAL_VEHICLES, FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES } from '../data/fleetData';
+import { INITIAL_VEHICLES, FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES, INITIAL_RELIEF_MISSIONS } from '../data/fleetData';
 import { INITIAL_DISTRICTS_HEALTH, INITIAL_BRO_BOTTLENECKS } from '../data/executiveData';
 import { SUPPORTED_LANGUAGES, PRESET_TRANSLATIONS, PHONETIC_READINGS, generateBroadcastForIncident } from '../data/translationsData';
 import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngine';
@@ -76,6 +76,7 @@ interface PravahStoreContextType {
     satellite: boolean;
     routes: boolean;
     fleet: boolean;
+    roadStatus: boolean;
   };
   toggleLayer: (layer: keyof PravahStoreContextType['activeLayers']) => void;
   imdFilter: 'ALL' | 'Red' | 'Orange' | 'Yellow' | 'Green';
@@ -128,8 +129,12 @@ interface PravahStoreContextType {
 
   // Relief Missions & Dispatch
   activeMissions: ReliefMission[];
+  selectedMissionId: string | null;
+  setSelectedMissionId: (id: string | null) => void;
   customizingMission: ReliefMission | null;
   setCustomizingMission: (mission: ReliefMission | null) => void;
+  approveMission: (missionId: string) => void;
+  dispatchMission: (missionId: string, vehicleId?: string) => void;
   approveAndDispatchMission: (missionId: string) => void;
   customizeMission: (mission: ReliefMission) => void;
 
@@ -321,6 +326,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     satellite: false,
     routes: true,
     fleet: true,
+    roadStatus: false, // Default hidden so default map is clean!
   });
 
   const toggleLayer = useCallback((layer: keyof PravahStoreContextType['activeLayers']) => {
@@ -434,30 +440,15 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [isSimulationRunning, setIsSimulationRunning] = useState<boolean>(true);
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
 
-  // 6b. Preemptive Relief Missions
-  const INITIAL_MISSIONS: ReliefMission[] = useMemo(() => [
-    {
-      id: 'MISSION-MZ-04',
-      communityId: 'MZ-KOL-004',
-      communityName: 'Kolasib District HQ & PHC',
-      recommendedVehicleType: '4x4 Tata Xenon High-Clearance Medic Carrier',
-      cargoAllocations: [
-        { item: 'IV Fluids (RL / NS 500ml)', quantity: 350, unit: 'Bags' },
-        { item: 'Polyvalent Snake Antivenom', quantity: 60, unit: 'Vials' },
-        { item: 'Fortified High-Energy Biscuits & Grain', quantity: 800, unit: 'kg' },
-        { item: 'Generator Diesel (Emergency)', quantity: 400, unit: 'Litres' },
-      ],
-      assignedRouteId: 'ROUTE-MZ-04',
-      suggestedDetour: 'NH-306 Bilkhawthlir Escarpment alternate spur (via Bairabi Pass)',
-      status: 'SUGGESTED',
-      urgency: 'P1_CRITICAL',
-      createdAt: new Date(Date.now() - 25 * 60000).toISOString(),
-      assignedDriver: 'Rajesh Mech (+91 94350-18492)',
-      assignedOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
-    },
-  ], []);
+  // 6b. Preemptive Relief Missions (10 Ongoing + 3 Suggested)
+  const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(INITIAL_RELIEF_MISSIONS);
+  const [selectedMissionId, setSelectedMissionId] = useState<string | null>('MISSION-MZ-04');
+  const activeMissionsRef = useRef<ReliefMission[]>(INITIAL_RELIEF_MISSIONS);
 
-  const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(INITIAL_MISSIONS);
+  useEffect(() => {
+    activeMissionsRef.current = activeMissions;
+  }, [activeMissions]);
+
   const [customizingMission, setCustomizingMission] = useState<ReliefMission | null>(null);
   const [pendingSOSAlert, setPendingSOSAlert] = useState<AlertEvent | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -532,7 +523,25 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setVehicles((prev) => {
         let allNewAlerts: AlertEvent[] = [];
         const nextVehicles = prev.map((v) => {
-          const route = FLEET_ROUTES[v.assigned_route_id] || FLEET_ROUTES['ROUTE-MZ-04'];
+          // Explicit mission association: find vehicle's assigned mission from latest ref
+          const assignedMission = activeMissionsRef.current.find(
+            (m) => m.assignedVehicleId === v.vehicle_id || m.id === v.mission_id
+          );
+
+          let route = FLEET_ROUTES[v.assigned_route_id] || FLEET_ROUTES['ROUTE-MZ-04'];
+          if (assignedMission && assignedMission.routeGeometry && assignedMission.routeGeometry.length >= 2) {
+            route = {
+              id: assignedMission.assignedRouteId || assignedMission.id,
+              name: assignedMission.suggestedDetour || assignedMission.destinationName,
+              startHub: assignedMission.originWarehouseName,
+              endHub: assignedMission.destinationName,
+              distanceKm: assignedMission.routeDistanceKm || route?.distanceKm || 60,
+              expectedDurationMinutes: assignedMission.routeDurationMinutes || route?.expectedDurationMinutes || 100,
+              coordinates: assignedMission.routeGeometry,
+              deviationPath: route?.deviationPath || [],
+            };
+          }
+
           const deltaSec = 2 * simulationSpeed;
           const { updatedVehicle, newAlerts } = stepVehicleSimulation(
             v,
@@ -1061,58 +1070,134 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   // 13. Mission Dispatch & Customization
-  const approveAndDispatchMission = useCallback((missionId: string) => {
+  const approveMission = useCallback((missionId: string) => {
+    setActiveMissions((prev) =>
+      prev.map((m) =>
+        m.id === missionId ? { ...m, status: 'APPROVED' } : m
+      )
+    );
+  }, []);
+
+  const dispatchMission = useCallback((missionId: string, vehicleId?: string) => {
+    // 1. Synchronously resolve mission from current ref
+    const targetMission = activeMissionsRef.current.find((m) => m.id === missionId);
+    const assignedVehId = vehicleId || targetMission?.assignedVehicleId || 'Medic-04';
+    const originCoords = targetMission?.originCoords || [24.8333, 92.7789];
+    const destName = targetMission?.destinationName || targetMission?.communityName || 'Disaster Operational Target';
+
+    // 2. Transition mission to IN_TRANSIT with confirmed vehicle assignment
     setActiveMissions((prev) =>
       prev.map((m) =>
         m.id === missionId
-          ? { ...m, status: 'IN_TRANSIT', dispatchedAt: new Date().toISOString() }
+          ? {
+              ...m,
+              status: 'IN_TRANSIT',
+              assignedVehicleId: assignedVehId,
+              dispatchedAt: new Date().toISOString(),
+            }
           : m
       )
     );
 
-    // If mission is for Kolasib (MZ-04), link origin, destination, selected vehicle, and switch to GIS Command View
-    if (missionId === 'MISSION-MZ-04') {
-      setOriginHub('silchar');
-      setDestinationHub('kolasib');
-      setSelectedVehicleId('Medic-01');
-      setActiveView('GIS_COMMAND');
-    }
+    // 3. Immediately focus and select dispatched mission and vehicle
+    setSelectedMissionId(missionId);
+    setSelectedVehicleId(assignedVehId);
 
-    setVehicles((prev) =>
-      prev.map((v) =>
-        v.vehicle_id === 'Medic-01'
-          ? {
-              ...v,
+    // 4. Update or add vehicle with ON_ROUTE status and origin coordinates
+    setVehicles((prev) => {
+      const exists = prev.some((v) => v.vehicle_id === assignedVehId);
+      if (exists) {
+        return prev.map((v) =>
+          v.vehicle_id === assignedVehId
+            ? {
+                ...v,
+                status: 'ON_ROUTE',
+                mission_id: missionId,
+                assigned_route_id: targetMission?.assignedRouteId || missionId,
+                destination_name: destName,
+                speed_kmh: 42,
+                is_stopped_manual: false,
+                current_coords: originCoords,
+                route_progress_pct: 0,
+                traveled_distance_km: 0,
+                breadcrumbs: [
+                  {
+                    coords: originCoords,
+                    status: 'ON_ROUTE',
+                    timestamp: new Date().toISOString(),
+                    speed_kmh: 42,
+                  },
+                ],
+              }
+            : v
+        );
+      } else {
+        const newVeh: VehicleTelemetry = {
+          vehicle_id: assignedVehId,
+          vehicle_name: `${assignedVehId} (${targetMission?.recommendedVehicleType || 'Disaster Rig'})`,
+          driver_name: 'Duty Dispatch Driver',
+          driver_phone: '+91 94350-00000',
+          convoy_lead_officer: 'Convoy Lead Officer',
+          mission_id: missionId,
+          cargo_type: targetMission?.cargoAllocations?.[0]?.item || 'Relief Consignment',
+          cargo_manifest: targetMission?.cargoAllocations || [{ item: 'Critical Supplies', quantity: 500, unit: 'kg' }],
+          destination_community_id: targetMission?.communityId || missionId,
+          destination_name: destName,
+          assigned_route_id: targetMission?.assignedRouteId || missionId,
+          current_coords: originCoords,
+          nominal_speed_kmh: 45,
+          speed_kmh: 42,
+          heading_deg: 180,
+          status: 'ON_ROUTE',
+          battery_pct: 99,
+          last_ping_time: new Date().toISOString(),
+          route_progress_pct: 0,
+          signal_strength_dbm: -62,
+          satellite_count: 14,
+          stationary_timer_sec: 0,
+          traveled_distance_km: 0,
+          deviation_distance_m: 0,
+          dead_reckoning_distance_m: 0,
+          breadcrumbs: [
+            {
+              coords: originCoords,
               status: 'ON_ROUTE',
+              timestamp: new Date().toISOString(),
               speed_kmh: 42,
-              is_stopped_manual: false,
-              next_chokepoint: 'Bilkhawthlir Alternate Spur',
-            }
-          : v
-      )
-    );
+            },
+          ],
+        };
+        return [newVeh, ...prev];
+      }
+    });
 
+    // 5. Add operational dispatch event log
     setAlerts((prev) => [
       {
         id: `dispatch-${Date.now()}`,
-        vehicle_id: 'Medic-01',
-        vehicle_name: 'Medic-01 (4x4 Tata Xenon High-Clearance)',
-        cargo_type: 'Emergency Medical & Ration Consignment',
+        vehicle_id: assignedVehId,
+        vehicle_name: assignedVehId,
+        cargo_type: targetMission?.cargoAllocations?.[0]?.item || 'Relief Consignment',
         timestamp: new Date().toISOString(),
         severity: 'INFO',
         type: 'WATCHDOG_OVERDUE_AMBER',
-        title: 'MISSION DISPATCH CONFIRMED: Convoy Medic-01 En Route to Kolasib',
-        message: 'Preemptive convoy approved by Regional Dispatcher. Route locked via Bairabi Pass detour. Escort officer and driver notified.',
-        coords: [24.4250, 92.7480],
+        title: `MISSION DISPATCH CONFIRMED: ${missionId} Active`,
+        message: `Convoy unit ${assignedVehId} deployed from ${targetMission?.originWarehouseName || 'depot'} to ${destName}. Real OSRM highway tracking active.`,
+        coords: originCoords,
         acknowledged: false,
       },
       ...prev,
     ]);
 
     if (socketRef.current?.connected) {
-      socketRef.current.emit('DISPATCH_MISSION', { missionId, vehicleId: 'Medic-01' });
+      socketRef.current.emit('DISPATCH_MISSION', { missionId, vehicleId: assignedVehId });
     }
   }, []);
+
+  const approveAndDispatchMission = useCallback((missionId: string) => {
+    approveMission(missionId);
+    dispatchMission(missionId);
+  }, [approveMission, dispatchMission]);
 
   const customizeMission = useCallback((mission: ReliefMission) => {
     setActiveMissions((prev) =>
@@ -1180,6 +1265,18 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           createdAt: new Date().toISOString(),
           assignedDriver: 'Rajesh Mech (+91 94350-18492)',
           assignedOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
+          originWarehouseId: 'silchar',
+          originWarehouseName: 'Silchar Strategic Depot',
+          originCoords: [24.8333, 92.7789],
+          disasterZoneId: 'LHZ-MZ-01',
+          disasterZoneName: 'NH-306 Bilkhawthlir Hill Escarpment',
+          destinationEndpoint: [24.2650, 92.7300],
+          destinationName: 'Kolasib District HQ & PHC',
+          assignedVehicleId: 'Medic-01',
+          routeDistanceKm: 68,
+          routeDurationMinutes: 110,
+          routeStatus: 'COMPUTED',
+          routeGeometry: FLEET_ROUTES['ROUTE-MZ-04'].coordinates,
         },
         ...prev,
       ];
@@ -1282,7 +1379,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       },
     });
     setVehicles(INITIAL_VEHICLES);
-    setActiveMissions(INITIAL_MISSIONS);
+    setActiveMissions(INITIAL_RELIEF_MISSIONS);
     setPendingSOSAlert(null);
     setRainfallMmHr(24);
     setIsMonsoonDownpourSimulated(false);
@@ -1291,7 +1388,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (socketRef.current?.connected) {
       socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 0 });
     }
-  }, [INITIAL_MISSIONS]);
+  }, []);
 
   // 15. Real-Time Socket Synchronization
   useEffect(() => {
@@ -1454,8 +1551,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     sendBroadcast,
     markMissionDelivered,
     activeMissions,
+    selectedMissionId,
+    setSelectedMissionId,
     customizingMission,
     setCustomizingMission,
+    approveMission,
+    dispatchMission,
     approveAndDispatchMission,
     customizeMission,
     pendingSOSAlert,

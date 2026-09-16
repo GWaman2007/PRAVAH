@@ -1,22 +1,35 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-import L from 'leaflet';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import * as maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { usePravahStore } from '../../store/usePravahStore';
-import { LANDSLIDE_HAZARD_GEOJSON, NER_DISTRICTS_GEOJSON, NER_CHOKE_POINTS } from '../../data/nerGeoJSON';
+import { FLEET_ROUTES, HAZARD_ZONES } from '../../data/fleetData';
 import { NER_NODES, VEHICLE_PROFILES, NER_SEGMENTS } from '../../data/routingNetwork';
-import { BLACKOUT_ZONES, FLEET_ROUTES } from '../../data/fleetData';
+import { NER_CHOKE_POINTS } from '../../data/nerGeoJSON';
 import {
   fetchLiveChokePointWeather,
   generateSimulatedMonsoonTelemetry,
   type StationWeatherTelemetry,
 } from '../../engine/openMeteoService';
+import {
+  createVehiclesGeoJSON,
+  createVehicleSOSGeoJSON,
+  createMissionRoutesGeoJSON,
+  createSelectedMissionRouteGeoJSON,
+  createRoadStatusGeoJSON,
+  createDisastersGeoJSON,
+  createCommunitiesGeoJSON,
+  createWarehousesGeoJSON,
+  createRoadBreakdownsGeoJSON,
+  createMissionEndpointsGeoJSON,
+  registerMapIcons,
+} from '../../engine/mapGeoJSONAdapters';
 import { SegmentModal } from './SegmentModal';
 import { VehicleInspector } from './VehicleInspector';
 import { AlertFeedModal } from './AlertFeedModal';
 import { SOSModal } from './SOSModal';
 import { MapLegend } from './MapLegend';
-import { DataStalenessChip } from '../layout/DataStalenessChip';
-import { RouteExplainabilityCard } from './RouteExplainabilityCard';
-import type { Segment, VehicleProfile } from '../../types';
+import { MissionDetailsPanel } from './MissionDetailsPanel';
+import type { Segment, VehicleProfile, ReliefMission } from '../../types';
 import {
   CloudRain,
   Navigation,
@@ -26,35 +39,27 @@ import {
   Pause,
   AlertOctagon,
   Shield,
-  RotateCcw,
-  FastForward,
   Bell,
-  Radio,
   Sliders,
-  Maximize2,
   ExternalLink,
   Crosshair,
   Route,
+  CheckCircle2,
+  Send,
+  Radio,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 
 export const TacticalMapDeck: React.FC = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const baseTileLayerRef = useRef<L.TileLayer | null>(null);
-
-  // Layer groups refs
-  const lhzLayerRef = useRef<L.GeoJSON | null>(null);
-  const imdLayerRef = useRef<L.GeoJSON | null>(null);
-  const chokePointsLayerRef = useRef<L.LayerGroup | null>(null);
-  const routesLayerRef = useRef<L.LayerGroup | null>(null);
-  const vehiclesLayerRef = useRef<L.LayerGroup | null>(null);
-  const blackoutLayerRef = useRef<L.LayerGroup | null>(null);
+  const mapInstanceRef = useRef<maplibregl.Map | null>(null);
+  const isMapLoadedRef = useRef<boolean>(false);
+  const animFrameIdRef = useRef<number | null>(null);
 
   const {
     activeLayers,
     toggleLayer,
-    imdFilter,
-    setImdFilter,
     rainfallMmHr,
     setRainfallMmHr,
     isMonsoonDownpourSimulated,
@@ -88,62 +93,51 @@ export const TacticalMapDeck: React.FC = () => {
     triggerVehicleSOS,
     activeRole,
     activeMissions,
-    theme,
+    selectedMissionId,
+    setSelectedMissionId,
+    approveMission,
+    dispatchMission,
+    communities,
+    selectedCommunityId,
+    setSelectedCommunityId,
   } = usePravahStore();
 
-  // Find any active in-transit relief mission
-  const activeDispatchedMission = useMemo(() => {
-    return activeMissions.find((m) => m.status === 'IN_TRANSIT') || null;
-  }, [activeMissions]);
-
-  // Modals & Drawers state
-  const [inspectedSegment, setInspectedSegment] = useState<Segment | null>(null);
-  const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
-  const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
-  const [activeSOSVehicleId, setActiveSOSVehicleId] = useState<string | null>(null);
+  // Active sidebar tab: 'MISSIONS' (Ongoing & Suggested) vs 'ROUTING' (K-Shortest & Constraints)
+  const [sidebarTab, setSidebarTab] = useState<'MISSIONS' | 'ROUTING'>('MISSIONS');
+  const [missionTab, setMissionTab] = useState<'ONGOING' | 'SUGGESTED'>('ONGOING');
   const [mobileViewTab, setMobileViewTab] = useState<'MAP' | 'CONTROLS'>('MAP');
 
-  // Spatial Drill-Down Active Corridor State
-  const [activeCorridorChip, setActiveCorridorChip] = useState<'mizoram' | 'nagaland' | 'sikkim' | 'macro'>('mizoram');
+  // Modals & Panels
+  const [inspectedSegment, setInspectedSegment] = useState<Segment | null>(null);
+  const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
+  const [activeSOSVehicleId, setActiveSOSVehicleId] = useState<string | null>(null);
+  const [isMissionDetailsOpen, setIsMissionDetailsOpen] = useState<boolean>(true);
 
-  const handleCorridorJump = (corridor: 'mizoram' | 'nagaland' | 'sikkim' | 'macro') => {
-    setActiveCorridorChip(corridor);
-    if (!mapInstanceRef.current) return;
-
-    switch (corridor) {
-      case 'mizoram':
-        mapInstanceRef.current.flyTo([24.30, 92.75], 10, { duration: 1.2 });
-        setOriginHub('silchar');
-        setDestinationHub('kolasib');
-        setSelectedVehicleId('Medic-01');
-        break;
-      case 'nagaland':
-        mapInstanceRef.current.flyTo([25.75, 93.90], 10, { duration: 1.2 });
-        setOriginHub('dimapur');
-        setDestinationHub('kohima');
-        setSelectedVehicleId('Ration-Convoy-07');
-        break;
-      case 'sikkim':
-        mapInstanceRef.current.flyTo([27.15, 88.50], 10, { duration: 1.2 });
-        setOriginHub('guwahati');
-        setDestinationHub('gangtok');
-        setSelectedVehicleId('Oxy-Tanker-04');
-        break;
-      case 'macro':
-        mapInstanceRef.current.flyTo([26.2006, 92.9376], 7, { duration: 1.2 });
-        break;
-    }
-  };
-
-  // Custom vehicle specifications state
+  // Custom specs state
   const [isCustomSpecsActive, setIsCustomSpecsActive] = useState<boolean>(false);
   const [customWeight, setCustomWeight] = useState<number>(32.0);
   const [customHeight, setCustomHeight] = useState<number>(4.2);
   const [customWidth, setCustomWidth] = useState<number>(2.9);
 
-  // Station weather telemetry state
+  // Weather telemetry state
   const [stationTelemetry, setStationTelemetry] = useState<StationWeatherTelemetry[]>([]);
   const [weatherSource, setWeatherSource] = useState<'LIVE' | 'SIMULATED'>('LIVE');
+
+  // Computed: Ongoing vs Suggested Missions
+  const ongoingMissions = useMemo(() => {
+    return activeMissions.filter((m) => m.status === 'IN_TRANSIT');
+  }, [activeMissions]);
+
+  const suggestedMissions = useMemo(() => {
+    return activeMissions.filter((m) => m.status === 'SUGGESTED' || m.status === 'APPROVED');
+  }, [activeMissions]);
+
+  // Selected mission object
+  const activeMission = useMemo(() => {
+    if (!selectedMissionId) return null;
+    return activeMissions.find((m) => m.id === selectedMissionId) || null;
+  }, [activeMissions, selectedMissionId]);
 
   // Selected vehicle object
   const activeVehicle = useMemo(() => {
@@ -156,28 +150,9 @@ export const TacticalMapDeck: React.FC = () => {
     return alerts.filter((a) => !a.acknowledged).length;
   }, [alerts]);
 
-  // Handle custom vehicle profile updates
-  const handleApplyCustomSpecs = () => {
-    const customProfile: VehicleProfile = {
-      id: 'CUSTOM_AXLE_SPEC',
-      name: `Custom Rig (${customWeight}T, ${customHeight}m H)`,
-      type: 'Custom User Specification',
-      height_m: customHeight,
-      width_m: customWidth,
-      weight_tonnes: customWeight,
-      turn_radius_m: 14.0,
-      fuel_efficiency_km_l: 3.0,
-      max_speed_kmh: 60,
-      icon: 'truck',
-    };
-    setSelectedVehicle(customProfile);
-    setIsCustomSpecsActive(true);
-  };
-
-  // 1. Fetch live Open-Meteo weather on mount
+  // 1. Fetch live Open-Meteo weather
   useEffect(() => {
     let isMounted = true;
-
     async function loadWeather() {
       if (isMonsoonDownpourSimulated) {
         const sim = generateSimulatedMonsoonTelemetry(NER_CHOKE_POINTS);
@@ -193,7 +168,6 @@ export const TacticalMapDeck: React.FC = () => {
         }
       }
     }
-
     loadWeather();
     return () => {
       isMounted = false;
@@ -208,653 +182,683 @@ export const TacticalMapDeck: React.FC = () => {
     }
   }, [vehicles]);
 
-  // 2. Initialize Leaflet Map
+  // 2. Initialize MapLibre GL Map (Single Instance)
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    // Centered on North East India: [26.2006, 92.9376], zoom 7
-    const map = L.map(mapContainerRef.current, {
-      center: [26.2006, 92.9376],
+    // Centered on North East India: [92.9376, 26.2006] (lng, lat), zoom 7
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: 'https://tiles.openfreemap.org/styles/liberty',
+      center: [92.9376, 26.2006],
       zoom: 7,
-      zoomControl: true,
+      minZoom: 5,
+      maxZoom: 18,
       attributionControl: false,
     });
 
-    // Base Tile Layer (CartoDB Dark Matter for dark mode, OpenStreetMap for light mode)
-    const baseTileUrl =
-      theme === 'dark'
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    map.addControl(
+      new maplibregl.AttributionControl({
+        compact: true,
+        customAttribution: 'PRAVAH 2.0 • OpenFreeMap • OpenStreetMap',
+      }),
+      'bottom-right'
+    );
 
-    const tileLayer = L.tileLayer(baseTileUrl, {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxZoom: 18,
-      minZoom: 4,
-      subdomains: 'abcd',
-      crossOrigin: true,
-    }).addTo(map);
-    tileLayer.bringToBack();
-    baseTileLayerRef.current = tileLayer;
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
-    // Initialize layer groups
-    chokePointsLayerRef.current = L.layerGroup().addTo(map);
-    routesLayerRef.current = L.layerGroup().addTo(map);
-    vehiclesLayerRef.current = L.layerGroup().addTo(map);
-    blackoutLayerRef.current = L.layerGroup().addTo(map);
+    map.on('error', (e) => {
+      console.warn('MapLibre operational event:', e);
+    });
+
+    map.on('styleimagemissing', (e) => {
+      const id = e.id;
+      if (!map.hasImage(id)) {
+        const width = 1;
+        const height = 1;
+        const emptyData = new Uint8Array(4);
+        map.addImage(id, { width, height, data: emptyData });
+      }
+    });
+
+    map.on('load', async () => {
+      isMapLoadedRef.current = true;
+      map.resize();
+      try {
+        await registerMapIcons(map);
+      } catch (err) {
+        console.warn('PRAVAH: Error loading custom SVG icons into MapLibre:', err);
+      }
+
+      // -------------------------------------------------------------
+      // 1. DISASTERS (Polygons: Fill + Line)
+      // -------------------------------------------------------------
+      map.addSource('disasters', {
+        type: 'geojson',
+        data: createDisastersGeoJSON(HAZARD_ZONES),
+      });
+
+      map.addLayer({
+        id: 'disasters-fill',
+        type: 'fill',
+        source: 'disasters',
+        paint: {
+          'fill-color': ['get', 'fillColor'],
+          'fill-opacity': ['get', 'fillOpacity'],
+        },
+      });
+
+      map.addLayer({
+        id: 'disasters-line',
+        type: 'line',
+        source: 'disasters',
+        paint: {
+          'line-color': ['get', 'outlineColor'],
+          'line-width': 2,
+          'line-dasharray': [3, 2],
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 2. ROAD ACCESSIBILITY & STATUS (Lines)
+      // -------------------------------------------------------------
+      map.addSource('road-status', {
+        type: 'geojson',
+        data: createRoadStatusGeoJSON(NER_SEGMENTS, activeDisruptions),
+      });
+
+      map.addLayer({
+        id: 'road-status-casing',
+        type: 'line',
+        source: 'road-status',
+        layout: {
+          visibility: 'none', // Strictly hidden by default to keep basemap clean
+        },
+        paint: {
+          'line-color': '#0F172A',
+          'line-width': ['+', ['get', 'width'], 2],
+          'line-opacity': 0.6,
+        },
+      });
+
+      map.addLayer({
+        id: 'road-status-line',
+        type: 'line',
+        source: 'road-status',
+        layout: {
+          visibility: 'none', // Strictly hidden by default to keep basemap clean
+        },
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': ['get', 'width'],
+          'line-opacity': 0.85,
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 3. ALL MISSION ROUTES
+      // -------------------------------------------------------------
+      map.addSource('mission-routes', {
+        type: 'geojson',
+        data: createMissionRoutesGeoJSON(activeMissions, FLEET_ROUTES, selectedMissionId),
+      });
+
+      map.addLayer({
+        id: 'mission-routes-glow',
+        type: 'line',
+        source: 'mission-routes',
+        paint: {
+          'line-color': ['get', 'glowColor'],
+          'line-width': ['*', ['get', 'lineWeight'], 2.2],
+          'line-opacity': ['*', ['get', 'opacity'], 0.4],
+        },
+      });
+
+      map.addLayer({
+        id: 'mission-routes-line',
+        type: 'line',
+        source: 'mission-routes',
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': ['get', 'lineWeight'],
+          'line-opacity': ['get', 'opacity'],
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 4. SELECTED MISSION ROUTE (Dedicated strong emphasis)
+      // -------------------------------------------------------------
+      map.addSource('selected-mission-route', {
+        type: 'geojson',
+        data: createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES),
+      });
+
+      map.addLayer({
+        id: 'selected-mission-glow',
+        type: 'line',
+        source: 'selected-mission-route',
+        paint: {
+          'line-color': '#38BDF8',
+          'line-width': 12,
+          'line-opacity': 0.55,
+        },
+      });
+
+      map.addLayer({
+        id: 'selected-mission-line',
+        type: 'line',
+        source: 'selected-mission-route',
+        paint: {
+          'line-color': '#0284C7',
+          'line-width': 5.5,
+          'line-opacity': 0.98,
+          'line-dasharray': [6, 4],
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 4b. MISSION DESTINATION ENDPOINTS (Inside Disaster Polygons)
+      // -------------------------------------------------------------
+      map.addSource('mission-endpoints', {
+        type: 'geojson',
+        data: createMissionEndpointsGeoJSON(activeMissions, selectedMissionId),
+      });
+
+      map.addLayer({
+        id: 'mission-endpoints-pulse',
+        type: 'circle',
+        source: 'mission-endpoints',
+        paint: {
+          'circle-radius': 16,
+          'circle-color': '#DC2626',
+          'circle-opacity': 0.35,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#EF4444',
+        },
+      });
+
+      map.addLayer({
+        id: 'mission-endpoints-symbol',
+        type: 'symbol',
+        source: 'mission-endpoints',
+        layout: {
+          'icon-image': 'icon-destination-endpoint',
+          'icon-size': 0.85,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'text-field': ['get', 'destination_name'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9.5,
+          'text-offset': [0, 1.4],
+          'text-anchor': 'top',
+        },
+        paint: {
+          'text-color': '#FFFFFF',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 5. WAREHOUSES & LOGISTICS HUBS
+      // -------------------------------------------------------------
+      map.addSource('warehouses', {
+        type: 'geojson',
+        data: createWarehousesGeoJSON(),
+      });
+
+      map.addLayer({
+        id: 'warehouses-icon',
+        type: 'symbol',
+        source: 'warehouses',
+        layout: {
+          'icon-image': 'icon-warehouse',
+          'icon-size': 0.8,
+          'icon-allow-overlap': true,
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 10,
+          'text-offset': [0, 1.4],
+          'text-anchor': 'top',
+        },
+        paint: {
+          'text-color': '#E2E8F0',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 6. COMMUNITIES & PRIORITY TIERS
+      // -------------------------------------------------------------
+      map.addSource('communities', {
+        type: 'geojson',
+        data: createCommunitiesGeoJSON(communities, selectedCommunityId),
+      });
+
+      map.addLayer({
+        id: 'communities-circle',
+        type: 'circle',
+        source: 'communities',
+        paint: {
+          'circle-radius': 7,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      map.addLayer({
+        id: 'communities-label',
+        type: 'symbol',
+        source: 'communities',
+        layout: {
+          'text-field': ['concat', ['get', 'name'], ' (', ['get', 'priorityTier'], ')'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 10,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#FFFFFF',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 7. ROAD BREAKDOWNS (Dedicated pulsing point at real coordinate)
+      // -------------------------------------------------------------
+      map.addSource('road-breakdowns', {
+        type: 'geojson',
+        data: createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS),
+      });
+
+      map.addLayer({
+        id: 'road-breakdowns-pulse',
+        type: 'circle',
+        source: 'road-breakdowns',
+        paint: {
+          'circle-radius': 16,
+          'circle-color': '#DC2626',
+          'circle-opacity': 0.35,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#EF4444',
+        },
+      });
+
+      map.addLayer({
+        id: 'road-breakdowns-point',
+        type: 'circle',
+        source: 'road-breakdowns',
+        paint: {
+          'circle-radius': 7,
+          'circle-color': '#DC2626',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 8. VEHICLE SOS ANIMATED PULSE RING
+      // -------------------------------------------------------------
+      map.addSource('vehicle-sos', {
+        type: 'geojson',
+        data: createVehicleSOSGeoJSON(vehicles),
+      });
+
+      map.addLayer({
+        id: 'vehicle-sos-pulse',
+        type: 'circle',
+        source: 'vehicle-sos',
+        paint: {
+          'circle-radius': 22,
+          'circle-color': '#DC2626',
+          'circle-opacity': 0.45,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#EF4444',
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 9. VEHICLES (Individual Native Symbols with High-Visibility Selection)
+      // -------------------------------------------------------------
+      map.addSource('vehicles', {
+        type: 'geojson',
+        data: createVehiclesGeoJSON(vehicles, selectedVehicleId),
+        cluster: false, // Ensure all operational vehicles are always visible individually
+      });
+
+      // Selected vehicle halo ring (rendered beneath vehicle icon)
+      map.addLayer({
+        id: 'vehicles-selected-ring',
+        type: 'circle',
+        source: 'vehicles',
+        filter: ['==', ['get', 'isSelected'], true],
+        paint: {
+          'circle-radius': 24,
+          'circle-color': 'rgba(56, 189, 248, 0.25)',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#38BDF8',
+        },
+      });
+
+      // Vehicle Symbol layer (using registered SVG high-res canvas icons)
+      map.addLayer({
+        id: 'vehicles-unclustered',
+        type: 'symbol',
+        source: 'vehicles',
+        layout: {
+          'icon-image': ['get', 'icon'],
+          'icon-size': 0.9,
+          'icon-rotate': ['get', 'heading_deg'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'text-field': ['get', 'vehicle_id'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9.5,
+          'text-offset': [0, 1.4],
+          'text-anchor': 'top',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': ['case', ['get', 'isSelected'], '#FBBF24', '#FFFFFF'],
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 2,
+        },
+      });
+
+      // -------------------------------------------------------------
+      // INTERACTION HANDLERS
+      // -------------------------------------------------------------
+      // Click vehicle marker
+      map.on('click', 'vehicles-unclustered', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties?.vehicle_id) {
+          setSelectedVehicleId(feat.properties.vehicle_id);
+          setIsInspectorOpen(true);
+        }
+      });
+
+      // Click road segment
+      map.on('click', 'road-status-line', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat?.properties?.segment_id) {
+          const seg = NER_SEGMENTS.find((s) => s.id === feat.properties.segment_id);
+          if (seg) setInspectedSegment(seg);
+        }
+      });
+
+      // Click mission endpoint
+      map.on('click', 'mission-endpoints-symbol', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat?.properties?.mission_id) {
+          const target = activeMissions.find((m) => m.id === feat.properties.mission_id);
+          if (target) handleFocusMission(target);
+        }
+      });
+
+      // Click community
+      map.on('click', 'communities-circle', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat?.properties?.community_id) {
+          setSelectedCommunityId(feat.properties.community_id);
+        }
+      });
+
+      // Cursor change on interactive layers
+      const interactiveLayers = [
+        'vehicles-cluster',
+        'vehicles-unclustered',
+        'road-status-line',
+        'communities-circle',
+      ];
+      interactiveLayers.forEach((layerId) => {
+        map.on('mouseenter', layerId, () => {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', layerId, () => {
+          map.getCanvas().style.cursor = '';
+        });
+      });
+    });
 
     mapInstanceRef.current = map;
 
-    // Trigger size recalculation after layout settles
-    const initialResizeTimer = setTimeout(() => {
-      map.invalidateSize();
-    }, 150);
-
-    // Attach ResizeObserver to keep tiles rendered during tab / panel resizing
-    const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize();
-    });
-    if (mapContainerRef.current) {
-      resizeObserver.observe(mapContainerRef.current);
-    }
-
     return () => {
-      clearTimeout(initialResizeTimer);
-      resizeObserver.disconnect();
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       map.remove();
       mapInstanceRef.current = null;
-      baseTileLayerRef.current = null;
+      isMapLoadedRef.current = false;
     };
   }, []);
 
-  // Dynamic Dark Mode Tile Layer Swap - Clean flush of stale raster tiles
+  // 3. Smooth Animated Pulses for SOS & Road Breakdowns
   useEffect(() => {
-    if (mapInstanceRef.current) {
-      if (baseTileLayerRef.current) {
-        mapInstanceRef.current.removeLayer(baseTileLayerRef.current);
-      }
-      const tileUrl =
-        theme === 'dark'
-          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    let start = performance.now();
 
-      const newTileLayer = L.tileLayer(tileUrl, {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-        maxZoom: 18,
-        minZoom: 4,
-        subdomains: 'abcd',
-        crossOrigin: true,
-      }).addTo(mapInstanceRef.current);
-      newTileLayer.bringToBack();
-      baseTileLayerRef.current = newTileLayer;
+    const animatePulse = (time: number) => {
+      const elapsed = (time - start) / 1000;
+      const radiusOffset = (Math.sin(elapsed * 3) + 1) * 6; // 0 to 12
+      const opacity = 0.55 - (Math.sin(elapsed * 3) + 1) * 0.18;
 
-      // Invalidate size to recalculate tile boundary coordinates without clipping
-      setTimeout(() => {
-        mapInstanceRef.current?.invalidateSize();
-      }, 150);
-    }
-  }, [theme]);
-
-  // Auto-focus map on active dispatched mission if available
-  useEffect(() => {
-    if (!mapInstanceRef.current || !activeDispatchedMission) return;
-    if (activeDispatchedMission.id === 'MISSION-MZ-04') {
-      mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.2 });
-    }
-  }, [activeDispatchedMission?.id, activeDispatchedMission?.status]);
-
-  // 3. Render ISRO Bhuvan Landslide Hazard Layer
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    if (lhzLayerRef.current) {
-      map.removeLayer(lhzLayerRef.current);
-      lhzLayerRef.current = null;
-    }
-
-    if (activeLayers.lhz) {
-      const layer = L.geoJSON(LANDSLIDE_HAZARD_GEOJSON, {
-        style: (feature) => {
-          const sev = feature?.properties?.severity;
-          const color =
-            sev === 'Very High' ? '#D92D20' : sev === 'High' ? '#D2691E' : '#B8860B';
-          return {
-            fillColor: color,
-            fillOpacity: 0.35,
-            color: color,
-            weight: 2,
-            dashArray: sev === 'Very High' ? '4, 4' : undefined,
-          };
-        },
-        onEachFeature: (feature, l) => {
-          const p = feature.properties;
-          l.bindPopup(`
-            <div style="font-family: sans-serif; min-width: 200px;">
-              <div style="font-weight: bold; color: #1B4B73; font-size: 13px; margin-bottom: 4px;">${p.name}</div>
-              <div style="font-size: 11px; margin-bottom: 2px;"><strong>Bhuvan Code:</strong> ${p.bhuvan_code}</div>
-              <div style="font-size: 11px; margin-bottom: 2px;"><strong>Severity:</strong> <span style="color: #D92D20; font-weight: bold;">${p.severity}</span></div>
-              <div style="font-size: 11px; margin-bottom: 2px;"><strong>Slope:</strong> ${p.slope_gradient}</div>
-              <div style="font-size: 11px; color: #555; margin-top: 4px;">${p.advisory}</div>
-            </div>
-          `);
-        },
-      }).addTo(map);
-      lhzLayerRef.current = layer;
-    }
-  }, [activeLayers.lhz]);
-
-  // 4. Render IMD Weather Alert Choropleth
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    if (imdLayerRef.current) {
-      map.removeLayer(imdLayerRef.current);
-      imdLayerRef.current = null;
-    }
-
-    if (activeLayers.imd) {
-      const layer = L.geoJSON(NER_DISTRICTS_GEOJSON, {
-        filter: (feature) => {
-          if (imdFilter === 'ALL') return true;
-          return feature.properties.default_alert === imdFilter;
-        },
-        style: (feature) => {
-          const alert = feature?.properties?.default_alert;
-          let color = '#2E7D46'; // Green
-          if (alert === 'Red') color = '#D92D20';
-          else if (alert === 'Orange') color = '#D2691E';
-          else if (alert === 'Yellow') color = '#B8860B';
-
-          return {
-            fillColor: color,
-            fillOpacity: 0.25,
-            color: color,
-            weight: 1.5,
-          };
-        },
-        onEachFeature: (feature, l) => {
-          const p = feature.properties;
-          l.bindPopup(`
-            <div style="font-family: sans-serif; min-width: 220px;">
-              <div style="font-weight: bold; color: #1B4B73; font-size: 13px;">${p.district_name} (${p.state_name})</div>
-              <div style="margin: 4px 0; font-size: 11px;"><strong>IMD Bulletin:</strong> <span style="font-weight: bold;">${p.warning_title}</span></div>
-              <div style="font-size: 11px; margin-bottom: 2px;"><strong>24h Forecast:</strong> ${p.rainfall_forecast_24h}</div>
-              <div style="font-size: 11px; color: #444; margin-top: 4px;">${p.weather_summary}</div>
-            </div>
-          `);
-        },
-      }).addTo(map);
-      imdLayerRef.current = layer;
-    }
-  }, [activeLayers.imd, imdFilter]);
-
-  // 5. Render Cellular Blackout Polygons & Open-Meteo Choke Point Pins
-  useEffect(() => {
-    const group = chokePointsLayerRef.current;
-    if (!group) return;
-    group.clearLayers();
-
-    // Render Blackout Polygons
-    BLACKOUT_ZONES.forEach((zone) => {
-      L.polygon(zone.polygon, {
-        color: '#8A8F94',
-        weight: 2,
-        dashArray: '5, 5',
-        fillColor: '#5B6066',
-        fillOpacity: 0.2,
-      })
-        .bindPopup(`
-          <div style="font-family: sans-serif;">
-            <div style="font-weight: bold; color: #D92D20;">📵 Cellular Blackout Zone</div>
-            <div style="font-size: 12px; margin-top: 4px;">${zone.name}</div>
-            <div style="font-size: 11px; color: #555;">Expected Transit: ${zone.expectedTransitMinutes}m (Watchdog Buffer: +${zone.bufferMultiplier * 100}%)</div>
-          </div>
-        `)
-        .addTo(group);
-    });
-
-    // Render Open-Meteo Live Station Markers ported from HeatMapTesting
-    const sourcePoints = stationTelemetry.length > 0 ? stationTelemetry : NER_CHOKE_POINTS;
-
-    sourcePoints.forEach((cp: any) => {
-      const mm = cp.precipitation_mm ?? 0.0;
-      let badgeColor = '#2E7D46';
-      let pulseAnim = '';
-
-      if (mm > 15.0) {
-        badgeColor = '#D92D20';
-        pulseAnim = 'animation: pulse 1.5s infinite;';
-      } else if (mm >= 5.0) {
-        badgeColor = '#D2691E';
-      } else if (mm > 0.0) {
-        badgeColor = '#2E7D46';
-      } else {
-        badgeColor = '#5B6066';
-      }
-
-      const icon = L.divIcon({
-        className: 'choke-weather-marker',
-        html: `
-          <div style="
-            background: ${badgeColor};
-            color: white;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: bold;
-            border: 2px solid white;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
-            ${pulseAnim}
-          ">
-            ${mm > 0 ? mm.toFixed(0) : '0'}
-          </div>
-        `,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-      });
-
-      const marker = L.marker([cp.lat, cp.lng], { icon });
-
-      marker.bindPopup(`
-        <div style="font-family: sans-serif; min-width: 220px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-            <span style="font-size: 10px; font-family: monospace; color: #666;">${cp.id}</span>
-            <span style="background: ${badgeColor}; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;">
-              ${mm.toFixed(1)} mm/h
-            </span>
-          </div>
-          <div style="font-weight: bold; font-size: 12px; color: #1B4B73;">${cp.name}</div>
-          <div style="font-size: 11px; margin-top: 2px;"><strong>Highway:</strong> ${cp.highway} (${cp.state})</div>
-          <div style="font-size: 11px;"><strong>Condition:</strong> ${cp.weather_desc || 'Nominal Precipitation'}</div>
-          <div style="font-size: 11px;"><strong>Elevation:</strong> ${cp.elevation_m}m ${cp.temperature_c ? `| ${cp.temperature_c}°C` : ''}</div>
-          <div style="font-size: 11px; color: #D2691E; margin-top: 3px;"><strong>BRO Support:</strong> ${cp.nearest_bro_base}</div>
-          <div style="font-size: 9px; color: #888; margin-top: 4px; border-top: 1px solid #eee; padding-top: 2px;">
-            Source: Open-Meteo ${weatherSource === 'SIMULATED' ? '(Simulated Orographic)' : '(Live Satellite)'}
-          </div>
-        </div>
-      `);
-
-      marker.bindTooltip(`${cp.name}: ${mm.toFixed(1)} mm`, { direction: 'top', offset: [0, -12] });
-      marker.addTo(group);
-    });
-  }, [stationTelemetry, weatherSource]);
-
-  // 6. Render Candidate Routes
-  useEffect(() => {
-    const group = routesLayerRef.current;
-    if (!group) return;
-    group.clearLayers();
-
-    if (!activeLayers.routes) return;
-
-    candidateRoutes.forEach((route, idx) => {
-      const isSelected = idx === selectedRouteIndex;
-
-      // Extract all segment coordinates
-      const allCoords: [number, number][] = [];
-      route.segments.forEach((seg) => {
-        allCoords.push(...seg.coordinates);
-      });
-
-      if (allCoords.length < 2) return;
-
-      const polyline = L.polyline(allCoords, {
-        color: route.color,
-        weight: isSelected ? 6 : 3,
-        opacity: isSelected ? 0.95 : 0.45,
-        dashArray: route.dashArray,
-      });
-
-      polyline.on('click', () => setSelectedRouteIndex(idx));
-
-      polyline.bindPopup(`
-        <div style="font-family: sans-serif; min-width: 220px;">
-          <div style="font-weight: bold; color: ${route.color}; font-size: 13px;">
-            Rank ${route.rank}: ${route.rankLabel}
-          </div>
-          <div style="font-size: 11px; margin-top: 4px;">
-            <strong>Distance:</strong> ${route.totalDistanceKm} km | <strong>ETA:</strong> ${route.degradedDurationMinutes} min
-          </div>
-          <div style="font-size: 11px;">
-            <strong>Composite Safety:</strong> ${route.compositeSafetyScore}%
-          </div>
-          ${
-            route.failureBottleneck
-              ? `<div style="color: #D92D20; font-size: 11px; margin-top: 4px; font-weight: bold;">
-                  ❌ Bottleneck: ${route.failureBottleneck.reason}
-                 </div>`
-              : ''
-          }
-        </div>
-      `);
-
-      polyline.addTo(group);
-
-      // If impassable, render failure pin at bottleneck
-      if (!route.isPassable && route.failureBottleneck) {
-        const icon = L.divIcon({
-          className: 'custom-bottleneck-icon',
-          html: `<div style="background-color: #D92D20; color: white; width: 22px; height: 22px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">✕</div>`,
-          iconSize: [22, 22],
-          iconAnchor: [11, 11],
-        });
-
-        L.marker(route.failureBottleneck.coordinates, { icon })
-          .bindPopup(`
-            <div style="font-family: sans-serif;">
-              <div style="font-weight: bold; color: #D92D20;">Impassable Constraint Violation</div>
-              <div style="font-size: 11px; margin-top: 2px;">${route.failureBottleneck.reason}</div>
-            </div>
-          `)
-          .addTo(group);
-      }
-    });
-  }, [candidateRoutes, selectedRouteIndex, activeLayers.routes]);
-
-  // 7. Render Fleet Vehicles, Active Convoy Routes & Telemetry
-  useEffect(() => {
-    const group = vehiclesLayerRef.current;
-    if (!group) return;
-    group.clearLayers();
-
-    if (!activeLayers.fleet) return;
-
-    vehicles.forEach((veh) => {
-      if (activeRole === 'DRIVER' && veh.vehicle_id !== 'Medic-01') return;
-
-      const isSelected = selectedVehicleId === veh.vehicle_id;
-      const isDeadReckon = veh.status === 'DEAD_ZONE_EXTRAPOLATING';
-      const isSOS = veh.status === 'SOS_ALERT';
-      const isOverdue = veh.is_watchdog_amber || veh.is_watchdog_red;
-      const isMissionActiveForVeh = veh.vehicle_id === 'Medic-01' && !!activeDispatchedMission;
-
-      // 7a. Render Full Highlighted Route for Convoy
-      const routeDef = FLEET_ROUTES[veh.assigned_route_id];
-      if (routeDef) {
-        const routeCoords =
-          veh.is_deviated_manual && routeDef.deviationPath && routeDef.deviationPath.length >= 2
-            ? routeDef.deviationPath
-            : routeDef.coordinates;
-
-        // Choose route color based on state and selection
-        const routeColor = isSOS
-          ? '#DC2626'
-          : isDeadReckon
-          ? '#EA580C'
-          : (isSelected || isMissionActiveForVeh)
-          ? '#0284C7'
-          : '#2563EB';
-
-        // Outer glow corridor line
-        const glowLine = L.polyline(routeCoords, {
-          color: (isSelected || isMissionActiveForVeh) ? '#38BDF8' : routeColor,
-          weight: (isSelected || isMissionActiveForVeh) ? 10 : 6,
-          opacity: (isSelected || isMissionActiveForVeh) ? 0.55 : 0.22,
-          lineCap: 'round',
-          lineJoin: 'round',
-        }).addTo(group);
-
-        // Main convoy route polyline (with dash for dead-reckoning or selected)
-        const mainLine = L.polyline(routeCoords, {
-          color: isMissionActiveForVeh ? '#0284C7' : routeColor,
-          weight: (isSelected || isMissionActiveForVeh) ? 5 : 3.5,
-          opacity: (isSelected || isMissionActiveForVeh) ? 0.98 : 0.75,
-          dashArray: isDeadReckon ? '6, 6' : (isSelected || isMissionActiveForVeh) ? '8, 6' : undefined,
-          lineCap: 'round',
-          lineJoin: 'round',
-        }).addTo(group);
-
-        const handleSelectVehicle = () => {
-          setSelectedVehicleId(veh.vehicle_id);
-          setIsInspectorOpen(true);
-        };
-
-        glowLine.on('click', handleSelectVehicle);
-        mainLine.on('click', handleSelectVehicle);
-
-        // Tooltip displaying convoy route details on hover
-        mainLine.bindTooltip(`
-          <div style="font-family: sans-serif; min-width: 220px; padding: 2px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-              <span style="font-weight: bold; color: ${routeColor}; font-size: 12px;">🚚 ${veh.vehicle_name}</span>
-              <span style="font-size: 10px; background: ${routeColor}; color: white; padding: 1px 5px; border-radius: 3px; font-weight: bold;">
-                ${veh.status.replace(/_/g, ' ')}
-              </span>
-            </div>
-            <div style="font-size: 11px; margin-top: 4px; color: #333;"><strong>Corridor:</strong> ${routeDef.name}</div>
-            <div style="font-size: 11px; color: #555;"><strong>Speed:</strong> ${veh.speed_kmh} km/h | <strong>Heading:</strong> ${Math.round(veh.heading_deg)}°</div>
-            <div style="font-size: 11px; color: #555;"><strong>Progress:</strong> ${veh.route_progress_pct}% (${veh.traveled_distance_km.toFixed(1)} / ${routeDef.distanceKm} km)</div>
-            <div style="font-size: 10px; color: #0284C7; margin-top: 3px; border-top: 1px solid #e5e7eb; padding-top: 2px;">
-              Click route line to inspect convoy telemetry
-            </div>
-          </div>
-        `, { sticky: true, offset: [0, -10] });
-
-        // Highlight Origin and Destination Hubs when vehicle is selected or inspected OR part of active mission
-        if ((isSelected || isMissionActiveForVeh) && routeCoords.length >= 2) {
-          const originCoord = routeCoords[0];
-          const destCoord = routeCoords[routeCoords.length - 1];
-
-          // Origin Depot Icon
-          const originIcon = L.divIcon({
-            className: 'depot-origin-icon',
-            html: `
-              <div style="
-                background: #16A34A;
-                color: #FFFFFF;
-                border: 2px solid #FFFFFF;
-                border-radius: 4px;
-                padding: 2px 6px;
-                font-size: 10px;
-                font-weight: bold;
-                white-space: nowrap;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-                display: flex;
-                align-items: center;
-                gap: 3px;
-              ">
-                <span>⚑ DEPOT:</span>
-                <span>${routeDef.startHub.split(' ')[0]}</span>
-              </div>
-            `,
-            iconAnchor: [30, 24],
-          });
-          L.marker(originCoord, { icon: originIcon }).addTo(group);
-
-          // Destination Hub Icon
-          const destIcon = L.divIcon({
-            className: 'hub-dest-icon',
-            html: `
-              <div style="
-                background: #DC2626;
-                color: #FFFFFF;
-                border: 2px solid #FFFFFF;
-                border-radius: 4px;
-                padding: 2px 6px;
-                font-size: 10px;
-                font-weight: bold;
-                white-space: nowrap;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-                display: flex;
-                align-items: center;
-                gap: 3px;
-              ">
-                <span>🏁 DEST:</span>
-                <span>${routeDef.endHub.split(' ')[0]}</span>
-              </div>
-            `,
-            iconAnchor: [30, 24],
-          });
-          L.marker(destCoord, { icon: destIcon }).addTo(group);
+      const map = mapInstanceRef.current;
+      if (map && isMapLoadedRef.current) {
+        if (map.getLayer('vehicle-sos-pulse')) {
+          map.setPaintProperty('vehicle-sos-pulse', 'circle-radius', 18 + radiusOffset);
+          map.setPaintProperty('vehicle-sos-pulse', 'circle-opacity', Math.max(0.15, opacity));
+        }
+        if (map.getLayer('road-breakdowns-pulse')) {
+          map.setPaintProperty('road-breakdowns-pulse', 'circle-radius', 12 + radiusOffset * 0.7);
+          map.setPaintProperty('road-breakdowns-pulse', 'circle-opacity', Math.max(0.2, opacity));
+        }
+        if (map.getLayer('mission-endpoints-pulse')) {
+          map.setPaintProperty('mission-endpoints-pulse', 'circle-radius', 14 + radiusOffset * 0.6);
+          map.setPaintProperty('mission-endpoints-pulse', 'circle-opacity', Math.max(0.2, opacity));
         }
       }
 
-      // 7b. Render Breadcrumb trail
-      if (veh.breadcrumbs.length > 1) {
-        const breadcrumbCoords = veh.breadcrumbs.map((b) => b.coords);
-        L.polyline(breadcrumbCoords, {
-          color: isDeadReckon ? '#EA580C' : isSelected ? '#0284C7' : '#2563EB',
-          weight: isSelected ? 4 : 2.5,
-          opacity: 0.8,
-          dashArray: isDeadReckon ? '4, 4' : undefined,
-        }).addTo(group);
-      }
+      animFrameIdRef.current = requestAnimationFrame(animatePulse);
+    };
 
-      // 7c. Render Vehicle Marker with True Dynamic Compass Heading
-      const markerColor = isSOS
-        ? '#D92D20'
-        : isOverdue
-        ? '#D2691E'
-        : isDeadReckon
-        ? '#6B7280'
-        : isSelected
-        ? '#0284C7'
-        : '#1B4B73';
+    animFrameIdRef.current = requestAnimationFrame(animatePulse);
+    return () => {
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+    };
+  }, []);
 
-      const borderColor = isSelected ? '#FBBF24' : '#FFFFFF';
-
-      const ringEffect = isSOS
-        ? 'box-shadow: 0 0 0 4px rgba(217, 45, 32, 0.45), 0 4px 10px rgba(0,0,0,0.4);'
-        : isSelected
-        ? 'box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.5), 0 4px 10px rgba(0,0,0,0.4);'
-        : 'box-shadow: 0 3px 8px rgba(0,0,0,0.35);';
-
-      // SVG Navigation Chevron: points strictly NORTH (0 deg) at baseline
-      const chevronSvg = `
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="#FFFFFF" style="display:block;">
-          <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
-        </svg>
-      `;
-
-      const iconHtml = `
-        <div style="position: relative; width: 34px; height: 34px;">
-          <!-- Upright circular vehicle puck -->
-          <div style="
-            width: 34px;
-            height: 34px;
-            background: ${markerColor};
-            border: 2.5px solid ${borderColor};
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            ${ringEffect}
-            cursor: pointer;
-            transition: all 0.2s ease;
-          ">
-            <!-- Rotatable Direction Arrow Needle: Rotates exactly to veh.heading_deg -->
-            <div style="
-              width: 18px;
-              height: 18px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              transform: rotate(${veh.heading_deg}deg);
-              transform-origin: center center;
-              transition: transform 0.4s ease-out;
-            ">
-              ${chevronSvg}
-            </div>
-          </div>
-          <!-- Clear Convoy Callout Tag (Always upright and legible) -->
-          <div style="
-            position: absolute;
-            bottom: -19px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(15, 23, 42, 0.92);
-            color: ${isSelected ? '#FDE047' : '#FFFFFF'};
-            font-size: 9px;
-            font-weight: 700;
-            font-family: monospace;
-            padding: 1px 4px;
-            border-radius: 3px;
-            border: 1px solid ${isSelected ? '#FBBF24' : 'rgba(255,255,255,0.25)'};
-            white-space: nowrap;
-            pointer-events: none;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-            letter-spacing: 0.02em;
-          ">
-            ${veh.vehicle_id}
-          </div>
-        </div>
-      `;
-
-      const customIcon = L.divIcon({
-        className: 'veh-marker',
-        html: iconHtml,
-        iconSize: [34, 34],
-        iconAnchor: [17, 17],
-      });
-
-      const marker = L.marker(veh.current_coords, { icon: customIcon });
-
-      marker.on('click', () => {
-        setSelectedVehicleId(veh.vehicle_id);
-        setIsInspectorOpen(true);
-      });
-
-      marker.bindTooltip(`
-        <div style="font-family: sans-serif; font-size: 11px;">
-          <strong style="color:${markerColor}">${veh.vehicle_name}</strong>
-          <div style="color: #555;">Heading: ${Math.round(veh.heading_deg)}° | Speed: ${veh.speed_kmh} km/h</div>
-          <div style="color: #666; font-size: 10px;">Click to inspect convoy telemetry</div>
-        </div>
-      `, { offset: [0, -18] });
-
-      marker.addTo(group);
-    });
-  }, [vehicles, selectedVehicleId, activeLayers.fleet, activeRole]);
-
-  // Invalidate map size when mission HUD bar toggles
+  // 4. Update Sources when store data changes
   useEffect(() => {
-    if (mapInstanceRef.current) {
-      setTimeout(() => {
-        mapInstanceRef.current?.invalidateSize();
-      }, 150);
+    const map = mapInstanceRef.current;
+    if (!map || !isMapLoadedRef.current) return;
+
+    // Update vehicles & SOS
+    const vehSource = map.getSource('vehicles') as maplibregl.GeoJSONSource;
+    if (vehSource) {
+      vehSource.setData(createVehiclesGeoJSON(vehicles, selectedVehicleId));
     }
-  }, [activeDispatchedMission]);
+    const sosSource = map.getSource('vehicle-sos') as maplibregl.GeoJSONSource;
+    if (sosSource) {
+      sosSource.setData(createVehicleSOSGeoJSON(vehicles));
+    }
+
+    // Update mission routes
+    const routesSource = map.getSource('mission-routes') as maplibregl.GeoJSONSource;
+    if (routesSource) {
+      routesSource.setData(createMissionRoutesGeoJSON(activeMissions, FLEET_ROUTES, selectedMissionId));
+    }
+    const selRouteSource = map.getSource('selected-mission-route') as maplibregl.GeoJSONSource;
+    if (selRouteSource) {
+      selRouteSource.setData(createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES));
+    }
+
+    // Update mission endpoints
+    const endpointsSource = map.getSource('mission-endpoints') as maplibregl.GeoJSONSource;
+    if (endpointsSource) {
+      endpointsSource.setData(createMissionEndpointsGeoJSON(activeMissions, selectedMissionId));
+    }
+
+    // Update road status & breakdowns
+    const roadSource = map.getSource('road-status') as maplibregl.GeoJSONSource;
+    if (roadSource) {
+      roadSource.setData(createRoadStatusGeoJSON(NER_SEGMENTS, activeDisruptions));
+    }
+    const breakdownSource = map.getSource('road-breakdowns') as maplibregl.GeoJSONSource;
+    if (breakdownSource) {
+      breakdownSource.setData(createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS));
+    }
+
+    // Update communities
+    const commSource = map.getSource('communities') as maplibregl.GeoJSONSource;
+    if (commSource) {
+      commSource.setData(createCommunitiesGeoJSON(communities, selectedCommunityId));
+    }
+  }, [
+    vehicles,
+    selectedVehicleId,
+    activeMissions,
+    selectedMissionId,
+    activeMission,
+    activeDisruptions,
+    communities,
+    selectedCommunityId,
+  ]);
+
+  // 5. Update Layer Visibility from activeLayers filters
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapLoadedRef.current) return;
+
+    const setVisibility = (layerId: string, visible: boolean) => {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+      }
+    };
+
+    setVisibility('disasters-fill', activeLayers.lhz);
+    setVisibility('disasters-line', activeLayers.lhz);
+
+    // ROAD STATUS: strictly off by default to maintain clean operational map
+    setVisibility('road-status-casing', activeLayers.roadStatus);
+    setVisibility('road-status-line', activeLayers.roadStatus);
+
+    // MISSION ROUTES & ENDPOINTS: Active BLUE routes
+    setVisibility('mission-routes-glow', activeLayers.routes);
+    setVisibility('mission-routes-line', activeLayers.routes);
+    setVisibility('selected-mission-glow', activeLayers.routes);
+    setVisibility('selected-mission-line', activeLayers.routes);
+    setVisibility('mission-endpoints-pulse', activeLayers.routes);
+    setVisibility('mission-endpoints-symbol', activeLayers.routes);
+
+    setVisibility('vehicles-selected-ring', activeLayers.fleet);
+    setVisibility('vehicles-unclustered', activeLayers.fleet);
+    setVisibility('vehicle-sos-pulse', activeLayers.fleet);
+  }, [activeLayers]);
+
+  // 6. Responsive ResizeObserver for Map Container
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+
+    const ro = new ResizeObserver(() => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.resize();
+      }
+    });
+
+    ro.observe(mapContainerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // 7. Focus Map on Selected Mission using actual road coordinates
+  const handleFocusMission = useCallback((mission: ReliefMission) => {
+    setSelectedMissionId(mission.id);
+    if (mission.assignedVehicleId) {
+      setSelectedVehicleId(mission.assignedVehicleId);
+    }
+    setIsMissionDetailsOpen(true);
+
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const rawCoords =
+      mission.routeGeometry && mission.routeGeometry.length >= 2
+        ? mission.routeGeometry
+        : FLEET_ROUTES[mission.assignedRouteId]?.coordinates;
+
+    const bounds = new maplibregl.LngLatBounds();
+
+    if (rawCoords && rawCoords.length > 0) {
+      rawCoords.forEach((coord) => {
+        bounds.extend([coord[1], coord[0]]);
+      });
+    }
+
+    if (mission.destinationEndpoint) {
+      bounds.extend([mission.destinationEndpoint[1], mission.destinationEndpoint[0]]);
+    }
+
+    if (mission.originCoords) {
+      bounds.extend([mission.originCoords[1], mission.originCoords[0]]);
+    }
+
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds, {
+        padding: { top: 80, bottom: 80, left: 100, right: 100 },
+        duration: 1200,
+        maxZoom: 13,
+      });
+    }
+  }, [setSelectedMissionId, setSelectedVehicleId]);
+
+  // Clear mission focus
+  const handleClearFocus = useCallback(() => {
+    setSelectedMissionId(null);
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.easeTo({
+        center: [92.9376, 26.2006],
+        zoom: 7,
+        duration: 1000,
+      });
+    }
+  }, [setSelectedMissionId]);
 
   const selectedRoute = candidateRoutes[selectedRouteIndex] || candidateRoutes[0];
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-112px)] sm:h-[calc(100vh-105px)] overflow-hidden bg-page-bg relative">
-      {/* Mobile View Switcher Tab Bar (< lg) */}
+      {/* Mobile Switcher Tab Bar (< lg) */}
       <div className="lg:hidden flex items-center bg-surface border-b border-border p-1.5 shrink-0 z-20">
         <button
           onClick={() => {
             setMobileViewTab('MAP');
-            setTimeout(() => {
-              mapInstanceRef.current?.invalidateSize();
-            }, 100);
+            setTimeout(() => mapInstanceRef.current?.resize(), 100);
           }}
           className={`flex-1 py-1.5 px-3 rounded-sm text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             mobileViewTab === 'MAP'
-              ? 'bg-[#1B4B73] text-white shadow-xs dark:bg-[#2E6B9E]'
+              ? 'bg-[#1B4B73] text-white shadow-xs'
               : 'text-text-secondary hover:text-text-primary hover:bg-surface-subtle'
           }`}
         >
           <Navigation className="w-3.5 h-3.5" />
-          <span>Tactical Map Deck</span>
+          <span>Tactical GIS Map</span>
         </button>
         <button
           onClick={() => setMobileViewTab('CONTROLS')}
           className={`flex-1 py-1.5 px-3 rounded-sm text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             mobileViewTab === 'CONTROLS'
-              ? 'bg-[#1B4B73] text-white shadow-xs dark:bg-[#2E6B9E]'
+              ? 'bg-[#1B4B73] text-white shadow-xs'
               : 'text-text-secondary hover:text-text-primary hover:bg-surface-subtle'
           }`}
         >
-          <Sliders className="w-3.5 h-3.5" />
-          <span>K-Routing & Controls</span>
-          {Object.keys(activeDisruptions).length > 0 && (
+          <Layers className="w-3.5 h-3.5" />
+          <span>Mission Operations</span>
+          {suggestedMissions.length > 0 && (
             <span className="px-1.5 py-0.2 rounded-xs bg-status-blocked-solid text-white text-[9px] font-mono font-bold">
-              {Object.keys(activeDisruptions).length}
+              {suggestedMissions.length}
             </span>
           )}
         </button>
@@ -892,377 +896,499 @@ export const TacticalMapDeck: React.FC = () => {
         }}
       />
 
-      {/* Left Sidebar: Controls & Predictive Routing */}
-      <div className={`w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-y-auto z-10 shadow-xs custom-scrollbar pb-16 lg:pb-6 ${mobileViewTab === 'CONTROLS' ? 'block' : 'hidden lg:flex'}`}>
-        {/* Route Selector Header */}
-        <div className="p-4 border-b border-border bg-surface-subtle space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-text-primary flex items-center space-x-2">
-              <Navigation className="w-4 h-4 text-primary" />
-              <span>Predictive K-Shortest Routing</span>
-            </h2>
-            <span className="text-xs font-mono px-2 py-0.5 rounded-sm bg-primary/10 text-primary">
-              Top 5 Paths
+      {/* ========================================================================= */}
+      {/* LEFT SIDEBAR: MISSION OPERATIONS & PREDICTIVE ROUTING                     */}
+      {/* ========================================================================= */}
+      <aside aria-label="Tactical Mission Control Sidebar" className={`w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-hidden z-10 shadow-xs pb-16 lg:pb-0 shrink-0 ${mobileViewTab === 'CONTROLS' ? 'flex' : 'hidden lg:flex'}`}>
+        {/* Navigation Tabs Header: Mission Operations vs K-Shortest Routing */}
+        <div className="flex border-b border-border bg-surface-subtle p-1 shrink-0">
+          <button
+            onClick={() => setSidebarTab('MISSIONS')}
+            className={`flex-1 py-2 px-2.5 rounded-xs text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              sidebarTab === 'MISSIONS'
+                ? 'bg-surface text-primary shadow-xs border border-border'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5 text-primary" />
+            <span>Mission Operations</span>
+            <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-xs bg-primary/10 text-primary">
+              {activeMissions.length}
             </span>
-          </div>
+          </button>
+          <button
+            onClick={() => setSidebarTab('ROUTING')}
+            className={`flex-1 py-2 px-2.5 rounded-xs text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              sidebarTab === 'ROUTING'
+                ? 'bg-surface text-primary shadow-xs border border-border'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <Navigation className="w-3.5 h-3.5 text-sky-500" />
+            <span>K-Shortest Paths</span>
+          </button>
+        </div>
 
-          {/* Active Dispatched Mission Link in Left Sidebar */}
-          {activeDispatchedMission && (
-            <div className="p-2.5 rounded-sm bg-status-open-tint border border-status-open-solid/50 text-xs space-y-1.5 animate-fadeIn">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-status-open-text flex items-center gap-1.5">
+        {/* TAB 1: MISSION OPERATIONS (Two-Tab UX: ONGOING MISSIONS vs SUGGESTED MISSIONS) */}
+        {sidebarTab === 'MISSIONS' && (
+          <div className="flex-1 flex flex-col overflow-hidden text-xs">
+            {/* Tab Toggle: [ ONGOING MISSIONS ] [ SUGGESTED MISSIONS ] */}
+            <div className="p-2 border-b border-border bg-surface-subtle shrink-0">
+              <div className="flex bg-surface p-0.5 rounded-sm border border-border">
+                <button
+                  onClick={() => setMissionTab('ONGOING')}
+                  className={`flex-1 py-1.5 px-2 rounded-xs text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    missionTab === 'ONGOING'
+                      ? 'bg-[#1B4B73] text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
+                >
                   <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping" />
-                  <span>Approved Mission: {activeDispatchedMission.id}</span>
-                </span>
-                <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-xs bg-status-open-solid text-white">
-                  IN_TRANSIT
-                </span>
-              </div>
-              <p className="text-[11px] text-text-secondary">
-                {activeDispatchedMission.communityName} • {activeDispatchedMission.recommendedVehicleType}
-              </p>
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => {
-                    setOriginHub('silchar');
-                    setDestinationHub('kolasib');
-                    setSelectedVehicleId('Medic-01');
-                    setIsInspectorOpen(true);
-                    if (mapInstanceRef.current) {
-                      mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.0 });
-                    }
-                  }}
-                  className="flex-1 py-1 text-[11px] font-semibold bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer"
-                >
-                  <Route className="w-3.5 h-3.5" />
-                  <span>Corridor (Silchar ➔ Kolasib)</span>
+                  <span>ONGOING</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-xs font-mono text-[9px] ${
+                      missionTab === 'ONGOING' ? 'bg-white/20 text-white' : 'bg-surface-subtle text-text-secondary'
+                    }`}
+                  >
+                    {ongoingMissions.length}
+                  </span>
                 </button>
+
                 <button
-                  onClick={() => {
-                    if (mapInstanceRef.current) {
-                      mapInstanceRef.current.flyTo([24.38, 92.72], 11, { duration: 1.0 });
-                    }
-                  }}
-                  className="p-1 text-[11px] bg-surface border border-border rounded-xs hover:bg-surface-subtle text-text-primary flex items-center justify-center cursor-pointer"
-                  title="Center on Convoy"
+                  onClick={() => setMissionTab('SUGGESTED')}
+                  className={`flex-1 py-1.5 px-2 rounded-xs text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    missionTab === 'SUGGESTED'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
                 >
-                  <Crosshair className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>SUGGESTED</span>
+                  {suggestedMissions.length > 0 && (
+                    <span
+                      className={`px-1.5 py-0.2 rounded-xs font-mono text-[9px] font-bold ${
+                        missionTab === 'SUGGESTED' ? 'bg-white/20 text-white' : 'bg-amber-500/20 text-amber-400'
+                      }`}
+                    >
+                      {suggestedMissions.length}
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
-          )}
 
-          {/* Origin & Destination */}
-          <div className="space-y-2">
-            <div>
-              <label className="text-[11px] font-medium text-text-secondary uppercase">
-                Origin Logistics Hub
-              </label>
-              <select
-                value={originHub}
-                onChange={(e) => setOriginHub(e.target.value)}
-                className="w-full mt-1 px-2.5 py-1.5 text-xs bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-              >
-                {Object.values(NER_NODES).map((node) => (
-                  <option key={node.id} value={node.id}>
-                    {node.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Content for ONGOING MISSIONS */}
+            {missionTab === 'ONGOING' && (
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
+                {ongoingMissions.length === 0 ? (
+                  <div className="p-4 text-center bg-surface-subtle rounded-sm text-text-secondary text-[11px] space-y-1">
+                    <p className="font-semibold">No ongoing missions currently en route.</p>
+                    <p className="text-[10px]">Switch to Suggested Missions to review and dispatch a new convoy.</p>
+                  </div>
+                ) : (
+                  ongoingMissions.map((m) => {
+                    const isSelected = m.id === selectedMissionId;
+                    const veh = vehicles.find(
+                      (v) => v.mission_id === m.id || v.vehicle_id === m.assignedVehicleId
+                    );
 
-            <div>
-              <label className="text-[11px] font-medium text-text-secondary uppercase">
-                Destination Target Community
-              </label>
-              <select
-                value={destinationHub}
-                onChange={(e) => setDestinationHub(e.target.value)}
-                className="w-full mt-1 px-2.5 py-1.5 text-xs bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-              >
-                {Object.values(NER_NODES).map((node) => (
-                  <option key={node.id} value={node.id}>
-                    {node.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+                    return (
+                      <div
+                        key={m.id}
+                        onClick={() => handleFocusMission(m)}
+                        className={`p-3 rounded-sm border transition-all cursor-pointer space-y-2 text-xs shadow-xs ${
+                          isSelected
+                            ? 'bg-primary-tint/30 border-primary ring-1 ring-primary'
+                            : 'bg-surface border-border hover:bg-surface-subtle'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-primary-tint text-primary">
+                                {m.id}
+                              </span>
+                              <span className="font-bold text-text-primary">{m.destinationName}</span>
+                            </div>
+                            <span className="text-[10px] text-text-secondary block mt-0.5">
+                              Origin: <strong>{m.originWarehouseName}</strong> ➔ Target:{' '}
+                              <strong>{m.disasterZoneName}</strong>
+                            </span>
+                          </div>
 
-            {/* Vehicle Profile Selector */}
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-medium text-text-secondary uppercase">
-                  Vehicle Profile & Hard Constraints
+                          <span className="px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] bg-status-open-tint text-status-open-text border border-status-open-solid/40 shrink-0">
+                            {veh?.speed_kmh ? `${veh.speed_kmh} km/h` : 'IN_TRANSIT'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1.5 text-[10px] text-text-secondary bg-surface-subtle p-1.5 rounded-xs">
+                          <div>
+                            <span>Rig:</span>{' '}
+                            <strong className="text-text-primary font-mono">
+                              {veh?.vehicle_id || m.assignedVehicleId || 'Convoy Unit'}
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Progress:</span>{' '}
+                            <strong className="text-status-open-text font-mono">
+                              {veh?.route_progress_pct ?? 45}%
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Dist:</span>{' '}
+                            <strong className="text-text-primary font-mono">{m.routeDistanceKm || 60} km</strong>
+                          </div>
+                          <div>
+                            <span>ETA:</span>{' '}
+                            <strong className="text-text-primary font-mono">
+                              {m.routeDurationMinutes || 90} min
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px]">
+                          <span className="text-text-secondary flex items-center gap-1">
+                            <Route className="w-3 h-3 text-sky-500" />
+                            <span>Road Route Active</span>
+                          </span>
+                          <span className="text-primary font-bold">Focus Route ➔</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* Content for SUGGESTED MISSIONS */}
+            {missionTab === 'SUGGESTED' && (
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
+                {suggestedMissions.length === 0 ? (
+                  <div className="p-4 text-center bg-surface-subtle rounded-sm text-text-secondary text-[11px]">
+                    All disaster relief requirements currently dispatched.
+                  </div>
+                ) : (
+                  suggestedMissions.map((m) => {
+                    const isSelected = m.id === selectedMissionId;
+                    const isApproved = m.status === 'APPROVED';
+
+                    return (
+                      <div
+                        key={m.id}
+                        className={`p-3 rounded-sm border transition-all space-y-2.5 text-xs shadow-xs ${
+                          isSelected
+                            ? 'bg-amber-500/10 border-amber-500 ring-1 ring-amber-500'
+                            : 'bg-surface border-border hover:border-amber-500/50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-amber-500/15 text-amber-500">
+                                {m.id}
+                              </span>
+                              <span className="font-bold text-text-primary">{m.destinationName}</span>
+                            </div>
+                            <span className="text-[10px] text-text-secondary block mt-0.5">
+                              Origin: <strong>{m.originWarehouseName}</strong> ➔ Target:{' '}
+                              <strong>{m.disasterZoneName}</strong>
+                            </span>
+                          </div>
+
+                          <span
+                            className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 ${
+                              isApproved
+                                ? 'bg-sky-500/20 text-sky-400 border-sky-500/40'
+                                : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                            }`}
+                          >
+                            {m.status}
+                          </span>
+                        </div>
+
+                        <div className="p-1.5 rounded-xs bg-surface-subtle text-[10px] space-y-1">
+                          <div className="text-text-secondary">
+                            <span>Allocated Rig:</span>{' '}
+                            <strong className="text-text-primary">{m.recommendedVehicleType}</strong>
+                          </div>
+                          <div className="text-text-secondary">
+                            <span>Corridor:</span>{' '}
+                            <strong className="text-status-open-text">{m.suggestedDetour}</strong>
+                          </div>
+                          <div className="text-text-secondary flex justify-between">
+                            <span>Distance: <strong>{m.routeDistanceKm || 65} km</strong></span>
+                            <span>ETA: <strong>{m.routeDurationMinutes || 100} min</strong></span>
+                          </div>
+                        </div>
+
+                        {/* Prominent Direct REVIEW & APPROVE Button */}
+                        <div className="pt-1 border-t border-border/40 flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              handleFocusMission(m);
+                              setIsMissionDetailsOpen(true);
+                            }}
+                            className="w-full py-1.5 px-2.5 rounded-xs bg-[#1B4B73] hover:bg-[#123A5A] text-white font-bold text-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer shadow-xs transition-colors"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 text-sky-300" />
+                            <span>REVIEW &amp; APPROVE</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: PREDICTIVE ROUTING & CONSTRAINTS */}
+        {sidebarTab === 'ROUTING' && (
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3 text-xs">
+            {/* Origin & Destination */}
+            <div className="space-y-2 bg-surface-subtle p-3 rounded-sm border border-border">
+              <div>
+                <label className="text-[10px] font-bold text-text-secondary uppercase">
+                  Origin Logistics Hub
                 </label>
-                <button
-                  onClick={() => setIsCustomSpecsActive(!isCustomSpecsActive)}
-                  className="text-[10px] text-primary hover:underline flex items-center gap-1 cursor-pointer"
-                >
-                  <Sliders className="w-3 h-3" />
-                  <span>{isCustomSpecsActive ? 'Preset Models' : 'Custom Specs'}</span>
-                </button>
-              </div>
-
-              {!isCustomSpecsActive ? (
                 <select
-                  value={selectedVehicle.id}
-                  onChange={(e) => {
-                    const v = VEHICLE_PROFILES.find((p) => p.id === e.target.value);
-                    if (v) setSelectedVehicle(v);
-                  }}
-                  className="w-full mt-1 px-2.5 py-1.5 text-xs bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
+                  value={originHub}
+                  onChange={(e) => setOriginHub(e.target.value)}
+                  className="w-full mt-1 px-2 py-1.5 text-xs bg-surface border border-border rounded-sm text-text-primary"
                 >
-                  {VEHICLE_PROFILES.map((vp) => (
-                    <option key={vp.id} value={vp.id}>
-                      {vp.name} — {vp.weight_tonnes}T, {vp.height_m}m H
+                  {Object.values(NER_NODES).map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name}
                     </option>
                   ))}
                 </select>
-              ) : (
-                <div className="mt-2 p-2.5 bg-surface rounded-sm border border-border space-y-2 text-[11px]">
-                  <div>
-                    <div className="flex justify-between text-text-secondary mb-0.5">
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-text-secondary uppercase">
+                  Destination Community
+                </label>
+                <select
+                  value={destinationHub}
+                  onChange={(e) => setDestinationHub(e.target.value)}
+                  className="w-full mt-1 px-2 py-1.5 text-xs bg-surface border border-border rounded-sm text-text-primary"
+                >
+                  {Object.values(NER_NODES).map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Vehicle Profile Selector */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-text-secondary uppercase">
+                    Vehicle Constraint Profile
+                  </label>
+                  <button
+                    onClick={() => setIsCustomSpecsActive(!isCustomSpecsActive)}
+                    className="text-[10px] text-primary hover:underline cursor-pointer"
+                  >
+                    {isCustomSpecsActive ? 'Presets' : 'Custom Specs'}
+                  </button>
+                </div>
+
+                {!isCustomSpecsActive ? (
+                  <select
+                    value={selectedVehicle.id}
+                    onChange={(e) => {
+                      const v = VEHICLE_PROFILES.find((p) => p.id === e.target.value);
+                      if (v) setSelectedVehicle(v);
+                    }}
+                    className="w-full mt-1 px-2 py-1.5 text-xs bg-surface border border-border rounded-sm text-text-primary"
+                  >
+                    {VEHICLE_PROFILES.map((vp) => (
+                      <option key={vp.id} value={vp.id}>
+                        {vp.name} ({vp.weight_tonnes}T, {vp.height_m}m H)
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="mt-2 p-2 bg-surface rounded-xs border border-border space-y-1.5 text-[11px]">
+                    <div className="flex justify-between">
                       <span>Gross Weight:</span>
-                      <span className="font-mono font-bold text-text-primary">{customWeight} Tonnes</span>
+                      <span className="font-mono font-bold">{customWeight}T</span>
                     </div>
                     <input
                       type="range"
                       min={2}
                       max={50}
-                      step={1}
                       value={customWeight}
                       onChange={(e) => setCustomWeight(Number(e.target.value))}
-                      className="w-full accent-primary h-1.5"
+                      className="w-full h-1.5 accent-primary"
                     />
+                    <button
+                      onClick={() => {
+                        setSelectedVehicle({
+                          id: 'CUSTOM_AXLE',
+                          name: `Custom Rig (${customWeight}T)`,
+                          type: 'Custom User Specification',
+                          height_m: customHeight,
+                          width_m: customWidth,
+                          weight_tonnes: customWeight,
+                          turn_radius_m: 14.0,
+                          fuel_efficiency_km_l: 3.0,
+                          max_speed_kmh: 60,
+                          icon: 'truck',
+                        });
+                      }}
+                      className="w-full py-1 text-[10px] font-semibold bg-[#1B4B73] text-white rounded-xs"
+                    >
+                      Apply Custom Load
+                    </button>
                   </div>
-
-                  <div>
-                    <div className="flex justify-between text-text-secondary mb-0.5">
-                      <span>Height Clearance:</span>
-                      <span className="font-mono font-bold text-text-primary">{customHeight} Meters</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1.8}
-                      max={5.0}
-                      step={0.1}
-                      value={customHeight}
-                      onChange={(e) => setCustomHeight(Number(e.target.value))}
-                      className="w-full accent-primary h-1.5"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleApplyCustomSpecs}
-                    className="w-full py-1 text-[10px] font-semibold bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-xs btn-press"
-                  >
-                    Apply Custom Axle Load
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Dynamic Rainfall mm/hr Slider ported from psudeoroutingtest */}
-        <div className="p-4 border-b border-border bg-surface space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
-              <CloudRain className="w-3.5 h-3.5 text-sky-500" />
-              <span>Live Rainfall Degradation</span>
-            </span>
-            <span className="font-mono text-xs font-bold text-text-primary bg-surface-subtle px-2 py-0.5 rounded border border-border">
-              {rainfallMmHr} mm/h
-            </span>
-          </div>
-
-          <input
-            type="range"
-            min={0}
-            max={50}
-            step={1}
-            value={rainfallMmHr}
-            onChange={(e) => setRainfallMmHr(Number(e.target.value))}
-            className="w-full accent-sky-500 cursor-pointer h-2"
-          />
-
-          {/* Quick Presets */}
-          <div className="grid grid-cols-3 gap-1.5 pt-1">
-            <button
-              onClick={() => setRainfallMmHr(0)}
-              className="py-1 text-[10px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-text-secondary transition btn-press cursor-pointer"
-            >
-              ☀️ Clear (0mm)
-            </button>
-            <button
-              onClick={() => setRainfallMmHr(24)}
-              className="py-1 text-[10px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-text-secondary transition btn-press cursor-pointer"
-            >
-              🌧️ Rain (24mm)
-            </button>
-            <button
-              onClick={() => setRainfallMmHr(46)}
-              className="py-1 text-[10px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-status-blocked-text transition btn-press cursor-pointer"
-            >
-              ⛈️ Surge (46mm)
-            </button>
-          </div>
-        </div>
-
-        {/* Quick Field Disruption Injectors from psudeoroutingtest */}
-        <div className="p-4 border-b border-border bg-surface space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-status-blocked-solid" />
-              <span>Field Disruption Scenarios</span>
-            </span>
-            {Object.keys(activeDisruptions).length > 0 && (
-              <button
-                onClick={clearAllDisruptions}
-                className="text-[10px] text-status-blocked-text hover:underline cursor-pointer"
-              >
-                Clear All
-              </button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 gap-1.5 text-left text-xs">
-            <button
-              onClick={triggerScenarioNH6Landslide}
-              className="p-2 rounded-xs border border-status-blocked-solid/40 bg-status-blocked-tint/30 text-status-blocked-text hover:bg-status-blocked-tint/60 text-left transition btn-press cursor-pointer"
-            >
-              <div className="font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-status-blocked-solid animate-ping" />
-                NH-6 Landslide (Lubha Bridge)
+            {/* Live Rainfall Slider */}
+            <div className="p-3 bg-surface rounded-sm border border-border space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-text-primary flex items-center gap-1.5">
+                  <CloudRain className="w-3.5 h-3.5 text-sky-500" />
+                  <span>Rainfall Degradation</span>
+                </span>
+                <span className="font-mono text-xs font-bold bg-surface-subtle px-1.5 py-0.5 rounded border border-border">
+                  {rainfallMmHr} mm/h
+                </span>
               </div>
-              <span className="text-[10px] text-text-secondary block mt-0.5">Total road blockage at Jowai-Silchar</span>
-            </button>
-
-            <button
-              onClick={triggerScenarioNH29FlashFlood}
-              className="p-2 rounded-xs border border-status-blocked-solid/40 bg-status-blocked-tint/30 text-status-blocked-text hover:bg-status-blocked-tint/60 text-left transition btn-press cursor-pointer"
-            >
-              <div className="font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-status-blocked-solid animate-ping" />
-                NH-29 Flash Flood (Paglapahar)
-              </div>
-              <span className="text-[10px] text-text-secondary block mt-0.5">Dimapur-Kohima mudflow impassable</span>
-            </button>
-
-            <button
-              onClick={triggerScenarioHaflongBridgeRisk}
-              className="p-2 rounded-xs border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 text-left transition btn-press cursor-pointer"
-            >
-              <div className="font-semibold">Haflong Bridge Risk (18T Limit)</div>
-              <span className="text-[10px] text-text-secondary block mt-0.5">Barail Pass structural foundation scour</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Candidate Routes List */}
-        <div className="p-4 border-b border-border flex-1 overflow-y-auto space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-text-primary">Evaluated Routes</span>
-            {selectedRoute && (
-              <button
-                onClick={() => {
-                  const firstSeg = selectedRoute.segments[0];
-                  if (firstSeg) setInspectedSegment(firstSeg);
-                }}
-                className="text-[10px] text-primary hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <ExternalLink className="w-3 h-3" />
-                <span>Inspect Segments</span>
-              </button>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            {candidateRoutes.map((route, idx) => {
-              const isSelected = idx === selectedRouteIndex;
-              return (
-                <div
-                  key={route.id}
-                  onClick={() => setSelectedRouteIndex(idx)}
-                  className={`p-3 rounded-sm border transition-colors cursor-pointer text-xs ${
-                    isSelected
-                      ? 'border-primary bg-primary-tint/30 dark:bg-primary-tint/20'
-                      : 'border-border bg-surface hover:bg-surface-subtle'
-                  }`}
+              <input
+                type="range"
+                min={0}
+                max={60}
+                value={rainfallMmHr}
+                onChange={(e) => setRainfallMmHr(Number(e.target.value))}
+                className="w-full accent-sky-500 h-1.5 cursor-pointer"
+              />
+              <div className="grid grid-cols-3 gap-1 pt-1">
+                <button
+                  onClick={() => setRainfallMmHr(0)}
+                  className="py-0.5 text-[9px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-text-secondary"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full"
-                        style={{ backgroundColor: route.color }}
-                      />
-                      <span className="font-semibold text-text-primary">
-                        Rank {route.rank}: {route.rankLabel}
+                  Clear (0mm)
+                </button>
+                <button
+                  onClick={() => setRainfallMmHr(24)}
+                  className="py-0.5 text-[9px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-text-secondary"
+                >
+                  Rain (24mm)
+                </button>
+                <button
+                  onClick={() => setRainfallMmHr(48)}
+                  className="py-0.5 text-[9px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-status-blocked-text"
+                >
+                  Surge (48mm)
+                </button>
+              </div>
+            </div>
+
+            {/* Field Disruption Injectors */}
+            <div className="p-3 bg-surface rounded-sm border border-border space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-text-primary flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-status-blocked-solid" />
+                  <span>Disruption Scenarios</span>
+                </span>
+                {Object.keys(activeDisruptions).length > 0 && (
+                  <button
+                    onClick={clearAllDisruptions}
+                    className="text-[10px] text-status-blocked-text hover:underline cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <button
+                  onClick={triggerScenarioNH6Landslide}
+                  className="w-full p-2 rounded-xs border border-status-blocked-solid/30 bg-status-blocked-tint/30 hover:bg-status-blocked-tint/60 text-left cursor-pointer transition"
+                >
+                  <span className="font-semibold block text-[11px] text-status-blocked-text">
+                    NH-6 Landslide (Lubha Bridge)
+                  </span>
+                  <span className="text-[10px] text-text-secondary block">Total road blockage Jowai-Silchar</span>
+                </button>
+
+                <button
+                  onClick={triggerScenarioNH29FlashFlood}
+                  className="w-full p-2 rounded-xs border border-status-blocked-solid/30 bg-status-blocked-tint/30 hover:bg-status-blocked-tint/60 text-left cursor-pointer transition"
+                >
+                  <span className="font-semibold block text-[11px] text-status-blocked-text">
+                    NH-29 Mudflow (Pagla Pahar)
+                  </span>
+                  <span className="text-[10px] text-text-secondary block">Dimapur-Kohima mudflow impassable</span>
+                </button>
+
+                <button
+                  onClick={triggerScenarioHaflongBridgeRisk}
+                  className="w-full p-2 rounded-xs border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-left cursor-pointer transition"
+                >
+                  <span className="font-semibold block text-[11px] text-amber-500">
+                    Haflong Bridge Risk (18T Limit)
+                  </span>
+                  <span className="text-[10px] text-text-secondary block">Barail Pass structural scour</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Evaluated Paths List */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold text-text-primary block">
+                Evaluated K-Shortest Paths ({candidateRoutes.length})
+              </span>
+              {candidateRoutes.map((route, idx) => {
+                const isSelected = idx === selectedRouteIndex;
+                return (
+                  <div
+                    key={route.id}
+                    onClick={() => setSelectedRouteIndex(idx)}
+                    className={`p-2.5 rounded-sm border cursor-pointer transition text-xs ${
+                      isSelected
+                        ? 'border-primary bg-primary-tint/30'
+                        : 'border-border bg-surface hover:bg-surface-subtle'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: route.color }} />
+                        <strong className="text-text-primary">Rank {route.rank}: {route.rankLabel}</strong>
+                      </div>
+                      <span className={`font-mono font-bold ${route.isPassable ? 'text-status-open-text' : 'text-status-blocked-text'}`}>
+                        {route.isPassable ? `${route.compositeSafetyScore}% Safe` : 'BLOCKED'}
                       </span>
                     </div>
-                    <span
-                      className={`font-mono font-bold ${
-                        route.isPassable ? 'text-status-open-text' : 'text-status-blocked-text'
-                      }`}
-                    >
-                      {route.isPassable ? `${route.compositeSafetyScore}% Safe` : 'BLOCKED'}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-text-secondary text-[11px]">
-                    <div>
-                      <span>Distance:</span>{' '}
-                      <span className="font-medium text-text-primary">{route.totalDistanceKm} km</span>
-                    </div>
-                    <div>
-                      <span>Transit ETA:</span>{' '}
-                      <span className="font-medium text-text-primary">{route.degradedDurationMinutes} min</span>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] text-text-secondary mt-1">
+                      <span>Dist: <strong>{route.totalDistanceKm} km</strong></span>
+                      <span>ETA: <strong>{route.degradedDurationMinutes} min</strong></span>
                     </div>
                   </div>
-
-                  {!route.isPassable && route.failureBottleneck && (
-                    <div className="mt-2 p-2 rounded-sm bg-status-blocked-tint border border-status-blocked-solid/30 text-status-blocked-text">
-                      <div className="font-semibold flex items-center space-x-1">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        <span>Pruned by Constraint:</span>
-                      </div>
-                      <p className="mt-0.5 text-[11px] leading-tight">
-                        {route.failureBottleneck.reason}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
+        )}
 
-          {/* Interactive Route Explainability Comparison Card (XAI) */}
-          <div className="pt-3 border-t border-border">
-            <RouteExplainabilityCard
-              recommendedRoute={candidateRoutes[0]}
-              selectedRoute={selectedRoute}
-              candidateRoutes={candidateRoutes}
-              vehicle={selectedVehicle}
-              rainfallMmHr={rainfallMmHr}
-              onSelectRoute={(idx) => setSelectedRouteIndex(idx)}
-              compact={false}
-            />
-          </div>
-        </div>
-
-        {/* Telemetry Scrubber & Speed Controls ported from vehicletracking */}
-        <div className="p-4 bg-surface-subtle border-t border-border space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-text-primary flex items-center space-x-1.5">
+        {/* Telemetry Scrubber Bar (Bottom of Left Sidebar) */}
+        <div className="p-3 bg-surface-subtle border-t border-border shrink-0 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-text-primary flex items-center gap-1">
               <Truck className="w-3.5 h-3.5 text-primary" />
-              <span>Fleet Telemetry Scrubber</span>
+              <span>Fleet Telemetry Sim</span>
             </span>
 
-            {/* Alert Feed Trigger */}
             <button
               onClick={() => setIsAlertModalOpen(true)}
-              className="relative p-1.5 rounded-xs border border-border bg-surface text-text-secondary hover:text-text-primary cursor-pointer"
-              title="Open Watchdog Alert Feed"
+              className="relative p-1 rounded-xs border border-border bg-surface text-text-secondary hover:text-text-primary cursor-pointer"
+              title="Alert Feed"
             >
               <Bell className="w-3.5 h-3.5" />
               {unackAlertsCount > 0 && (
@@ -1273,14 +1399,14 @@ export const TacticalMapDeck: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={toggleSimulation}
-              className="flex-1 py-1.5 text-xs font-medium rounded-sm border border-border bg-surface text-text-primary hover:bg-surface-subtle transition-colors flex items-center justify-center space-x-1 btn-press cursor-pointer"
+              className="flex-1 py-1 px-2 text-xs font-semibold rounded-xs border border-border bg-surface text-text-primary hover:bg-surface-subtle flex items-center justify-center gap-1 cursor-pointer btn-press"
             >
               {isSimulationRunning ? (
                 <>
-                  <Pause className="w-3 h-3 text-status-highrisk-solid" />
+                  <Pause className="w-3 h-3 text-amber-500" />
                   <span>Pause</span>
                 </>
               ) : (
@@ -1291,16 +1417,13 @@ export const TacticalMapDeck: React.FC = () => {
               )}
             </button>
 
-            {/* Speed Multiplier Scrubber: 1x, 2x, 5x */}
-            <div className="flex items-center gap-1 bg-surface p-1 rounded-sm border border-border text-xs">
+            <div className="flex items-center gap-1 bg-surface p-0.5 rounded-xs border border-border text-xs">
               {[1, 2, 5].map((spd) => (
                 <button
                   key={spd}
                   onClick={() => setSimulationSpeed(spd)}
-                  className={`px-2 py-0.5 rounded-xs font-mono font-bold transition-all cursor-pointer ${
-                    simulationSpeed === spd
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'text-text-secondary hover:text-text-primary'
+                  className={`px-1.5 py-0.5 font-mono text-[10px] font-bold rounded-xs cursor-pointer ${
+                    simulationSpeed === spd ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
                   }`}
                 >
                   {spd}x
@@ -1309,199 +1432,144 @@ export const TacticalMapDeck: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* Center: Leaflet Tactical Map Deck */}
+      {/* ========================================================================= */}
+      {/* CENTER: MAPLIBRE GL JS TACTICAL MAP CONTAINER                            */}
+      {/* ========================================================================= */}
       <div className={`flex-1 relative flex flex-col h-full overflow-hidden isolate ${mobileViewTab === 'MAP' ? 'flex' : 'hidden lg:flex'}`}>
-        {/* Active Dispatched Mission HUD Bar */}
-        {activeDispatchedMission && (
-          <div className="shrink-0 bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-status-open-solid/40 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs z-20 animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-status-open-solid animate-ping" />
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-status-open-tint text-status-open-text border border-status-open-solid/40">
-                  {activeDispatchedMission.id} [IN_TRANSIT]
-                </span>
-                <span className="font-bold text-xs text-text-primary">
-                  {activeDispatchedMission.communityName}
-                </span>
-                <span className="text-[11px] text-text-secondary hidden md:inline">
-                  • Rig: <strong>{activeDispatchedMission.recommendedVehicleType}</strong> • Detour: <strong className="text-status-open-text">{activeDispatchedMission.suggestedDetour}</strong>
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setOriginHub('silchar');
-                  setDestinationHub('kolasib');
-                  setSelectedVehicleId('Medic-01');
-                  setIsInspectorOpen(true);
-                  if (mapInstanceRef.current) {
-                    mapInstanceRef.current.flyTo([24.38, 92.72], 10, { duration: 1.0 });
-                  }
-                }}
-                className="px-2.5 py-1 text-xs font-semibold bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-xs flex items-center gap-1 btn-press cursor-pointer shadow-xs"
-              >
-                <Crosshair className="w-3.5 h-3.5" />
-                <span>Focus Convoy on Map</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Map Viewport Area & Map-Relative Floating Controls */}
-        <div className="flex-1 relative w-full h-full overflow-hidden z-0 isolate">
-          {/* Map Container: rendered first in DOM with isolated z-0 layer */}
-          <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
-
-          {/* Unified Responsive Top HUD Controls Overlay (Centered & Collision-Free) */}
-          <div className="absolute top-2 sm:top-3 inset-x-0 z-30 pointer-events-none flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-3">
-            {/* Left Group: Corridor Jump Pills */}
-            <div className="pointer-events-auto flex items-center gap-1 sm:gap-1.5 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-sm sm:rounded-lg border border-border dark:border-slate-700 shadow-md text-xs overflow-x-auto no-scrollbar max-w-full">
-              <span className="text-[10px] font-bold text-text-secondary dark:text-slate-400 uppercase tracking-wider px-1 hidden sm:inline">
-                Corridors:
+        {/* Top Floating Controls Bar */}
+        <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+          {/* Active Mission Pill if focused */}
+          {activeMission ? (
+            <div className="pointer-events-auto bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary shadow-md flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+              <span className="font-mono text-[10px] font-bold text-primary">
+                FOCUS: {activeMission.id}
               </span>
-
+              <span className="text-xs font-bold text-text-primary">
+                {activeMission.communityName}
+              </span>
               <button
-                onClick={() => handleCorridorJump('mizoram')}
-                className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
-                  activeCorridorChip === 'mizoram'
-                    ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
-                    : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
-                }`}
+                onClick={handleClearFocus}
+                className="ml-2 px-1.5 py-0.5 bg-surface hover:bg-surface-subtle text-[10px] font-semibold text-text-secondary hover:text-text-primary rounded-xs border border-border cursor-pointer"
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'mizoram' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
-                <span>Mizoram (NH-306)</span>
-              </button>
-
-              <button
-                onClick={() => handleCorridorJump('nagaland')}
-                className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
-                  activeCorridorChip === 'nagaland'
-                    ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
-                    : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'nagaland' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
-                <span>Nagaland (NH-29)</span>
-              </button>
-
-              <button
-                onClick={() => handleCorridorJump('sikkim')}
-                className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
-                  activeCorridorChip === 'sikkim'
-                    ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
-                    : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'sikkim' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
-                <span>Sikkim (NH-10)</span>
-              </button>
-
-              <button
-                onClick={() => handleCorridorJump('macro')}
-                className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
-                  activeCorridorChip === 'macro'
-                    ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
-                    : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
-                }`}
-              >
-                <Maximize2 className="w-3 h-3" />
-                <span>Macro NER</span>
+                Clear Focus
               </button>
             </div>
-
-            {/* Right Group: Telemetry, Toggles & Weather Modes */}
-            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1 sm:p-1.5 rounded-sm sm:rounded-lg border border-border dark:border-slate-700 shadow-md text-xs overflow-x-auto no-scrollbar max-w-full">
-              {/* Real-time Data Staleness Indicator */}
-              <DataStalenessChip compact className="shrink-0" />
-
-              {/* Layer Toggles */}
-              <div className="flex items-center space-x-1 text-[11px] sm:text-xs shrink-0">
-                <button
-                  onClick={() => toggleLayer('lhz')}
-                  className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                    activeLayers.lhz
-                      ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
-                      : 'bg-surface text-text-secondary border-border'
-                  }`}
-                >
-                  ISRO LHZ
-                </button>
-
-                <button
-                  onClick={() => toggleLayer('imd')}
-                  className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                    activeLayers.imd
-                      ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
-                      : 'bg-surface text-text-secondary border-border'
-                  }`}
-                >
-                  IMD Alerts
-                </button>
-
-                <button
-                  onClick={() => toggleLayer('routes')}
-                  className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                    activeLayers.routes
-                      ? 'bg-primary-tint text-primary border-primary'
-                      : 'bg-surface text-text-secondary border-border'
-                  }`}
-                >
-                  K-Routes
-                </button>
-
-                <button
-                  onClick={() => toggleLayer('fleet')}
-                  className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                    activeLayers.fleet
-                      ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
-                      : 'bg-surface text-text-secondary border-border'
-                  }`}
-                >
-                  Telemetry
-                </button>
-              </div>
-
-              {/* Monsoon Simulation Toggle */}
-              <button
-                onClick={toggleMonsoonDownpourSimulation}
-                className={`flex items-center space-x-1 px-2 sm:px-2.5 py-1 rounded-sm text-[11px] sm:text-xs font-medium border transition-colors btn-press cursor-pointer shrink-0 ${
-                  isMonsoonDownpourSimulated
-                    ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid animate-pulse'
-                    : 'bg-surface text-text-secondary border-border'
-                }`}
-              >
-                <CloudRain className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
-                <span className="xs:hidden">{isMonsoonDownpourSimulated ? '58 mm/h' : 'Monsoon'}</span>
-              </button>
+          ) : (
+            <div className="pointer-events-auto bg-surface/90 dark:bg-slate-900/90 backdrop-blur-md px-2.5 py-1.5 rounded-sm border border-border shadow-xs text-xs font-semibold text-text-primary flex items-center gap-2">
+              <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+              <span>PRAVAH 2.0 Tactical Map Deck</span>
             </div>
+          )}
+
+          {/* Layer Visibility Filters */}
+          <div className="pointer-events-auto bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md p-1 rounded-sm border border-border shadow-md flex items-center gap-1 text-[11px]">
+            <button
+              onClick={() => toggleLayer('lhz')}
+              className={`px-2 py-1 rounded-xs border font-medium cursor-pointer transition ${
+                activeLayers.lhz
+                  ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid/60'
+                  : 'bg-surface text-text-secondary border-border'
+              }`}
+            >
+              ISRO LHZ
+            </button>
+            <button
+              onClick={() => toggleLayer('roadStatus')}
+              className={`px-2 py-1 rounded-xs border font-medium cursor-pointer transition ${
+                activeLayers.roadStatus
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/60'
+                  : 'bg-surface text-text-secondary border-border'
+              }`}
+              title="Toggle road network status condition overlay (Open/Degraded/Blocked)"
+            >
+              Road Status
+            </button>
+            <button
+              onClick={() => toggleLayer('routes')}
+              className={`px-2 py-1 rounded-xs border font-medium cursor-pointer transition ${
+                activeLayers.routes
+                  ? 'bg-primary-tint text-primary border-primary/60'
+                  : 'bg-surface text-text-secondary border-border'
+              }`}
+            >
+              Routes
+            </button>
+            <button
+              onClick={() => toggleLayer('fleet')}
+              className={`px-2 py-1 rounded-xs border font-medium cursor-pointer transition ${
+                activeLayers.fleet
+                  ? 'bg-status-open-tint text-status-open-text border-status-open-solid/60'
+                  : 'bg-surface text-text-secondary border-border'
+              }`}
+            >
+              Fleet
+            </button>
+            <button
+              onClick={toggleMonsoonDownpourSimulation}
+              className={`px-2 py-1 rounded-xs border font-medium flex items-center gap-1 cursor-pointer transition ${
+                isMonsoonDownpourSimulated
+                  ? 'bg-sky-500/20 text-sky-400 border-sky-500/60 animate-pulse'
+                  : 'bg-surface text-text-secondary border-border'
+              }`}
+            >
+              <CloudRain className="w-3 h-3 text-sky-400" />
+              <span>{isMonsoonDownpourSimulated ? 'Monsoon Surge (58mm)' : 'Monsoon Sim'}</span>
+            </button>
           </div>
-
-          {/* Interactive Tactical GIS Map Legend */}
-          <MapLegend />
         </div>
+
+        {/* Map Container */}
+        <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
+
+        {/* Interactive GIS Legend */}
+        <MapLegend />
       </div>
 
-      {/* Vehicle Inspector: Side panel on desktop, slide-up sheet on mobile */}
+      {/* ========================================================================= */}
+      {/* RIGHT SIDE: MISSION DETAILS PANEL OR VEHICLE INSPECTOR                    */}
+      {/* ========================================================================= */}
+      {/* 1. Right-side Mission Details Panel */}
+      {isMissionDetailsOpen && activeMission && (
+        <div className="w-full lg:w-80 h-auto lg:h-full z-20 shrink-0">
+          <MissionDetailsPanel
+            mission={activeMission}
+            vehicle={vehicles.find((v) => v.mission_id === activeMission.id || (activeMission.id === 'MISSION-MZ-04' && v.vehicle_id === 'Medic-01')) || null}
+            routeDef={FLEET_ROUTES[activeMission.assignedRouteId] || null}
+            disruptions={activeDisruptions}
+            onClose={() => setIsMissionDetailsOpen(false)}
+            onFocusMap={() => handleFocusMission(activeMission)}
+            onClearFocus={handleClearFocus}
+            onApprove={(id) => approveMission(id)}
+            onDispatch={(id, vId) => dispatchMission(id, vId)}
+            onInspectVehicle={(vId) => {
+              setSelectedVehicleId(vId);
+              setIsInspectorOpen(true);
+            }}
+          />
+        </div>
+      )}
+
+      {/* 2. Vehicle Inspector (Side sheet or Modal overlay) */}
       {isInspectorOpen && activeVehicle && (
         <>
-          {/* Mobile Backdrop */}
           <div
-            className="lg:hidden fixed inset-0 bg-black/50 z-30 backdrop-blur-2xs"
+            className="fixed inset-0 bg-black/50 z-30 lg:hidden backdrop-blur-2xs"
             onClick={() => setIsInspectorOpen(false)}
-            aria-hidden="true"
           />
-          <div className="fixed inset-x-0 bottom-0 max-h-[82vh] lg:relative lg:inset-auto lg:max-h-none w-full lg:w-80 h-auto lg:h-full z-30 lg:z-10 shadow-2xl lg:shadow-none animate-fadeIn lg:animate-none">
+          <div className="fixed inset-x-0 bottom-0 max-h-[85vh] lg:relative lg:inset-auto lg:max-h-none w-full lg:w-80 h-auto lg:h-full z-30 lg:z-20 shadow-2xl lg:shadow-none animate-fadeIn shrink-0">
             <VehicleInspector
               vehicle={activeVehicle}
               onClose={() => setIsInspectorOpen(false)}
               onToggleHalt={(id) => toggleVehicleHalt(id)}
               onToggleDeviation={(id) => toggleVehicleDeviation(id)}
               onTriggerSOS={(id) => triggerVehicleSOS(id)}
+              onFocusMission={(missionId) => {
+                const targetMission = activeMissions.find((m) => m.id === missionId);
+                if (targetMission) handleFocusMission(targetMission);
+              }}
             />
           </div>
         </>
