@@ -42,26 +42,30 @@ export const Header: React.FC = () => {
   return (
     <div className="bg-surface">
       {/* Top Banner: Brand, Network Pill, Role Selector, Theme */}
-      {/* Top Banner: Brand, Network Pill, Role Selector, Theme */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Left: Branding */}
-          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-md bg-[#1B4B73] dark:bg-[#2E6B9E] flex items-center justify-center text-white font-bold shadow-xs shrink-0">
-              <span className="text-base sm:text-xl tracking-wider">प्र</span>
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center space-x-1.5 sm:space-x-2">
-                <span className="font-semibold text-sm sm:text-lg tracking-tight text-text-primary">
+          <div className="flex items-center gap-3 select-none">
+            {/* Emblem Icon */}
+            <img 
+              src={theme === 'dark' ? '/assets/pravah-logo-white.png' : '/assets/pravah-logo.png'} 
+              alt="PRAVAH Emblem" 
+              className="h-10 w-10 object-contain dark:brightness-0 dark:invert drop-shadow-sm flex-shrink-0"
+            />
+
+            {/* Text Hierarchy */}
+            <div className="flex flex-col justify-center">
+              <div className="flex items-center gap-2 leading-none">
+                <span className="text-xl font-black tracking-tight text-slate-900 dark:text-white font-sans">
                   PRAVAH
                 </span>
-                <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-sm bg-primary/10 text-primary font-mono font-medium shrink-0 hidden sm:inline-block">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide bg-blue-50 text-blue-700 border border-blue-200 dark:bg-slate-800 dark:text-sky-400 dark:border-slate-700/80">
                   MDoNER
                 </span>
               </div>
-              <p className="text-xs text-text-secondary hidden md:block truncate max-w-xs lg:max-w-none">
-                Predictive Resilient Accessibility & Logistics Intelligence Network
-              </p>
+              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 whitespace-nowrap">
+                Predictive Resilient Accessibility &amp; Logistics Intelligence Network
+              </span>
             </div>
           </div>
 
@@ -117,6 +121,7 @@ export const Header: React.FC = () => {
 
             {/* Theme Toggle */}
             <button
+              id="theme-toggle-btn"
               onClick={toggleTheme}
               aria-label="Toggle light or dark theme"
               className="p-1 sm:p-2 rounded-sm border border-border bg-surface text-text-secondary hover:text-text-primary hover:bg-surface-subtle transition-colors btn-press cursor-pointer shrink-0"

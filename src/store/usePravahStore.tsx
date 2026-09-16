@@ -222,15 +222,18 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return 'light';
   });
 
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
   const toggleTheme = useCallback(() => {
     setTheme((prev) => {
       const next = prev === 'light' ? 'dark' : 'light';
       localStorage.setItem('pravah_theme', next);
-      if (next === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
       return next;
     });
   }, []);

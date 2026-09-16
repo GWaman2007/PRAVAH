@@ -377,23 +377,28 @@ export const MobileMissionCockpit: React.FC = () => {
       </div>
 
       {/* 2. Mission ID & Offline Connectivity Pill */}
-      <div className="bg-surface border border-border p-3 rounded-md shadow-xs flex items-center justify-between">
-        <div className="flex items-center space-x-2.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-status-open-solid animate-ping" />
-          <div>
+      <div className="bg-surface border border-border p-2.5 sm:p-3 rounded-md shadow-xs flex items-center justify-between gap-2">
+        <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0">
+          <img
+            src={theme === 'dark' ? '/assets/pravah-emblem-white.png' : '/assets/pravah-emblem.png'}
+            alt="PRAVAH"
+            className="h-7 w-7 object-contain shrink-0"
+          />
+          <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping shrink-0" />
+          <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-xs text-text-primary">Mission {activeVehicle.mission_id}</span>
-              <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-xs bg-primary-tint text-primary font-bold">
+              <span className="font-bold text-xs text-text-primary truncate">Mission {activeVehicle.mission_id}</span>
+              <span className="font-mono text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded-xs bg-primary-tint text-primary font-bold shrink-0">
                 {activeVehicle.vehicle_id}
               </span>
             </div>
-            <p className="text-[10px] text-text-secondary">
+            <p className="text-[10px] text-text-secondary truncate max-w-[120px] xs:max-w-[160px] sm:max-w-none">
               Dest: <strong>{targetCommunity.name}</strong>
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           <DataStalenessChip compact />
           <button
             onClick={toggleSimulatedOffline}

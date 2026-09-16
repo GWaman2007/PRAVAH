@@ -10,6 +10,7 @@ const PRECACHE_ASSETS = [
   '/index.html',
   '/manifest.json',
   '/icon.svg',
+  '/assets/pravah-logo.png',
 ];
 
 // 1. Install: Precache shell assets and take immediate control
