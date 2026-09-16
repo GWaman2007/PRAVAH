@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
 import type {
   CorridorFlair,
@@ -9,12 +9,16 @@ import type {
 import {
   FileText,
   Mic,
+  MicOff,
   Camera,
   WifiOff,
   Send,
   X,
   ShieldCheck,
   CheckCircle,
+  Radio,
+  Volume2,
+  AlertTriangle,
 } from 'lucide-react';
 import { compressImageToJpeg, type CompressionResult } from '../../utils/imageCompression';
 
@@ -28,6 +32,7 @@ export interface IncidentReportModalProps {
   defaultTitle?: string;
   defaultSeverity?: IncidentSeverity;
   defaultType?: IncidentType;
+  initialInputMethod?: 'TEXT' | 'VOICE' | 'PHOTO';
 }
 
 export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
@@ -40,6 +45,7 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
   defaultTitle = '',
   defaultSeverity = 'Total Blockage',
   defaultType = 'Landslide',
+  initialInputMethod = 'TEXT',
 }) => {
   const { userContext, isOnline, addIncident } = usePravahStore();
 
@@ -48,11 +54,103 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
   const [formType, setFormType] = useState<IncidentType>(defaultType);
   const [formSeverity, setFormSeverity] = useState<IncidentSeverity>(defaultSeverity);
   const [formLocationName, setFormLocationName] = useState(defaultLocationName);
-  const [formInputMethod, setFormInputMethod] = useState<'TEXT' | 'VOICE' | 'PHOTO'>('TEXT');
-  const [formVoiceRecording, setFormVoiceRecording] = useState(false);
+  const [formInputMethod, setFormInputMethod] = useState<'TEXT' | 'VOICE' | 'PHOTO'>(initialInputMethod);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [compressionStats, setCompressionStats] = useState<CompressionResult | null>(null);
   const [isCompressing, setIsCompressing] = useState<boolean>(false);
+
+  // Web Speech API state
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [speechLanguage, setSpeechLanguage] = useState<'en-IN' | 'hi-IN'>('en-IN');
+  const [interimTranscript, setInterimTranscript] = useState<string>('');
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const getSpeechRecognitionClass = () => {
+    if (typeof window === 'undefined') return null;
+    return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
+  };
+
+  const startListening = () => {
+    setSpeechError(null);
+    const SpeechClass = getSpeechRecognitionClass();
+    if (!SpeechClass) {
+      setSpeechError('Speech recognition is not supported in this browser. Please type incident details or use Chrome/Edge.');
+      return;
+    }
+
+    try {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+
+      const recognition = new SpeechClass();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = speechLanguage;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setSpeechError(null);
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        let final = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+
+        if (interim) {
+          setInterimTranscript(interim);
+        }
+
+        if (final) {
+          setFormTitle((prev) => {
+            const trimmed = prev.trim();
+            return trimmed ? `${trimmed} ${final.trim()}` : final.trim();
+          });
+          setInterimTranscript('');
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition event:', event.error);
+        if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+          setSpeechError('Microphone permission denied. Please allow microphone access in your browser settings.');
+        } else if (event.error !== 'no-speech') {
+          setSpeechError(`Speech error: ${event.error}. You can still type manually.`);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        setInterimTranscript('');
+      };
+
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (err: any) {
+      console.error('Speech recognition exception:', err);
+      setSpeechError('Failed to initialize microphone speech engine. Please type manually.');
+      setIsListening(false);
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+    setInterimTranscript('');
+  };
 
   // Sync state when props change
   useEffect(() => {
@@ -65,9 +163,32 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
       setPhotoPreview(null);
       setCompressionStats(null);
       setIsCompressing(false);
-      setFormVoiceRecording(false);
+      setFormInputMethod(initialInputMethod);
+      setSpeechError(null);
+      setInterimTranscript('');
+      setIsListening(false);
+      if (initialInputMethod === 'VOICE') {
+        setTimeout(() => {
+          startListening();
+        }, 150);
+      }
+    } else {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+        recognitionRef.current = null;
+      }
+      setIsListening(false);
     }
-  }, [isOpen, defaultCorridor, defaultLocationName, defaultTitle, defaultSeverity, defaultType]);
+  }, [isOpen, defaultCorridor, defaultLocationName, defaultTitle, defaultSeverity, defaultType, initialInputMethod]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -178,12 +299,10 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
                 type="button"
                 onClick={() => {
                   setFormInputMethod('VOICE');
-                  setFormVoiceRecording(!formVoiceRecording);
-                  if (!formVoiceRecording) {
-                    setFormTitle('Audio Dispatch: Mudflow blocking corridor passage');
-                    if (!formLocationName) {
-                      setFormLocationName(defaultLocationName || 'Near sector checkpoint');
-                    }
+                  if (!isListening) {
+                    startListening();
+                  } else {
+                    stopListening();
                   }
                 }}
                 className={`p-2.5 rounded-sm border flex flex-col items-center justify-center space-y-1 font-medium transition-colors cursor-pointer ${
@@ -194,15 +313,18 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
               >
                 <Mic
                   className={`w-4 h-4 ${
-                    formVoiceRecording ? 'text-status-blocked-solid animate-pulse' : ''
+                    isListening ? 'text-status-blocked-solid animate-pulse' : ''
                   }`}
                 />
-                <span>{formVoiceRecording ? 'Recording (Voice)' : 'Voice Audio'}</span>
+                <span>{isListening ? 'Listening Live...' : 'Voice Audio'}</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => setFormInputMethod('PHOTO')}
+                onClick={() => {
+                  if (isListening) stopListening();
+                  setFormInputMethod('PHOTO');
+                }}
                 className={`p-2.5 rounded-sm border flex flex-col items-center justify-center space-y-1 font-medium transition-colors cursor-pointer ${
                   formInputMethod === 'PHOTO'
                     ? 'border-primary bg-primary-tint text-primary'
@@ -214,6 +336,104 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Real-time Web Speech Recognition Console */}
+          {formInputMethod === 'VOICE' && (
+            <div className="p-3 bg-surface-subtle border border-border rounded-sm space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-semibold text-text-primary text-[11px]">
+                  <Radio className={`w-3.5 h-3.5 ${isListening ? 'text-status-blocked-solid animate-pulse' : 'text-primary'}`} />
+                  <span>On-Device Speech-to-Text (Web Speech API)</span>
+                </div>
+
+                {/* Language Switcher */}
+                <div className="flex items-center bg-surface border border-border rounded-xs p-0.5 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSpeechLanguage('en-IN');
+                      if (isListening) {
+                        stopListening();
+                        setTimeout(() => startListening(), 100);
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-2xs font-medium cursor-pointer ${
+                      speechLanguage === 'en-IN' ? 'bg-primary text-white font-bold' : 'text-text-secondary'
+                    }`}
+                  >
+                    English (IN)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSpeechLanguage('hi-IN');
+                      if (isListening) {
+                        stopListening();
+                        setTimeout(() => startListening(), 100);
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-2xs font-medium cursor-pointer ${
+                      speechLanguage === 'hi-IN' ? 'bg-primary text-white font-bold' : 'text-text-secondary'
+                    }`}
+                  >
+                    Hindi (हिन्दी)
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Streaming Audio Visualizer & Control Button */}
+              <div className="flex items-center justify-between p-2.5 bg-surface rounded-xs border border-border">
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${isListening ? 'bg-status-blocked-solid animate-ping' : 'bg-text-tertiary'}`} />
+                  <span className="text-[11px] font-mono text-text-primary font-semibold">
+                    {isListening ? (
+                      <span className="text-status-blocked-text">● Recording live speech... Speak now</span>
+                    ) : (
+                      'Microphone Ready'
+                    )}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={isListening ? stopListening : startListening}
+                  className={`px-3 py-1 rounded-xs text-[11px] font-semibold flex items-center gap-1 btn-press cursor-pointer border ${
+                    isListening
+                      ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
+                      : 'bg-primary text-white border-primary'
+                  }`}
+                >
+                  {isListening ? (
+                    <>
+                      <MicOff className="w-3.5 h-3.5" />
+                      <span>Stop Listening</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-3.5 h-3.5" />
+                      <span>Start Listening</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Interim Real-time Preview */}
+              {interimTranscript && (
+                <div className="p-2 bg-primary-tint/20 border border-primary/30 rounded-xs text-[11px] text-primary flex items-start gap-1.5 animate-pulse">
+                  <Volume2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span className="italic">Transcribing: "{interimTranscript}..."</span>
+                </div>
+              )}
+
+              {/* Speech Error Warning */}
+              {speechError && (
+                <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-xs text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+                  <span>{speechError}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Photo Upload Input if Photo Mode Selected */}
           {formInputMethod === 'PHOTO' && (

@@ -10,7 +10,8 @@ import {
   Truck,
   CheckCircle2,
   Send,
-  Sliders
+  Sliders,
+  Sparkles,
 } from 'lucide-react';
 
 interface SegmentModalProps {
@@ -192,6 +193,29 @@ export const SegmentModal: React.FC<SegmentModalProps> = ({
                 <span className="text-text-secondary font-normal">(Base: {segment.base_speed_kmh} km/h)</span>
               </span>
             </div>
+          </div>
+
+          {/* XAI Routing Engine Impact Assessment */}
+          <div className="p-3 bg-surface-subtle/60 rounded-sm border border-border space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-primary" />
+                <span>XAI Routing Engine Impact</span>
+              </span>
+              <span className={`font-mono font-bold text-[9px] px-1.5 py-0.2 rounded-xs ${
+                evaluation.passHardConstraints
+                  ? 'bg-status-open-tint text-status-open-text border border-status-open-solid/40'
+                  : 'bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid/40'
+              }`}>
+                {evaluation.passHardConstraints ? 'ELIGIBLE' : 'AUTO-PRUNED'}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-text-secondary leading-relaxed">
+              {evaluation.passHardConstraints
+                ? `Segment qualifies for Yen's K-Shortest candidate generation. Base impedance factor is ${(1.0 + evaluation.rainfallFactor * 0.5).toFixed(2)}x under current conditions.`
+                : `Violates physical clearance or active hazard threshold. The K-Shortest algorithm automatically prunes any path traversing this segment and evaluates alternate mountain detours.`}
+            </p>
           </div>
 
           {/* 4. Field Disruption Injector for this Segment */}

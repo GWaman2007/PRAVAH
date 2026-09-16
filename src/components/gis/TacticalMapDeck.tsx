@@ -15,6 +15,7 @@ import { AlertFeedModal } from './AlertFeedModal';
 import { SOSModal } from './SOSModal';
 import { MapLegend } from './MapLegend';
 import { DataStalenessChip } from '../layout/DataStalenessChip';
+import { RouteExplainabilityCard } from './RouteExplainabilityCard';
 import type { Segment, VehicleProfile } from '../../types';
 import {
   CloudRain,
@@ -101,6 +102,38 @@ export const TacticalMapDeck: React.FC = () => {
   const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
   const [activeSOSVehicleId, setActiveSOSVehicleId] = useState<string | null>(null);
   const [mobileViewTab, setMobileViewTab] = useState<'MAP' | 'CONTROLS'>('MAP');
+
+  // Spatial Drill-Down Active Corridor State
+  const [activeCorridorChip, setActiveCorridorChip] = useState<'mizoram' | 'nagaland' | 'sikkim' | 'macro'>('mizoram');
+
+  const handleCorridorJump = (corridor: 'mizoram' | 'nagaland' | 'sikkim' | 'macro') => {
+    setActiveCorridorChip(corridor);
+    if (!mapInstanceRef.current) return;
+
+    switch (corridor) {
+      case 'mizoram':
+        mapInstanceRef.current.flyTo([24.30, 92.75], 10, { duration: 1.2 });
+        setOriginHub('silchar');
+        setDestinationHub('kolasib');
+        setSelectedVehicleId('Medic-01');
+        break;
+      case 'nagaland':
+        mapInstanceRef.current.flyTo([25.75, 93.90], 10, { duration: 1.2 });
+        setOriginHub('dimapur');
+        setDestinationHub('kohima');
+        setSelectedVehicleId('Ration-Convoy-07');
+        break;
+      case 'sikkim':
+        mapInstanceRef.current.flyTo([27.15, 88.50], 10, { duration: 1.2 });
+        setOriginHub('guwahati');
+        setDestinationHub('gangtok');
+        setSelectedVehicleId('Oxy-Tanker-04');
+        break;
+      case 'macro':
+        mapInstanceRef.current.flyTo([26.2006, 92.9376], 7, { duration: 1.2 });
+        break;
+    }
+  };
 
   // Custom vehicle specifications state
   const [isCustomSpecsActive, setIsCustomSpecsActive] = useState<boolean>(false);
@@ -1181,6 +1214,19 @@ export const TacticalMapDeck: React.FC = () => {
               );
             })}
           </div>
+
+          {/* Interactive Route Explainability Comparison Card (XAI) */}
+          <div className="pt-3 border-t border-border">
+            <RouteExplainabilityCard
+              recommendedRoute={candidateRoutes[0]}
+              selectedRoute={selectedRoute}
+              candidateRoutes={candidateRoutes}
+              vehicle={selectedVehicle}
+              rainfallMmHr={rainfallMmHr}
+              onSelectRoute={(idx) => setSelectedRouteIndex(idx)}
+              compact={false}
+            />
+          </div>
         </div>
 
         {/* Telemetry Scrubber & Speed Controls ported from vehicletracking */}
@@ -1289,8 +1335,63 @@ export const TacticalMapDeck: React.FC = () => {
           {/* Map Container: rendered first in DOM with isolated z-0 layer */}
           <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
 
+          {/* Spatial Drill-Down Quick Jump Bar (Progressive Disclosure) */}
+          <div className="absolute top-2 sm:top-3 left-2 sm:left-3 z-30 flex items-center gap-1 sm:gap-1.5 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1 sm:p-1.5 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
+            <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider px-1 hidden md:inline">
+              Corridors:
+            </span>
+
+            <button
+              onClick={() => handleCorridorJump('mizoram')}
+              className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
+                activeCorridorChip === 'mizoram'
+                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
+                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'mizoram' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
+              <span>Mizoram (NH-306)</span>
+            </button>
+
+            <button
+              onClick={() => handleCorridorJump('nagaland')}
+              className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
+                activeCorridorChip === 'nagaland'
+                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
+                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'nagaland' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
+              <span>Nagaland (NH-29)</span>
+            </button>
+
+            <button
+              onClick={() => handleCorridorJump('sikkim')}
+              className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
+                activeCorridorChip === 'sikkim'
+                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
+                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'sikkim' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
+              <span>Sikkim (NH-10)</span>
+            </button>
+
+            <button
+              onClick={() => handleCorridorJump('macro')}
+              className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
+                activeCorridorChip === 'macro'
+                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
+                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
+              }`}
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>Macro NER</span>
+            </button>
+          </div>
+
           {/* Top HUD Controls Bar: floats over the map, strictly below the Mission HUD bar */}
-          <div className="absolute top-2 sm:top-3 left-2 sm:left-auto right-2 sm:right-3 z-30 flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1.5 sm:p-2 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
+          <div className="absolute top-11 sm:top-3 right-2 sm:right-3 z-30 flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1.5 sm:p-2 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
             {/* Real-time Data Staleness Indicator */}
             <DataStalenessChip compact className="shrink-0" />
 

@@ -43,6 +43,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
   const [selectedFlair, setSelectedFlair] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<FeedSortOption>('Hot');
   const [reportModalOpen, setReportModalOpen] = useState<boolean>(false);
+  const [initialReportMethod, setInitialReportMethod] = useState<'TEXT' | 'VOICE' | 'PHOTO'>('TEXT');
   const [isQueueDrawerOpen, setIsQueueDrawerOpen] = useState<boolean>(false);
   const [activeLightboxImage, setActiveLightboxImage] = useState<string | null>(null);
   const [syncNotifications, setSyncNotifications] = useState<SyncNotification[]>([]);
@@ -180,9 +181,25 @@ export const GroundIntelligenceFeed: React.FC = () => {
             )}
           </button>
 
+          {/* Quick Voice Dispatch Button */}
+          <button
+            onClick={() => {
+              setInitialReportMethod('VOICE');
+              setReportModalOpen(true);
+            }}
+            className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-sm flex items-center justify-center space-x-1.5 btn-press shadow-xs cursor-pointer"
+            title="Launch Voice Speech-to-Text Dispatch"
+          >
+            <Mic className="w-4 h-4" />
+            <span className="hidden sm:inline">Voice Dispatch</span>
+          </button>
+
           {/* Report Roadblock Button */}
           <button
-            onClick={() => setReportModalOpen(true)}
+            onClick={() => {
+              setInitialReportMethod('TEXT');
+              setReportModalOpen(true);
+            }}
             className="px-3.5 py-2 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white text-xs font-semibold rounded-sm flex items-center justify-center space-x-1.5 btn-press shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -385,6 +402,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
         isOpen={reportModalOpen}
         onClose={() => setReportModalOpen(false)}
         defaultCorridor={selectedFlair !== 'ALL' ? (selectedFlair as CorridorFlair) : 'r/NH-29-Nagaland'}
+        initialInputMethod={initialReportMethod}
       />
     </div>
   );

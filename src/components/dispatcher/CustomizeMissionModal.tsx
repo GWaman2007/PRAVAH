@@ -11,6 +11,7 @@ import {
   Sliders,
   AlertTriangle,
 } from 'lucide-react';
+import { RouteExplainabilityCard } from '../gis/RouteExplainabilityCard';
 
 interface CustomizeMissionModalProps {
   mission: ReliefMission;
@@ -123,10 +124,35 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
               onChange={(e) => setSelectedRouteId(e.target.value)}
               className="w-full p-2 bg-surface border border-border rounded-sm text-text-primary text-xs focus:outline-none font-mono"
             >
-              <option value="ROUTE-MZ-04-BYPASS">✓ Detour via Bilkhawthlir Hill Bypass (78 km - Safe Mountain Detour)</option>
-              <option value="ROUTE-MZ-04-PRIMARY">⚠ Direct NH-306 Main (Impassable: Active Landslide Blockage)</option>
-              <option value="ROUTE-MZ-04-SOUTHERN">Alternative Bairabi Railhead Spur (94 km - Unpaved Single Lane)</option>
+              {candidateRoutes.length > 0 ? (
+                candidateRoutes.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.isPassable ? '✓' : '⚠'} {r.rankLabel} ({r.totalDistanceKm} km - {r.isPassable ? `${r.compositeSafetyScore}% Safe` : 'BLOCKED'})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="ROUTE-MZ-04-BYPASS">✓ Detour via Bilkhawthlir Hill Bypass (78 km - Safe Mountain Detour)</option>
+                  <option value="ROUTE-MZ-04-PRIMARY">⚠ Direct NH-306 Main (Impassable: Active Landslide Blockage)</option>
+                  <option value="ROUTE-MZ-04-SOUTHERN">Alternative Bairabi Railhead Spur (94 km - Unpaved Single Lane)</option>
+                </>
+              )}
             </select>
+
+            {/* Embedded XAI Route Decision Comparison Drawer */}
+            {candidateRoutes.length > 0 && (
+              <RouteExplainabilityCard
+                recommendedRoute={candidateRoutes[0]}
+                selectedRoute={candidateRoutes.find((r) => r.id === selectedRouteId) || candidateRoutes[0]}
+                candidateRoutes={candidateRoutes}
+                compact
+                className="mt-2"
+                onSelectRoute={(idx) => {
+                  const target = candidateRoutes[idx];
+                  if (target) setSelectedRouteId(target.id);
+                }}
+              />
+            )}
           </div>
 
           {/* Cargo Allocation Sliders */}
