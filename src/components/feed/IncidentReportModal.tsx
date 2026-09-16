@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   CheckCircle,
 } from 'lucide-react';
+import { compressImageToJpeg, type CompressionResult } from '../../utils/imageCompression';
 
 export interface IncidentReportModalProps {
   isOpen: boolean;
@@ -50,6 +51,8 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
   const [formInputMethod, setFormInputMethod] = useState<'TEXT' | 'VOICE' | 'PHOTO'>('TEXT');
   const [formVoiceRecording, setFormVoiceRecording] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [compressionStats, setCompressionStats] = useState<CompressionResult | null>(null);
+  const [isCompressing, setIsCompressing] = useState<boolean>(false);
 
   // Sync state when props change
   useEffect(() => {
@@ -60,6 +63,8 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
       setFormSeverity(defaultSeverity);
       setFormType(defaultType);
       setPhotoPreview(null);
+      setCompressionStats(null);
+      setIsCompressing(false);
       setFormVoiceRecording(false);
     }
   }, [isOpen, defaultCorridor, defaultLocationName, defaultTitle, defaultSeverity, defaultType]);
@@ -102,16 +107,26 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
     onClose();
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setPhotoPreview(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        setIsCompressing(true);
+        const result = await compressImageToJpeg(file, 800, 600, 0.7);
+        setPhotoPreview(result.dataUrl);
+        setCompressionStats(result);
+      } catch (err) {
+        console.warn('Image compression fallback to direct FileReader:', err);
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            setPhotoPreview(reader.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      } finally {
+        setIsCompressing(false);
+      }
     }
   };
 
@@ -213,12 +228,26 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
                 onChange={handlePhotoUpload}
                 className="w-full text-xs text-text-secondary file:mr-3 file:py-1 file:px-3 file:rounded-xs file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-hover cursor-pointer"
               />
+              {isCompressing && (
+                <div className="p-2 rounded-xs bg-primary-tint text-primary text-[11px] flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                  <span>Compressing photo to 800x600 for safe offline cache...</span>
+                </div>
+              )}
               {photoPreview && (
-                <div className="relative mt-2 max-h-36 overflow-hidden rounded-xs border border-border">
+                <div className="relative mt-2 max-h-44 overflow-hidden rounded-xs border border-border">
                   <img src={photoPreview} alt="Incident Proof Preview" className="w-full object-cover" />
-                  <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-xs">
-                    Ready to attach
-                  </span>
+                  <div className="absolute bottom-1 right-1 left-1 flex items-center justify-between bg-black/75 backdrop-blur-xs text-white text-[10px] px-2 py-1 rounded-xs">
+                    <span className="flex items-center gap-1 text-emerald-400 font-mono">
+                      <CheckCircle className="w-3 h-3" />
+                      {compressionStats
+                        ? `${compressionStats.originalSizeKb}KB → ${compressionStats.sizeKb}KB (${compressionStats.savedPct}% saved)`
+                        : 'Ready to attach'}
+                    </span>
+                    <span className="font-mono text-text-tertiary">
+                      {compressionStats ? `${compressionStats.width}x${compressionStats.height}` : 'Compressed'}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

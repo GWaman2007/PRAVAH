@@ -1,6 +1,7 @@
 import React from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
 import type { UserRole } from '../../types';
+import { DataStalenessChip } from './DataStalenessChip';
 import {
   ShieldAlert,
   Radio,
@@ -66,6 +67,9 @@ export const Header: React.FC = () => {
 
           {/* Right Controls */}
           <div className="flex items-center space-x-1 sm:space-x-2.5 shrink-0">
+            {/* Real-Time Data Staleness Indicator */}
+            <DataStalenessChip className="hidden xs:flex" />
+
             {/* Network / Offline PWA Status Pill */}
             <button
               onClick={toggleSimulatedOffline}

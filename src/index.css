@@ -236,10 +236,7 @@
   z-index: 7 !important;
 }
 
-.dark .leaflet-tile-pane {
-  filter: brightness(0.85) invert(0.92) contrast(1.1) hue-rotate(185deg)
-    saturate(0.4);
-}
+/* Native dark mode tiles handled dynamically via CartoDB Dark Matter tile layer */
 
 /* Motion accessibility */
 @media (prefers-reduced-motion: reduce) {

@@ -46,6 +46,8 @@ interface PravahStoreContextType {
   isSimulatedOffline: boolean;
   offlineQueueCount: number;
   offlineQueue: Incident[];
+  lastDataSyncTime: number;
+  lastOfflineTransitionTime: number | null;
   toggleSimulatedOffline: () => void;
   flushOfflineQueue: () => { syncedCount: number; details: string[] };
 
@@ -240,6 +242,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [realOnline, setRealOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const isOnline = realOnline && !isSimulatedOffline;
   const [offlineQueue, setOfflineQueue] = useState<Incident[]>(() => getOfflineQueue());
+  const [lastDataSyncTime, setLastDataSyncTime] = useState<number>(() => Date.now());
+  const [lastOfflineTransitionTime, setLastOfflineTransitionTime] = useState<number | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.SIMULATED_OFFLINE) === 'true' ? Date.now() - 360000 : null;
+  });
 
   useEffect(() => {
     const handleOnline = () => setRealOnline(true);
@@ -272,6 +278,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setIsSimulatedOffline((prev) => {
       const next = !prev;
       localStorage.setItem(STORAGE_KEYS.SIMULATED_OFFLINE, String(next));
+      if (next) {
+        setLastOfflineTransitionTime(Date.now());
+      } else {
+        setLastOfflineTransitionTime(null);
+        setLastDataSyncTime(Date.now());
+      }
       return next;
     });
   }, []);
@@ -511,6 +523,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   useEffect(() => {
     if (!isSimulationRunning) return;
     const interval = setInterval(() => {
+      if (isOnline) {
+        setLastDataSyncTime(Date.now());
+      }
       setVehicles((prev) => {
         let allNewAlerts: AlertEvent[] = [];
         const nextVehicles = prev.map((v) => {
@@ -1379,6 +1394,8 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     isSimulatedOffline,
     offlineQueueCount: offlineQueue.length,
     offlineQueue,
+    lastDataSyncTime,
+    lastOfflineTransitionTime,
     toggleSimulatedOffline,
     flushOfflineQueue,
     originHub,

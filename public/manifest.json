@@ -1,0 +1,20 @@
+{
+  "name": "PRAVAH: Smart Logistics Intelligence Platform for NER",
+  "short_name": "PRAVAH",
+  "description": "Predictive Resilient Accessibility & Logistics Intelligence Network for the North Eastern Region — MDoNER",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B1528",
+  "theme_color": "#1B4B73",
+  "categories": ["government", "logistics", "navigation", "utilities"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

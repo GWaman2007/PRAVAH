@@ -2,9 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#1B4B73" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>PRAVAH | AI-Based Smart Logistics & Accessibility Intelligence Platform for NER</title>
     <meta name="description" content="Predictive Resilient Accessibility & Logistics Intelligence Network for the North Eastern Region — Ministry of Development of North Eastern Region (MDoNER)" />
     
@@ -34,5 +39,18 @@
   <body class="bg-surface-page text-text-primary antialiased font-sans transition-colors duration-150">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => {
+              console.log('[PRAVAH] ServiceWorker active on scope:', reg.scope);
+            })
+            .catch((err) => {
+              console.warn('[PRAVAH] ServiceWorker registration warning:', err);
+            });
+        });
+      }
+    </script>
   </body>
 </html>

@@ -24,6 +24,7 @@ import {
 import { playAckChime, playEmergencyAlertSound } from '../../utils/audioAlert';
 import { FLEET_ROUTES, BLACKOUT_ZONES } from '../../data/fleetData';
 import { IncidentReportModal } from '../feed/IncidentReportModal';
+import { DataStalenessChip } from '../layout/DataStalenessChip';
 import type { CorridorFlair } from '../../types';
 
 export const MobileMissionCockpit: React.FC = () => {
@@ -45,6 +46,7 @@ export const MobileMissionCockpit: React.FC = () => {
     setSimulationSpeed,
     isSimulationRunning,
     toggleSimulation,
+    theme,
   } = usePravahStore();
 
   // Active mission vehicle: selected vehicle or default to first
@@ -63,6 +65,7 @@ export const MobileMissionCockpit: React.FC = () => {
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const baseTileLayerRef = useRef<L.TileLayer | null>(null);
   const vehicleMarkerRef = useRef<L.Marker | null>(null);
   const routePolylineRef = useRef<L.Polyline | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
@@ -111,9 +114,16 @@ export const MobileMissionCockpit: React.FC = () => {
       attributionControl: false,
     });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const baseTileUrl =
+      theme === 'dark'
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+    const tileLayer = L.tileLayer(baseTileUrl, {
       maxZoom: 18,
+      subdomains: 'abcd',
     }).addTo(map);
+    baseTileLayerRef.current = tileLayer;
 
     // Initial Route Polyline
     routePolylineRef.current = L.polyline(assignedRoute.coordinates, {
@@ -189,8 +199,20 @@ export const MobileMissionCockpit: React.FC = () => {
       resizeObserver.disconnect();
       map.remove();
       mapInstanceRef.current = null;
+      baseTileLayerRef.current = null;
     };
   }, []);
+
+  // Dynamic Dark Mode Tile Layer Swap
+  useEffect(() => {
+    if (baseTileLayerRef.current) {
+      const tileUrl =
+        theme === 'dark'
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      baseTileLayerRef.current.setUrl(tileUrl);
+    }
+  }, [theme]);
 
   // Switch route and destination markers when activeVehicle changes
   useEffect(() => {
@@ -371,9 +393,11 @@ export const MobileMissionCockpit: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={toggleSimulatedOffline}
-          className={`flex items-center space-x-1 px-2 py-1 rounded-sm text-[10px] font-semibold border btn-press ${
+        <div className="flex items-center gap-1.5">
+          <DataStalenessChip compact />
+          <button
+            onClick={toggleSimulatedOffline}
+            className={`flex items-center space-x-1 px-2 py-1 rounded-sm text-[10px] font-semibold border btn-press ${
             isOnline
               ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
               : 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
@@ -391,6 +415,7 @@ export const MobileMissionCockpit: React.FC = () => {
             </>
           )}
         </button>
+        </div>
       </div>
 
       {/* 3. Mountain Dead-Zone & Watchdog SLA Timer Card */}

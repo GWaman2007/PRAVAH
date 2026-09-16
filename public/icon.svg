@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1528" />
+      <stop offset="100%" stop-color="#1B4B73" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <!-- Shield Badge Outline -->
+  <path d="M256 64 L416 128 V272 C416 368 256 448 256 448 C256 448 96 368 96 272 V128 Z" fill="none" stroke="#2E6B9E" stroke-width="12" stroke-linejoin="round" opacity="0.4" />
+  <!-- Mountain Peaks -->
+  <polygon points="256,160 360,330 152,330" fill="#1E3A5F" opacity="0.7" />
+  <polygon points="320,210 400,340 240,340" fill="#162E4D" opacity="0.8" />
+  <polygon points="192,200 270,330 114,330" fill="#234B78" />
+  <polygon points="256,160 286,210 226,210" fill="#FFFFFF" opacity="0.9" />
+  <!-- Dynamic Logistics Pulse Curve -->
+  <path d="M120 370 Q 220 330 256 360 T 392 320" fill="none" stroke="url(#accentGrad)" stroke-width="18" stroke-linecap="round" />
+  <!-- Telemetry Beacon Pin -->
+  <circle cx="256" cy="360" r="14" fill="#10B981" stroke="#FFFFFF" stroke-width="4" />
+  <circle cx="392" cy="320" r="14" fill="#0284C7" stroke="#FFFFFF" stroke-width="4" />
+</svg>

@@ -14,6 +14,7 @@ import { VehicleInspector } from './VehicleInspector';
 import { AlertFeedModal } from './AlertFeedModal';
 import { SOSModal } from './SOSModal';
 import { MapLegend } from './MapLegend';
+import { DataStalenessChip } from '../layout/DataStalenessChip';
 import type { Segment, VehicleProfile } from '../../types';
 import {
   CloudRain,
@@ -38,6 +39,7 @@ import {
 export const TacticalMapDeck: React.FC = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const baseTileLayerRef = useRef<L.TileLayer | null>(null);
 
   // Layer groups refs
   const lhzLayerRef = useRef<L.GeoJSON | null>(null);
@@ -85,6 +87,7 @@ export const TacticalMapDeck: React.FC = () => {
     triggerVehicleSOS,
     activeRole,
     activeMissions,
+    theme,
   } = usePravahStore();
 
   // Find any active in-transit relief mission
@@ -184,10 +187,17 @@ export const TacticalMapDeck: React.FC = () => {
       attributionControl: false,
     });
 
-    // Base Tile Layer
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Base Tile Layer (CartoDB Dark Matter for dark mode, OpenStreetMap for light mode)
+    const baseTileUrl =
+      theme === 'dark'
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+    const tileLayer = L.tileLayer(baseTileUrl, {
       maxZoom: 18,
+      subdomains: 'abcd',
     }).addTo(map);
+    baseTileLayerRef.current = tileLayer;
 
     // Initialize layer groups
     chokePointsLayerRef.current = L.layerGroup().addTo(map);
@@ -215,8 +225,20 @@ export const TacticalMapDeck: React.FC = () => {
       resizeObserver.disconnect();
       map.remove();
       mapInstanceRef.current = null;
+      baseTileLayerRef.current = null;
     };
   }, []);
+
+  // Dynamic Dark Mode Tile Layer Swap
+  useEffect(() => {
+    if (baseTileLayerRef.current) {
+      const tileUrl =
+        theme === 'dark'
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      baseTileLayerRef.current.setUrl(tileUrl);
+    }
+  }, [theme]);
 
   // Auto-focus map on active dispatched mission if available
   useEffect(() => {
@@ -1269,6 +1291,9 @@ export const TacticalMapDeck: React.FC = () => {
 
           {/* Top HUD Controls Bar: floats over the map, strictly below the Mission HUD bar */}
           <div className="absolute top-2 sm:top-3 left-2 sm:left-auto right-2 sm:right-3 z-30 flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1.5 sm:p-2 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
+            {/* Real-time Data Staleness Indicator */}
+            <DataStalenessChip compact className="shrink-0" />
+
             {/* Layer Toggles */}
             <div className="flex items-center space-x-1 text-[11px] sm:text-xs shrink-0">
               <button
