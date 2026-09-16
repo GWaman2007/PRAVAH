@@ -56,6 +56,7 @@ export const TacticalMapDeck: React.FC = () => {
   const mapInstanceRef = useRef<maplibregl.Map | null>(null);
   const isMapLoadedRef = useRef<boolean>(false);
   const animFrameIdRef = useRef<number | null>(null);
+  const [webglError, setWebglError] = useState<string | null>(null);
 
   const {
     activeLayers,
@@ -186,16 +187,32 @@ export const TacticalMapDeck: React.FC = () => {
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    // Centered on North East India: [92.9376, 26.2006] (lng, lat), zoom 7
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: [92.9376, 26.2006],
-      zoom: 7,
-      minZoom: 5,
-      maxZoom: 18,
-      attributionControl: false,
-    });
+    // Explicitly configure web worker URL so bundlers and static hosts (Vercel) locate the worker module
+    if (typeof window !== 'undefined') {
+      try {
+        maplibregl.setWorkerUrl('/assets/maplibre-gl-worker.mjs');
+      } catch {
+        // non-fatal
+      }
+    }
+
+    let map: maplibregl.Map;
+    try {
+      // Centered on North East India: [92.9376, 26.2006] (lng, lat), zoom 7
+      map = new maplibregl.Map({
+        container: mapContainerRef.current,
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        center: [92.9376, 26.2006],
+        zoom: 7,
+        minZoom: 5,
+        maxZoom: 18,
+        attributionControl: false,
+      });
+    } catch (err: any) {
+      console.error('[PRAVAH] MapLibre WebGL Initialization error:', err);
+      setWebglError(err?.message || 'WebGL2 is required to display this vector map.');
+      return;
+    }
 
     map.addControl(
       new maplibregl.AttributionControl({
@@ -1522,7 +1539,28 @@ export const TacticalMapDeck: React.FC = () => {
         </div>
 
         {/* Map Container */}
-        <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
+        <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate">
+          {webglError && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center p-6 bg-surface/90 backdrop-blur-md">
+              <div className="max-w-md p-5 rounded-md border border-amber-500/40 bg-surface shadow-xl text-center space-y-3">
+                <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
+                <h3 className="text-sm font-bold text-text-primary">Hardware Acceleration Required</h3>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  {webglError}
+                </p>
+                <p className="text-[11px] text-text-secondary opacity-80">
+                  Please ensure WebGL / Graphics Acceleration is enabled in your browser settings (e.g. Chrome Settings &gt; System &gt; Use graphics acceleration when available) or try refreshing.
+                </p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xs shadow-xs hover:bg-primary-hover cursor-pointer"
+                >
+                  Reload GIS Deck
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Interactive GIS Legend */}
         <MapLegend />

@@ -3,7 +3,7 @@
  * Implements Stale-While-Revalidate strategy for mission continuity in NER mountain dead-zones.
  */
 
-const CACHE_NAME = 'pravah-v1.1-cache';
+const CACHE_NAME = 'pravah-v1.2-cache';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -50,12 +50,14 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Bypass dev server internals and chrome extensions
+  // Bypass dev server internals, chrome extensions, and map worker scripts
   if (
     url.pathname.includes('/@vite') ||
     url.pathname.includes('/@react-refresh') ||
     url.pathname.includes('hot-update') ||
-    url.protocol.startsWith('chrome-extension')
+    url.protocol.startsWith('chrome-extension') ||
+    url.pathname.includes('maplibre-gl-worker') ||
+    url.pathname.includes('maplibre-gl-shared')
   ) {
     return;
   }
