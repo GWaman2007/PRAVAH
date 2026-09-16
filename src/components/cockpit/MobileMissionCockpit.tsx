@@ -120,9 +120,13 @@ export const MobileMissionCockpit: React.FC = () => {
         : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
     const tileLayer = L.tileLayer(baseTileUrl, {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
       maxZoom: 18,
+      minZoom: 4,
       subdomains: 'abcd',
+      crossOrigin: true,
     }).addTo(map);
+    tileLayer.bringToBack();
     baseTileLayerRef.current = tileLayer;
 
     // Initial Route Polyline
@@ -203,14 +207,30 @@ export const MobileMissionCockpit: React.FC = () => {
     };
   }, []);
 
-  // Dynamic Dark Mode Tile Layer Swap
+  // Dynamic Dark Mode Tile Layer Swap - Clean flush of stale raster tiles
   useEffect(() => {
-    if (baseTileLayerRef.current) {
+    if (mapInstanceRef.current) {
+      if (baseTileLayerRef.current) {
+        mapInstanceRef.current.removeLayer(baseTileLayerRef.current);
+      }
       const tileUrl =
         theme === 'dark'
           ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
           : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-      baseTileLayerRef.current.setUrl(tileUrl);
+
+      const newTileLayer = L.tileLayer(tileUrl, {
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        maxZoom: 18,
+        minZoom: 4,
+        subdomains: 'abcd',
+        crossOrigin: true,
+      }).addTo(mapInstanceRef.current);
+      newTileLayer.bringToBack();
+      baseTileLayerRef.current = newTileLayer;
+
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 150);
     }
   }, [theme]);
 

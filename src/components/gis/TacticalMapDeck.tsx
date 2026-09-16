@@ -227,9 +227,13 @@ export const TacticalMapDeck: React.FC = () => {
         : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
     const tileLayer = L.tileLayer(baseTileUrl, {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
       maxZoom: 18,
+      minZoom: 4,
       subdomains: 'abcd',
+      crossOrigin: true,
     }).addTo(map);
+    tileLayer.bringToBack();
     baseTileLayerRef.current = tileLayer;
 
     // Initialize layer groups
@@ -262,14 +266,31 @@ export const TacticalMapDeck: React.FC = () => {
     };
   }, []);
 
-  // Dynamic Dark Mode Tile Layer Swap
+  // Dynamic Dark Mode Tile Layer Swap - Clean flush of stale raster tiles
   useEffect(() => {
-    if (baseTileLayerRef.current) {
+    if (mapInstanceRef.current) {
+      if (baseTileLayerRef.current) {
+        mapInstanceRef.current.removeLayer(baseTileLayerRef.current);
+      }
       const tileUrl =
         theme === 'dark'
           ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
           : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-      baseTileLayerRef.current.setUrl(tileUrl);
+
+      const newTileLayer = L.tileLayer(tileUrl, {
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        maxZoom: 18,
+        minZoom: 4,
+        subdomains: 'abcd',
+        crossOrigin: true,
+      }).addTo(mapInstanceRef.current);
+      newTileLayer.bringToBack();
+      baseTileLayerRef.current = newTileLayer;
+
+      // Invalidate size to recalculate tile boundary coordinates without clipping
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 150);
     }
   }, [theme]);
 
@@ -1335,126 +1356,129 @@ export const TacticalMapDeck: React.FC = () => {
           {/* Map Container: rendered first in DOM with isolated z-0 layer */}
           <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate" />
 
-          {/* Spatial Drill-Down Quick Jump Bar (Progressive Disclosure) */}
-          <div className="absolute top-2 sm:top-3 left-2 sm:left-3 z-30 flex items-center gap-1 sm:gap-1.5 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1 sm:p-1.5 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
-            <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider px-1 hidden md:inline">
-              Corridors:
-            </span>
+          {/* Unified Responsive Top HUD Controls Overlay (Centered & Collision-Free) */}
+          <div className="absolute top-2 sm:top-3 inset-x-0 z-30 pointer-events-none flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-3">
+            {/* Left Group: Corridor Jump Pills */}
+            <div className="pointer-events-auto flex items-center gap-1 sm:gap-1.5 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-sm sm:rounded-lg border border-border dark:border-slate-700 shadow-md text-xs overflow-x-auto no-scrollbar max-w-full">
+              <span className="text-[10px] font-bold text-text-secondary dark:text-slate-400 uppercase tracking-wider px-1 hidden sm:inline">
+                Corridors:
+              </span>
 
-            <button
-              onClick={() => handleCorridorJump('mizoram')}
-              className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
-                activeCorridorChip === 'mizoram'
-                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
-                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'mizoram' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
-              <span>Mizoram (NH-306)</span>
-            </button>
-
-            <button
-              onClick={() => handleCorridorJump('nagaland')}
-              className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
-                activeCorridorChip === 'nagaland'
-                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
-                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'nagaland' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
-              <span>Nagaland (NH-29)</span>
-            </button>
-
-            <button
-              onClick={() => handleCorridorJump('sikkim')}
-              className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
-                activeCorridorChip === 'sikkim'
-                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
-                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'sikkim' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
-              <span>Sikkim (NH-10)</span>
-            </button>
-
-            <button
-              onClick={() => handleCorridorJump('macro')}
-              className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
-                activeCorridorChip === 'macro'
-                  ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
-                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
-              }`}
-            >
-              <Maximize2 className="w-3 h-3" />
-              <span>Macro NER</span>
-            </button>
-          </div>
-
-          {/* Top HUD Controls Bar: floats over the map, strictly below the Mission HUD bar */}
-          <div className="absolute top-11 sm:top-3 right-2 sm:right-3 z-30 flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1.5 sm:p-2 rounded-sm border border-border shadow-md overflow-x-auto no-scrollbar max-w-[calc(100vw-16px)]">
-            {/* Real-time Data Staleness Indicator */}
-            <DataStalenessChip compact className="shrink-0" />
-
-            {/* Layer Toggles */}
-            <div className="flex items-center space-x-1 text-[11px] sm:text-xs shrink-0">
               <button
-                onClick={() => toggleLayer('lhz')}
-                className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                  activeLayers.lhz
-                    ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
-                    : 'bg-surface text-text-secondary border-border'
+                onClick={() => handleCorridorJump('mizoram')}
+                className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
+                  activeCorridorChip === 'mizoram'
+                    ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
+                    : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
                 }`}
               >
-                ISRO LHZ
+                <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'mizoram' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
+                <span>Mizoram (NH-306)</span>
               </button>
 
               <button
-                onClick={() => toggleLayer('imd')}
-                className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                  activeLayers.imd
-                    ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
-                    : 'bg-surface text-text-secondary border-border'
+                onClick={() => handleCorridorJump('nagaland')}
+                className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
+                  activeCorridorChip === 'nagaland'
+                    ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
+                    : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
                 }`}
               >
-                IMD Alerts
+                <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'nagaland' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
+                <span>Nagaland (NH-29)</span>
               </button>
 
               <button
-                onClick={() => toggleLayer('routes')}
-                className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                  activeLayers.routes
-                    ? 'bg-primary-tint text-primary border-primary'
-                    : 'bg-surface text-text-secondary border-border'
+                onClick={() => handleCorridorJump('sikkim')}
+                className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
+                  activeCorridorChip === 'sikkim'
+                    ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
+                    : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
                 }`}
               >
-                K-Routes
+                <span className={`w-1.5 h-1.5 rounded-full ${activeCorridorChip === 'sikkim' ? 'bg-emerald-400 animate-pulse' : 'bg-text-tertiary'}`} />
+                <span>Sikkim (NH-10)</span>
               </button>
 
               <button
-                onClick={() => toggleLayer('fleet')}
-                className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
-                  activeLayers.fleet
-                    ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
-                    : 'bg-surface text-text-secondary border-border'
+                onClick={() => handleCorridorJump('macro')}
+                className={`px-2 py-1 rounded-xs text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 transition-all btn-press cursor-pointer border ${
+                  activeCorridorChip === 'macro'
+                    ? 'bg-[#1B4B73] dark:bg-[#2E6B9E] text-white border-primary shadow-xs'
+                    : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
                 }`}
               >
-                Telemetry
+                <Maximize2 className="w-3 h-3" />
+                <span>Macro NER</span>
               </button>
             </div>
 
-            {/* Monsoon Simulation Toggle */}
-            <button
-              onClick={toggleMonsoonDownpourSimulation}
-              className={`flex items-center space-x-1 px-2 sm:px-2.5 py-1 rounded-sm text-[11px] sm:text-xs font-medium border transition-colors btn-press cursor-pointer shrink-0 ${
-                isMonsoonDownpourSimulated
-                  ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid animate-pulse'
-                  : 'bg-surface text-text-secondary border-border'
-              }`}
-            >
-              <CloudRain className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
-              <span className="xs:hidden">{isMonsoonDownpourSimulated ? '58 mm/h' : 'Monsoon'}</span>
-            </button>
+            {/* Right Group: Telemetry, Toggles & Weather Modes */}
+            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-surface/92 dark:bg-slate-900/92 backdrop-blur-md p-1 sm:p-1.5 rounded-sm sm:rounded-lg border border-border dark:border-slate-700 shadow-md text-xs overflow-x-auto no-scrollbar max-w-full">
+              {/* Real-time Data Staleness Indicator */}
+              <DataStalenessChip compact className="shrink-0" />
+
+              {/* Layer Toggles */}
+              <div className="flex items-center space-x-1 text-[11px] sm:text-xs shrink-0">
+                <button
+                  onClick={() => toggleLayer('lhz')}
+                  className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                    activeLayers.lhz
+                      ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
+                      : 'bg-surface text-text-secondary border-border'
+                  }`}
+                >
+                  ISRO LHZ
+                </button>
+
+                <button
+                  onClick={() => toggleLayer('imd')}
+                  className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                    activeLayers.imd
+                      ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
+                      : 'bg-surface text-text-secondary border-border'
+                  }`}
+                >
+                  IMD Alerts
+                </button>
+
+                <button
+                  onClick={() => toggleLayer('routes')}
+                  className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                    activeLayers.routes
+                      ? 'bg-primary-tint text-primary border-primary'
+                      : 'bg-surface text-text-secondary border-border'
+                  }`}
+                >
+                  K-Routes
+                </button>
+
+                <button
+                  onClick={() => toggleLayer('fleet')}
+                  className={`px-2 sm:px-2.5 py-1 rounded-sm border font-medium transition-colors cursor-pointer ${
+                    activeLayers.fleet
+                      ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+                      : 'bg-surface text-text-secondary border-border'
+                  }`}
+                >
+                  Telemetry
+                </button>
+              </div>
+
+              {/* Monsoon Simulation Toggle */}
+              <button
+                onClick={toggleMonsoonDownpourSimulation}
+                className={`flex items-center space-x-1 px-2 sm:px-2.5 py-1 rounded-sm text-[11px] sm:text-xs font-medium border transition-colors btn-press cursor-pointer shrink-0 ${
+                  isMonsoonDownpourSimulated
+                    ? 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid animate-pulse'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                <CloudRain className="w-3.5 h-3.5" />
+                <span className="hidden xs:inline">{isMonsoonDownpourSimulated ? 'Monsoon Surge (58 mm/h)' : 'Simulate Monsoon'}</span>
+                <span className="xs:hidden">{isMonsoonDownpourSimulated ? '58 mm/h' : 'Monsoon'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Interactive Tactical GIS Map Legend */}

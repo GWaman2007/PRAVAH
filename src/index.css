@@ -198,13 +198,17 @@
 /* Leaflet Container Overrides & Stacking Context Containment */
 .leaflet-container {
   font-family: var(--font-sans) !important;
-  background-color: #121820 !important;
+  background-color: #e5e3df !important; /* Neutral map paper tone */
   width: 100%;
   height: 100%;
   z-index: 0 !important;
   isolation: isolate;
   contain: paint;
   border-radius: inherit;
+}
+
+.dark .leaflet-container {
+  background-color: #1a1d21 !important; /* Subtle dark slate, never solid #000 */
 }
 
 /* Trap Leaflet internal panes so they never bleed over headers, toolbars or modals */
