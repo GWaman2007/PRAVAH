@@ -1,3 +1,5 @@
+//test
+
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import type {
@@ -669,12 +671,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((b) =>
         b.id === bottleneckId
           ? {
-              ...b,
-              status: 'CREW_DEPLOYED' as const,
-              recommendedAsset: `${assetName} (Deployed & Active on Site)`,
-              estimatedClearanceHours: Math.max(2, Math.round(b.estimatedClearanceHours * 0.5)),
-              lastUpdated: 'Just now',
-            }
+            ...b,
+            status: 'CREW_DEPLOYED' as const,
+            recommendedAsset: `${assetName} (Deployed & Active on Site)`,
+            estimatedClearanceHours: Math.max(2, Math.round(b.estimatedClearanceHours * 0.5)),
+            lastUpdated: 'Just now',
+          }
           : b
       )
     );
@@ -1090,11 +1092,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((m) =>
         m.id === missionId
           ? {
-              ...m,
-              status: 'IN_TRANSIT',
-              assignedVehicleId: assignedVehId,
-              dispatchedAt: new Date().toISOString(),
-            }
+            ...m,
+            status: 'IN_TRANSIT',
+            assignedVehicleId: assignedVehId,
+            dispatchedAt: new Date().toISOString(),
+          }
           : m
       )
     );
@@ -1110,25 +1112,25 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return prev.map((v) =>
           v.vehicle_id === assignedVehId
             ? {
-                ...v,
-                status: 'ON_ROUTE',
-                mission_id: missionId,
-                assigned_route_id: targetMission?.assignedRouteId || missionId,
-                destination_name: destName,
-                speed_kmh: 42,
-                is_stopped_manual: false,
-                current_coords: originCoords,
-                route_progress_pct: 0,
-                traveled_distance_km: 0,
-                breadcrumbs: [
-                  {
-                    coords: originCoords,
-                    status: 'ON_ROUTE',
-                    timestamp: new Date().toISOString(),
-                    speed_kmh: 42,
-                  },
-                ],
-              }
+              ...v,
+              status: 'ON_ROUTE',
+              mission_id: missionId,
+              assigned_route_id: targetMission?.assignedRouteId || missionId,
+              destination_name: destName,
+              speed_kmh: 42,
+              is_stopped_manual: false,
+              current_coords: originCoords,
+              route_progress_pct: 0,
+              traveled_distance_km: 0,
+              breadcrumbs: [
+                {
+                  coords: originCoords,
+                  status: 'ON_ROUTE',
+                  timestamp: new Date().toISOString(),
+                  speed_kmh: 42,
+                },
+              ],
+            }
             : v
         );
       } else {
@@ -1331,13 +1333,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((v) =>
         v.vehicle_id === 'Medic-01'
           ? {
-              ...v,
-              status: 'ON_ROUTE',
-              route_progress_pct: 35,
-              speed_kmh: 44,
-              is_stopped_manual: false,
-              next_chokepoint: 'Bairabi Pass Alternate Spur',
-            }
+            ...v,
+            status: 'ON_ROUTE',
+            route_progress_pct: 35,
+            speed_kmh: 44,
+            is_stopped_manual: false,
+            next_chokepoint: 'Bairabi Pass Alternate Spur',
+          }
           : v
       )
     );
