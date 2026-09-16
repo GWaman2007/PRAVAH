@@ -197,7 +197,22 @@ export const TacticalMapDeck: React.FC = () => {
 
     mapInstanceRef.current = map;
 
+    // Trigger size recalculation after layout settles
+    const initialResizeTimer = setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+
+    // Attach ResizeObserver to keep tiles rendered during tab / panel resizing
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    if (mapContainerRef.current) {
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
+      clearTimeout(initialResizeTimer);
+      resizeObserver.disconnect();
       map.remove();
       mapInstanceRef.current = null;
     };

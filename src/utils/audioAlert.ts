@@ -310,6 +310,27 @@ export function playTextToSpeech(
 
   stopTextToSpeech();
 
+  // Check if browser is offline or Web Speech API is directly available
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  const hasWebSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window;
+
+  // Safe fallback handler that triggers procedural siren if all speech synthesis paths fail
+  const handleAllAudioFailure = (err: any) => {
+    console.warn('Speech synthesis failed, falling back to procedural Web Audio siren:', err);
+    try {
+      playEmergencyAlertSound();
+    } catch (sirenErr) {
+      console.warn('Procedural siren failed:', sirenErr);
+    }
+    onError?.(err);
+  };
+
+  // If explicitly offline or captive portal prevents external streaming, prioritize local Web Speech
+  if (isOffline && hasWebSpeech) {
+    fallbackToWebSpeech(text, langId, incident, speed, onStart, onEnd, handleAllAudioFailure);
+    return;
+  }
+
   const { googleLang, cleanText } = resolveTtsParameters(text, langId, incident);
 
   try {
@@ -333,21 +354,30 @@ export function playTextToSpeech(
       onEnd?.();
     };
 
-    audio.onerror = (e) => {
-      console.warn('Neural audio stream failed, falling back to Web Speech API:', e);
+    const handleStreamFailure = (e: any) => {
+      console.warn('Neural audio stream unavailable, switching to local Web Speech API:', e);
       currentAudio = null;
-      fallbackToWebSpeech(text, langId, incident, speed, onStart, onEnd, onError);
+      if (hasWebSpeech) {
+        fallbackToWebSpeech(text, langId, incident, speed, onStart, onEnd, handleAllAudioFailure);
+      } else {
+        handleAllAudioFailure(e);
+      }
     };
+
+    audio.onerror = handleStreamFailure;
 
     const playPromise = audio.play();
     if (playPromise !== undefined) {
       playPromise.catch((err) => {
-        console.warn('Audio play() rejected, falling back to Web Speech:', err);
-        fallbackToWebSpeech(text, langId, incident, speed, onStart, onEnd, onError);
+        handleStreamFailure(err);
       });
     }
   } catch (e) {
-    fallbackToWebSpeech(text, langId, incident, speed, onStart, onEnd, onError);
+    if (hasWebSpeech) {
+      fallbackToWebSpeech(text, langId, incident, speed, onStart, onEnd, handleAllAudioFailure);
+    } else {
+      handleAllAudioFailure(e);
+    }
   }
 }
 

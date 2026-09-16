@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { playAckChime, playEmergencyAlertSound } from '../../utils/audioAlert';
 import { FLEET_ROUTES, BLACKOUT_ZONES } from '../../data/fleetData';
+import { IncidentReportModal } from '../feed/IncidentReportModal';
+import type { CorridorFlair } from '../../types';
 
 export const MobileMissionCockpit: React.FC = () => {
   const {
@@ -56,7 +58,6 @@ export const MobileMissionCockpit: React.FC = () => {
     FLEET_ROUTES[activeVehicle.assigned_route_id] || FLEET_ROUTES['ROUTE-MZ-04'];
 
   const [clearanceModalOpen, setClearanceModalOpen] = useState(false);
-  const [clearanceNotes, setClearanceNotes] = useState('');
   const [isSOSConfirmOpen, setIsSOSConfirmOpen] = useState(false);
   const [roadblockAheadSimulated, setRoadblockAheadSimulated] = useState(false);
 
@@ -170,7 +171,22 @@ export const MobileMissionCockpit: React.FC = () => {
 
     mapInstanceRef.current = map;
 
+    // Trigger size recalculation after layout settles
+    const initialResizeTimer = setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+
+    // Attach ResizeObserver to keep tiles rendered during tab toggling
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    if (mapContainerRef.current) {
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
+      clearTimeout(initialResizeTimer);
+      resizeObserver.disconnect();
       map.remove();
       mapInstanceRef.current = null;
     };
@@ -235,36 +251,13 @@ export const MobileMissionCockpit: React.FC = () => {
     mapInstanceRef.current.panTo(activeVehicle.current_coords, { animate: true, duration: 0.8 });
   }, [activeVehicle.current_coords, activeVehicle.heading_deg]);
 
-  const handleOfficerClearanceReport = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!clearanceNotes) return;
+  const defaultCorridorFlair: CorridorFlair = activeVehicle.assigned_route_id.includes('SK')
+    ? 'r/NH-10-Sikkim'
+    : activeVehicle.assigned_route_id.includes('NL')
+    ? 'r/NH-29-Nagaland'
+    : 'r/Mizoram-NH-306';
 
-    addIncident({
-      title: `OFFICIAL CLEARANCE: Single lane opened on ${assignedRoute.name}`,
-      corridorFlair: activeVehicle.assigned_route_id.includes('SK')
-        ? 'r/Sikkim-NH-10'
-        : activeVehicle.assigned_route_id.includes('NL')
-        ? 'r/Nagaland-NH-29'
-        : 'r/Mizoram-NH-306',
-      incidentType: 'Road Subsidence',
-      severity: 'Single Lane Passable',
-      location: {
-        lat: activeVehicle.current_coords[0],
-        lng: activeVehicle.current_coords[1],
-        placeName: `${assignedRoute.startHub} - ${targetCommunity.name} Corridor`,
-        corridorId: activeVehicle.assigned_route_id,
-      },
-      author: {
-        name: userContext.name,
-        role: 'Field Officer (BRO/Police)',
-      },
-      timestamp: new Date().toISOString(),
-      mediaUrl: 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80',
-    });
-
-    setClearanceNotes('');
-    setClearanceModalOpen(false);
-  };
+  const defaultLocationName = `${assignedRoute.name} (en route to ${targetCommunity.name})`;
 
   return (
     <div className="max-w-md mx-auto px-3 py-4 space-y-3 pb-44 select-none text-xs text-text-primary">
@@ -627,61 +620,16 @@ export const MobileMissionCockpit: React.FC = () => {
         </div>
       )}
 
-      {/* Officer Clearance Modal */}
-      {clearanceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="bg-surface border border-border rounded-md max-w-sm w-full p-5 space-y-3 shadow-xl text-xs">
-            <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="font-semibold text-sm text-text-primary">
-                Official Roadblock Report (+10 Multiplier)
-              </h3>
-              <button
-                onClick={() => setClearanceModalOpen(false)}
-                className="p-1 text-text-secondary hover:text-text-primary cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleOfficerClearanceReport} className="space-y-3">
-              <div>
-                <label className="font-medium text-text-secondary block mb-1">
-                  Field Observations / Clearance Notes:
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  value={clearanceNotes}
-                  onChange={(e) => setClearanceNotes(e.target.value)}
-                  placeholder="e.g. Cleared right lane near corridor. Escorting convoy through alternate single lane."
-                  className="w-full p-2 bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-                />
-              </div>
-
-              <div className="p-2 rounded-sm bg-primary-tint/30 text-primary font-medium text-[11px]">
-                Signed by Officer: {userContext.name} ({userContext.badgeId})
-              </div>
-
-              <div className="pt-2 flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setClearanceModalOpen(false)}
-                  className="px-3 py-1.5 border border-border rounded-sm text-text-secondary hover:bg-surface-subtle btn-press cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-sm font-semibold btn-press shadow-xs flex items-center space-x-1 cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Submit Official Report</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Unified Incident Report Modal with Mission Context */}
+      <IncidentReportModal
+        isOpen={clearanceModalOpen}
+        onClose={() => setClearanceModalOpen(false)}
+        defaultCorridor={defaultCorridorFlair}
+        defaultLocationName={defaultLocationName}
+        defaultCoords={activeVehicle.current_coords}
+        defaultCorridorId={activeVehicle.assigned_route_id}
+        defaultTitle={`Roadblock / Hazard on ${assignedRoute.name}`}
+      />
     </div>
   );
 };

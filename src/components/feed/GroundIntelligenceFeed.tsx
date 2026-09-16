@@ -6,6 +6,7 @@ import { CorridorFilterBar, type FeedSortOption } from './CorridorFilterBar';
 import { OfflineQueueDrawer } from './OfflineQueueDrawer';
 import { SyncNotificationToast, type SyncNotification } from './SyncNotificationToast';
 import { LightboxModal } from './LightboxModal';
+import { IncidentReportModal } from './IncidentReportModal';
 import type { CorridorFlair, IncidentType, IncidentSeverity, AuthorRole, OfflineQueueItem } from '../../types';
 import {
   MessageSquare,
@@ -45,15 +46,6 @@ export const GroundIntelligenceFeed: React.FC = () => {
   const [isQueueDrawerOpen, setIsQueueDrawerOpen] = useState<boolean>(false);
   const [activeLightboxImage, setActiveLightboxImage] = useState<string | null>(null);
   const [syncNotifications, setSyncNotifications] = useState<SyncNotification[]>([]);
-
-  // Form State for Report Modal
-  const [formTitle, setFormTitle] = useState('');
-  const [formCorridor, setFormCorridor] = useState<CorridorFlair>('r/NH-29-Nagaland');
-  const [formType, setFormType] = useState<IncidentType>('Landslide');
-  const [formSeverity, setFormSeverity] = useState<IncidentSeverity>('Total Blockage');
-  const [formLocationName, setFormLocationName] = useState('');
-  const [formInputMethod, setFormInputMethod] = useState<'TEXT' | 'VOICE' | 'PHOTO'>('TEXT');
-  const [formVoiceRecording, setFormVoiceRecording] = useState(false);
 
   // Active commenting
   const [commentingIncidentId, setCommentingIncidentId] = useState<string | null>(null);
@@ -100,41 +92,6 @@ export const GroundIntelligenceFeed: React.FC = () => {
       payload: item,
     }));
   }, [offlineQueue]);
-
-  const handleCreateReport = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formTitle || !formLocationName) return;
-
-    addIncident({
-      title: formTitle,
-      corridorFlair: formCorridor,
-      incidentType: formType,
-      severity: formSeverity,
-      location: {
-        lat: 25.7500,
-        lng: 93.9800,
-        placeName: formLocationName,
-        corridorId: 'SEG-DIM-KOH-MAIN',
-      },
-      author: {
-        name: userContext.name,
-        role: (userContext.role === 'FIELD_OFFICER'
-          ? 'Field Officer (BRO/Police)'
-          : userContext.role === 'DRIVER'
-          ? 'Registered Driver'
-          : 'Local Citizen') as AuthorRole,
-      },
-      timestamp: new Date().toISOString(),
-      mediaUrl:
-        formType === 'Landslide'
-          ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80'
-          : 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80',
-    });
-
-    setFormTitle('');
-    setFormLocationName('');
-    setReportModalOpen(false);
-  };
 
   const handleVote = (incidentId: string, type: 'up' | 'down') => {
     voteIncident(incidentId, type);
@@ -423,180 +380,12 @@ export const GroundIntelligenceFeed: React.FC = () => {
         )}
       </div>
 
-      {/* Report Incident Modal */}
-      {reportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-surface border border-border rounded-md max-w-lg w-full p-6 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between pb-3 border-b border-border">
-              <h2 className="font-semibold text-base text-text-primary">
-                Report Field Incident / Roadblock
-              </h2>
-              <button
-                onClick={() => setReportModalOpen(false)}
-                className="p-1 rounded-sm text-text-secondary hover:text-text-primary cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateReport} className="space-y-4 text-xs">
-              {/* Three input methods: Text, Voice, Photo */}
-              <div>
-                <label className="font-medium text-text-secondary block mb-1">
-                  Preferred Reporting Mode:
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormInputMethod('TEXT')}
-                    className={`p-2.5 rounded-sm border flex flex-col items-center justify-center space-y-1 font-medium transition-colors cursor-pointer ${
-                      formInputMethod === 'TEXT'
-                        ? 'border-primary bg-primary-tint text-primary'
-                        : 'border-border bg-surface text-text-secondary'
-                    }`}
-                  >
-                    <FileText className="w-4 h-4" />
-                    <span>Text Details</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormInputMethod('VOICE');
-                      setFormVoiceRecording(!formVoiceRecording);
-                      if (!formVoiceRecording) {
-                        setFormTitle('Audio Dispatch: Mudflow blocking NH-29 single lane pass');
-                        setFormLocationName('Km 142 Pagla Pahar bypass');
-                      }
-                    }}
-                    className={`p-2.5 rounded-sm border flex flex-col items-center justify-center space-y-1 font-medium transition-colors cursor-pointer ${
-                      formInputMethod === 'VOICE'
-                        ? 'border-primary bg-primary-tint text-primary'
-                        : 'border-border bg-surface text-text-secondary'
-                    }`}
-                  >
-                    <Mic className={`w-4 h-4 ${formVoiceRecording ? 'text-status-blocked-solid animate-pulse' : ''}`} />
-                    <span>{formVoiceRecording ? 'Recording (Voice)' : 'Voice Audio'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setFormInputMethod('PHOTO')}
-                    className={`p-2.5 rounded-sm border flex flex-col items-center justify-center space-y-1 font-medium transition-colors cursor-pointer ${
-                      formInputMethod === 'PHOTO'
-                        ? 'border-primary bg-primary-tint text-primary'
-                        : 'border-border bg-surface text-text-secondary'
-                    }`}
-                  >
-                    <Camera className="w-4 h-4" />
-                    <span>Photo Proof</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-medium text-text-secondary block mb-1">
-                  Corridor Channel Flair:
-                </label>
-                <select
-                  value={formCorridor}
-                  onChange={(e) => setFormCorridor(e.target.value as CorridorFlair)}
-                  className="w-full p-2 bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-                >
-                  <option value="r/NH-29-Nagaland">r/NH-29-Nagaland (Kohima Lifeline)</option>
-                  <option value="r/NH-10-Sikkim">r/NH-10-Sikkim (Teesta Valley)</option>
-                  <option value="r/Mizoram-NH-306">r/Mizoram-NH-306 (Kolasib Sector)</option>
-                  <option value="r/Assam-DimaHasao">r/Assam-DimaHasao (Barail Cut)</option>
-                  <option value="r/East-Khasi-Hills">r/East-Khasi-Hills (Sohra Ridge)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-medium text-text-secondary block mb-1">
-                  Incident Headline / Summary:
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  placeholder="e.g. Major rockfall cleaving bridge shoulder at KM-42"
-                  className="w-full p-2 bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-medium text-text-secondary block mb-1">Type:</label>
-                  <select
-                    value={formType}
-                    onChange={(e) => setFormType(e.target.value as IncidentType)}
-                    className="w-full p-2 bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-                  >
-                    <option value="Landslide">Landslide</option>
-                    <option value="Flash Flood">Flash Flood</option>
-                    <option value="Bridge Washout">Bridge Washout</option>
-                    <option value="Road Subsidence">Road Subsidence</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-medium text-text-secondary block mb-1">Severity:</label>
-                  <select
-                    value={formSeverity}
-                    onChange={(e) => setFormSeverity(e.target.value as IncidentSeverity)}
-                    className="w-full p-2 bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-                  >
-                    <option value="Total Blockage">Total Blockage</option>
-                    <option value="Single Lane Passable">Single Lane Passable</option>
-                    <option value="Caution/Hazard">Caution/Hazard</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-medium text-text-secondary block mb-1">
-                  Exact Landmark / Location:
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formLocationName}
-                  onChange={(e) => setFormLocationName(e.target.value)}
-                  placeholder="e.g. Near Pagla Pahar waterfall KM-144"
-                  className="w-full p-2 bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-                />
-              </div>
-
-              {!isOnline && (
-                <div className="p-3 rounded-sm bg-status-highrisk-tint text-status-highrisk-text border border-status-highrisk-solid flex items-center space-x-2">
-                  <WifiOff className="w-4 h-4 shrink-0" />
-                  <span>
-                    You are working offline. This report will be queued in local storage and synced automatically once signal is recovered.
-                  </span>
-                </div>
-              )}
-
-              <div className="pt-3 border-t border-border flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setReportModalOpen(false)}
-                  className="px-3 py-2 text-xs font-medium border border-border rounded-sm text-text-secondary hover:bg-surface-subtle btn-press cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold btn-press shadow-xs flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Submit Incident Report</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Unified Incident Report Modal */}
+      <IncidentReportModal
+        isOpen={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        defaultCorridor={selectedFlair !== 'ALL' ? (selectedFlair as CorridorFlair) : 'r/NH-29-Nagaland'}
+      />
     </div>
   );
 };
