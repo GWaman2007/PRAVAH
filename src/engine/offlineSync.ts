@@ -1,9 +1,9 @@
-import type { Incident } from '../types';
+import type { Incident, CommunityBase } from '../types';
 
 export const STORAGE_KEYS = {
   INCIDENTS: 'pravah_ner_incidents_v2',
   DISRUPTIONS: 'pravah_ner_disruptions_v2',
-  MISSIONS: 'pravah_ner_missions_v2',
+  MISSIONS: 'pravah_ner_missions_v3',
   COMMUNITIES: 'pravah_ner_communities_v2',
   OFFLINE_QUEUE: 'pravah_ner_offline_queue_v2',
   SIMULATED_OFFLINE: 'pravah_simulated_offline_v2',
@@ -317,6 +317,28 @@ export function persistMissions(missions: any[]): void {
     }
   } catch (err) {
     console.warn('[OfflineSync] Failed to save missions to localStorage:', err);
+  }
+}
+
+/**
+ * Communities Persistence
+ */
+export function getPersistedCommunities(): CommunityBase[] | null {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.COMMUNITIES) : null;
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function persistCommunities(communities: CommunityBase[]): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.COMMUNITIES, JSON.stringify(communities));
+    }
+  } catch (err) {
+    console.warn('[OfflineSync] Failed to save communities to localStorage:', err);
   }
 }
 

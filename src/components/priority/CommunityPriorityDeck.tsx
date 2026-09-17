@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
 import { COMMODITY_CONFIG } from '../../engine/priorityEngine';
 import { playAckChime } from '../../utils/audioAlert';
@@ -22,6 +22,13 @@ import {
   Sliders,
 } from 'lucide-react';
 
+const PRIORITY_TIER_ORDER: Record<string, number> = {
+  P1: 1,
+  P2: 2,
+  P3: 3,
+  P4: 4,
+};
+
 export const CommunityPriorityDeck: React.FC = () => {
   const {
     communities,
@@ -39,8 +46,23 @@ export const CommunityPriorityDeck: React.FC = () => {
   const [explainModalOpen, setExplainModalOpen] = useState(false);
   const [restockToast, setRestockToast] = useState<RestockToastData | null>(null);
 
+  const sortedCommunities = useMemo(() => {
+    return [...communities].sort((a, b) => {
+      const tierA = a.metrics?.priorityTier || (a as any).priorityTier || 'P4';
+      const tierB = b.metrics?.priorityTier || (b as any).priorityTier || 'P4';
+      const rankA = PRIORITY_TIER_ORDER[tierA] ?? 99;
+      const rankB = PRIORITY_TIER_ORDER[tierB] ?? 99;
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+      const scoreA = a.metrics?.finalScore ?? (a as any).finalScore ?? 0;
+      const scoreB = b.metrics?.finalScore ?? (b as any).finalScore ?? 0;
+      return scoreB - scoreA;
+    });
+  }, [communities]);
+
   const selectedCommunity =
-    communities.find((c) => c.id === selectedCommunityId) || communities[0];
+    sortedCommunities.find((c) => c.id === selectedCommunityId) || sortedCommunities[0] || communities[0];
 
   const getTierBadge = (tier: PriorityTier) => {
     switch (tier) {
@@ -131,12 +153,12 @@ export const CommunityPriorityDeck: React.FC = () => {
               Triage Queue (Dynamic Real-Time Rank)
             </h2>
             <span className="text-xs text-text-secondary font-mono">
-              {communities.length} Monitored Sectors
+              {sortedCommunities.length} Monitored Sectors
             </span>
           </div>
 
           <div className="space-y-2.5">
-            {communities.map((c) => {
+            {sortedCommunities.map((c) => {
               const isSelected = c.id === selectedCommunityId;
               const { metrics } = c;
               return (

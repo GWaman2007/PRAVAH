@@ -24,6 +24,8 @@ export interface UserContext {
 
 export type ActiveView =
   | 'GIS_COMMAND'
+  | 'MISSIONS'
+  | 'COMMUNITIES'
   | 'COMMUNITY_PRIORITY'
   | 'EXECUTIVE_INFRA'
   | 'GROUND_FEED'
@@ -433,6 +435,7 @@ export interface CommunityBase {
   state: string;
   district: string;
   coordinates: [number, number];
+  boundary?: GeoJSON.Polygon;
   population: number;
   healthcareFacilities: number;
   ingressRouteCount: number;

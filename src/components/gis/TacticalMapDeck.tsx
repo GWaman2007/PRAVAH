@@ -18,9 +18,11 @@ import {
   createRoadStatusGeoJSON,
   createDisastersGeoJSON,
   createCommunitiesGeoJSON,
+  createCommunityBoundariesGeoJSON,
   createWarehousesGeoJSON,
   createRoadBreakdownsGeoJSON,
   createMissionEndpointsGeoJSON,
+  createGroundIntelIncidentsGeoJSON,
   registerMapIcons,
 } from '../../engine/mapGeoJSONAdapters';
 import { SegmentModal } from './SegmentModal';
@@ -115,6 +117,41 @@ export const TacticalMapDeck: React.FC = () => {
   activeDisruptionsRef.current = activeDisruptions;
   const incidentsRef = useRef(incidents);
   incidentsRef.current = incidents;
+  const communitiesRef = useRef(communities);
+  communitiesRef.current = communities;
+  const selectedCommunityIdRef = useRef(selectedCommunityId);
+  selectedCommunityIdRef.current = selectedCommunityId;
+
+  // Zoom map to community polygon or coordinates
+  const zoomToCommunity = useCallback((communityId: string, mapInstance?: maplibregl.Map | null) => {
+    const map = mapInstance || mapInstanceRef.current;
+    if (!map) return;
+    const comm = communitiesRef.current.find((c) => c.id === communityId);
+    if (!comm) return;
+
+    const bounds = new maplibregl.LngLatBounds();
+    if (comm.boundary && comm.boundary.coordinates && comm.boundary.coordinates.length > 0) {
+      comm.boundary.coordinates.forEach((ring: any) => {
+        ring.forEach((pt: any) => {
+          bounds.extend([pt[0], pt[1]]);
+        });
+      });
+    }
+
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds, {
+        padding: { top: 90, bottom: 90, left: 120, right: 120 },
+        duration: 1200,
+        maxZoom: 12.5,
+      });
+    } else if (comm.coordinates) {
+      map.flyTo({
+        center: [comm.coordinates[1], comm.coordinates[0]],
+        zoom: 11.5,
+        duration: 1200,
+      });
+    }
+  }, []);
 
   // Active sidebar tab: 'MISSIONS' (Ongoing & Suggested) vs 'ROUTING' (K-Shortest & Constraints)
   const [sidebarTab, setSidebarTab] = useState<'MISSIONS' | 'ROUTING'>('MISSIONS');
@@ -192,6 +229,12 @@ export const TacticalMapDeck: React.FC = () => {
     if (!selectedVehicleId) return null;
     return vehicles.find((v) => v.vehicle_id === selectedVehicleId) || null;
   }, [vehicles, selectedVehicleId]);
+
+  // Selected community object
+  const selectedCommunity = useMemo(() => {
+    if (!selectedCommunityId) return null;
+    return communities.find((c) => c.id === selectedCommunityId) || null;
+  }, [communities, selectedCommunityId]);
 
   // Unacknowledged alerts count
   const unackAlertsCount = useMemo(() => {
@@ -295,33 +338,8 @@ export const TacticalMapDeck: React.FC = () => {
       }
 
       // -------------------------------------------------------------
-      // 1. DISASTERS (Polygons: Fill + Line)
+      // 1. DISASTERS (Removed older bigger generic polygons - keeping only communities)
       // -------------------------------------------------------------
-      map.addSource('disasters', {
-        type: 'geojson',
-        data: createDisastersGeoJSON(HAZARD_ZONES),
-      });
-
-      map.addLayer({
-        id: 'disasters-fill',
-        type: 'fill',
-        source: 'disasters',
-        paint: {
-          'fill-color': ['get', 'fillColor'],
-          'fill-opacity': ['get', 'fillOpacity'],
-        },
-      });
-
-      map.addLayer({
-        id: 'disasters-line',
-        type: 'line',
-        source: 'disasters',
-        paint: {
-          'line-color': ['get', 'outlineColor'],
-          'line-width': 2,
-          'line-dasharray': [3, 2],
-        },
-      });
 
       // -------------------------------------------------------------
       // 2. ROAD ACCESSIBILITY & STATUS (Lines)
@@ -420,11 +438,34 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       // -------------------------------------------------------------
-      // 4b. MISSION DESTINATION ENDPOINTS (Inside Disaster Polygons)
+      // 4b. MISSION DESTINATION ENDPOINTS (Terminus of Active Routes)
       // -------------------------------------------------------------
       map.addSource('mission-endpoints', {
         type: 'geojson',
-        data: createMissionEndpointsGeoJSON(activeMissions, selectedMissionId),
+        data: createMissionEndpointsGeoJSON(activeMissions, selectedMissionId, FLEET_ROUTES),
+      });
+
+      // Sharp core dot at the exact road termination coordinates
+      map.addLayer({
+        id: 'mission-endpoints-core',
+        type: 'circle',
+        source: 'mission-endpoints',
+        paint: {
+          'circle-radius': [
+            'case',
+            ['boolean', ['get', 'isSelected'], false],
+            7.5,
+            5,
+          ],
+          'circle-color': [
+            'case',
+            ['boolean', ['get', 'isSelected'], false],
+            '#DC2626',
+            '#EA580C',
+          ],
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#FFFFFF',
+        },
       });
 
       map.addLayer({
@@ -433,20 +474,42 @@ export const TacticalMapDeck: React.FC = () => {
         source: 'mission-endpoints',
         layout: {
           'icon-image': 'icon-destination-endpoint',
-          'icon-size': 0.85,
+          'icon-size': [
+            'case',
+            ['boolean', ['get', 'isSelected'], false],
+            1.15,
+            0.85,
+          ],
           'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
-          'text-field': ['get', 'destination_name'],
+          'text-field': [
+            'case',
+            ['boolean', ['get', 'isSelected'], false],
+            ['concat', '🚩 TARGET: ', ['get', 'destination_name']],
+            ['get', 'destination_name'],
+          ],
           'text-font': ['Noto Sans Bold'],
-          'text-size': 10,
-          'text-offset': [0, 0.5],
+          'text-size': [
+            'case',
+            ['boolean', ['get', 'isSelected'], false],
+            12,
+            10,
+          ],
+          'text-offset': [0, 0.8],
           'text-anchor': 'top',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
         },
         paint: {
-          'text-color': '#FFFFFF',
+          'text-color': [
+            'case',
+            ['boolean', ['get', 'isSelected'], false],
+            '#FBBF24',
+            '#FFFFFF',
+          ],
           'text-halo-color': '#0F172A',
-          'text-halo-width': 1.5,
+          'text-halo-width': 2.5,
         },
       });
 
@@ -480,8 +543,44 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       // -------------------------------------------------------------
-      // 6. COMMUNITIES & PRIORITY TIERS
+      // 6. COMMUNITIES & PRIORITY TIERS (Database-Backed Real Polygon Boundaries)
       // -------------------------------------------------------------
+      map.addSource('community-boundaries', {
+        type: 'geojson',
+        data: createCommunityBoundariesGeoJSON(communities, selectedCommunityId),
+      });
+
+      map.addLayer({
+        id: 'community-boundaries-fill',
+        type: 'fill',
+        source: 'community-boundaries',
+        paint: {
+          'fill-color': ['get', 'color'],
+          'fill-opacity': [
+            'case',
+            ['boolean', ['get', 'isSelected'], false],
+            0.42,
+            0.22,
+          ],
+        },
+      });
+
+      map.addLayer({
+        id: 'community-boundaries-line',
+        type: 'line',
+        source: 'community-boundaries',
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': [
+            'case',
+            ['boolean', ['get', 'isSelected'], false],
+            3.0,
+            1.8,
+          ],
+          'line-dasharray': [2, 1],
+        },
+      });
+
       map.addSource('communities', {
         type: 'geojson',
         data: createCommunitiesGeoJSON(communities, selectedCommunityId),
@@ -554,6 +653,61 @@ export const TacticalMapDeck: React.FC = () => {
           'circle-color': '#DC2626',
           'circle-stroke-width': 2,
           'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 7b. GROUND INTEL REPORTED INCIDENTS (Live Blinking Warning Dots)
+      // -------------------------------------------------------------
+      map.addSource('ground-intel-incidents', {
+        type: 'geojson',
+        data: createGroundIntelIncidentsGeoJSON(incidents),
+      });
+
+      // Animated pulsing warning halo on exact reported incident coordinates
+      map.addLayer({
+        id: 'ground-intel-incidents-pulse',
+        type: 'circle',
+        source: 'ground-intel-incidents',
+        paint: {
+          'circle-radius': 14,
+          'circle-color': ['get', 'color'],
+          'circle-opacity': 0.38,
+          'circle-stroke-width': 1.8,
+          'circle-stroke-color': ['get', 'color'],
+        },
+      });
+
+      // Solid central incident core dot
+      map.addLayer({
+        id: 'ground-intel-incidents-core',
+        type: 'circle',
+        source: 'ground-intel-incidents',
+        paint: {
+          'circle-radius': 6.5,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      // Incident title badge
+      map.addLayer({
+        id: 'ground-intel-incidents-symbol',
+        type: 'symbol',
+        source: 'ground-intel-incidents',
+        layout: {
+          'text-field': ['concat', '⚠️ ', ['get', 'incidentType'], ': ', ['get', 'placeName']],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9.5,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#FCA5A5',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 2.5,
         },
       });
 
@@ -737,22 +891,96 @@ export const TacticalMapDeck: React.FC = () => {
         }
       });
 
+      // Hover on ground intel incident marker
+      map.on('mousemove', 'ground-intel-incidents-core', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          setHoveredBreakdown({
+            x: e.point.x,
+            y: e.point.y,
+            segment_id: feat.properties.id,
+            segment_name: `${feat.properties.placeName} (${feat.properties.state})`,
+            highway: feat.properties.corridorFlair,
+            status: feat.properties.severity,
+            cause: feat.properties.incidentType,
+            severity: feat.properties.severity,
+            reportedBy: `${feat.properties.authorName} (${feat.properties.authorRole})`,
+            lastUpdated: feat.properties.timestamp ? formatTimeAgo(feat.properties.timestamp) : undefined,
+          });
+        }
+      });
+
+      map.on('mouseleave', 'ground-intel-incidents-core', () => {
+        setHoveredBreakdown(null);
+      });
+
+      // Click ground intel incident -> Detailed incident modal
+      const handleGroundIntelClick = (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties?.id) {
+          const incId = feat.properties.id;
+          const currentIncidents = incidentsRef.current;
+          const currentDisruptions = activeDisruptionsRef.current;
+          const currentMissions = activeMissionsRef.current;
+
+          const inc = currentIncidents.find((i) => i.id === incId);
+          if (inc) {
+            const seg =
+              NER_SEGMENTS.find(
+                (s) => s.id === inc.location?.corridorId || s.highway === inc.corridorFlair
+              ) || NER_SEGMENTS[0];
+            const dis = currentDisruptions[seg.id] || {
+              id: `dis-${inc.id}`,
+              segmentId: seg.id,
+              highway: seg.highway,
+              status: inc.severity === 'Total Blockage' ? 'TOTAL_BLOCKAGE' : 'SINGLE_LANE_PASSABLE',
+              cause: inc.incidentType,
+              severity: inc.severity,
+              description: inc.title,
+              reportedBy: `${inc.author.name} (${inc.author.role})`,
+              reportedTime: inc.timestamp,
+              estimatedClearanceHours: 4,
+            };
+            const affected = currentMissions.filter(
+              (m) =>
+                m.assignedRouteId?.includes(seg.highway) ||
+                m.suggestedDetour?.includes(seg.highway) ||
+                seg.name.toLowerCase().includes(m.destinationName.toLowerCase())
+            );
+            setDetailedIncident({
+              segment: seg,
+              disruption: dis,
+              incident: inc,
+              affectedMissions: affected,
+            });
+          }
+        }
+      };
+      map.on('click', 'ground-intel-incidents-core', handleGroundIntelClick);
+      map.on('click', 'ground-intel-incidents-symbol', handleGroundIntelClick);
+
       // Click mission endpoint
-      map.on('click', 'mission-endpoints-symbol', (e: any) => {
+      const handleEndpointClick = (e: any) => {
         const feat = e.features?.[0];
         if (feat?.properties?.mission_id) {
           const target = activeMissions.find((m) => m.id === feat.properties.mission_id);
           if (target) handleFocusMission(target);
         }
-      });
+      };
+      map.on('click', 'mission-endpoints-symbol', handleEndpointClick);
+      map.on('click', 'mission-endpoints-core', handleEndpointClick);
 
-      // Click community
-      map.on('click', 'communities-circle', (e: any) => {
+      // Click community (circle point or boundary polygon)
+      const handleCommunitySelect = (e: any) => {
         const feat = e.features?.[0];
         if (feat?.properties?.community_id) {
-          setSelectedCommunityId(feat.properties.community_id);
+          const commId = feat.properties.community_id;
+          setSelectedCommunityId(commId);
+          zoomToCommunity(commId, map);
         }
-      });
+      };
+      map.on('click', 'communities-circle', handleCommunitySelect);
+      map.on('click', 'community-boundaries-fill', handleCommunitySelect);
 
       // Cursor change on interactive layers
       const interactiveLayers = [
@@ -761,8 +989,12 @@ export const TacticalMapDeck: React.FC = () => {
         'road-status-line',
         'road-breakdowns-point',
         'road-breakdowns-pulse',
+        'ground-intel-incidents-core',
+        'ground-intel-incidents-pulse',
         'mission-endpoints-symbol',
+        'mission-endpoints-core',
         'communities-circle',
+        'community-boundaries-fill',
       ];
       interactiveLayers.forEach((layerId) => {
         map.on('mouseenter', layerId, () => {
@@ -772,6 +1004,11 @@ export const TacticalMapDeck: React.FC = () => {
           map.getCanvas().style.cursor = '';
         });
       });
+
+      // If a community was selected prior to map load, zoom into it immediately
+      if (selectedCommunityIdRef.current) {
+        zoomToCommunity(selectedCommunityIdRef.current, map);
+      }
     });
 
     mapInstanceRef.current = map;
@@ -782,7 +1019,13 @@ export const TacticalMapDeck: React.FC = () => {
       mapInstanceRef.current = null;
       isMapLoadedRef.current = false;
     };
-  }, []);
+  }, [zoomToCommunity]);
+
+  // Zoom to community whenever selectedCommunityId changes on an active map
+  useEffect(() => {
+    if (!isMapLoadedRef.current || !selectedCommunityId) return;
+    zoomToCommunity(selectedCommunityId);
+  }, [selectedCommunityId, zoomToCommunity]);
 
   // 3. Smooth Animated Pulses for SOS & Road Breakdowns
   useEffect(() => {
@@ -802,6 +1045,10 @@ export const TacticalMapDeck: React.FC = () => {
         if (map.getLayer('road-breakdowns-pulse')) {
           map.setPaintProperty('road-breakdowns-pulse', 'circle-radius', 11 + radiusOffset * 0.6);
           map.setPaintProperty('road-breakdowns-pulse', 'circle-opacity', Math.max(0.12, opacity));
+        }
+        if (map.getLayer('ground-intel-incidents-pulse')) {
+          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-radius', 13 + radiusOffset * 1.5);
+          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-opacity', Math.max(0.12, opacity));
         }
       }
 
@@ -842,7 +1089,7 @@ export const TacticalMapDeck: React.FC = () => {
     // Update mission endpoints
     const endpointsSource = map.getSource('mission-endpoints') as maplibregl.GeoJSONSource;
     if (endpointsSource) {
-      endpointsSource.setData(createMissionEndpointsGeoJSON(activeMissions, selectedMissionId));
+      endpointsSource.setData(createMissionEndpointsGeoJSON(activeMissions, selectedMissionId, FLEET_ROUTES));
     }
 
     // Update road status & breakdowns
@@ -854,8 +1101,16 @@ export const TacticalMapDeck: React.FC = () => {
     if (breakdownSource) {
       breakdownSource.setData(createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS, incidents, activeMissions));
     }
+    const groundIntelSource = map.getSource('ground-intel-incidents') as maplibregl.GeoJSONSource;
+    if (groundIntelSource) {
+      groundIntelSource.setData(createGroundIntelIncidentsGeoJSON(incidents));
+    }
 
-    // Update communities
+    // Update communities (database-backed boundary polygons and points)
+    const commPolySource = map.getSource('community-boundaries') as maplibregl.GeoJSONSource;
+    if (commPolySource) {
+      commPolySource.setData(createCommunityBoundariesGeoJSON(communities, selectedCommunityId));
+    }
     const commSource = map.getSource('communities') as maplibregl.GeoJSONSource;
     if (commSource) {
       commSource.setData(createCommunitiesGeoJSON(communities, selectedCommunityId));
@@ -883,9 +1138,11 @@ export const TacticalMapDeck: React.FC = () => {
       }
     };
 
-    // CRITICAL AREAS: Disaster and Landslide Hazard Polygons
-    setVisibility('disasters-fill', activeLayers.lhz);
-    setVisibility('disasters-line', activeLayers.lhz);
+    // COMMUNITIES: Community Boundary Polygons & Markers
+    setVisibility('community-boundaries-fill', activeLayers.lhz);
+    setVisibility('community-boundaries-line', activeLayers.lhz);
+    setVisibility('communities-circle', activeLayers.lhz);
+    setVisibility('communities-label', activeLayers.lhz);
 
     // ROAD STATUS: Controls status lines and data-driven incident markers
     setVisibility('road-status-casing', activeLayers.roadStatus);
@@ -893,11 +1150,17 @@ export const TacticalMapDeck: React.FC = () => {
     setVisibility('road-breakdowns-pulse', activeLayers.roadStatus);
     setVisibility('road-breakdowns-point', activeLayers.roadStatus);
 
-    // MISSION ROUTES & ENDPOINTS: Active routes and mission destination targets
+    // GROUND INTEL FEED INCIDENTS: Always visible live incident locations with pulsing warning dots
+    setVisibility('ground-intel-incidents-pulse', true);
+    setVisibility('ground-intel-incidents-core', true);
+    setVisibility('ground-intel-incidents-symbol', true);
+
+    // MISSION ROUTES & ENDPOINTS: Active routes and mission destination targets (solid markers only)
     setVisibility('mission-routes-glow', activeLayers.routes);
     setVisibility('mission-routes-line', activeLayers.routes);
     setVisibility('selected-mission-casing', activeLayers.routes);
     setVisibility('selected-mission-line', activeLayers.routes);
+    setVisibility('mission-endpoints-core', activeLayers.routes);
     setVisibility('mission-endpoints-symbol', activeLayers.routes);
 
     // FLEET: Vehicles and SOS alerts
@@ -944,8 +1207,13 @@ export const TacticalMapDeck: React.FC = () => {
       });
     }
 
-    if (mission.destinationEndpoint) {
-      bounds.extend([mission.destinationEndpoint[1], mission.destinationEndpoint[0]]);
+    const endpointCoord =
+      rawCoords && rawCoords.length > 0
+        ? rawCoords[rawCoords.length - 1]
+        : mission.destinationEndpoint;
+
+    if (endpointCoord) {
+      bounds.extend([endpointCoord[1], endpointCoord[0]]);
     }
 
     if (mission.originCoords) {
@@ -961,9 +1229,10 @@ export const TacticalMapDeck: React.FC = () => {
     }
   }, [setSelectedMissionId, setSelectedVehicleId]);
 
-  // Clear mission focus
+  // Clear mission and community focus
   const handleClearFocus = useCallback(() => {
     setSelectedMissionId(null);
+    setSelectedCommunityId(null);
     const map = mapInstanceRef.current;
     if (map) {
       map.easeTo({
@@ -972,7 +1241,7 @@ export const TacticalMapDeck: React.FC = () => {
         duration: 1000,
       });
     }
-  }, [setSelectedMissionId]);
+  }, [setSelectedMissionId, setSelectedCommunityId]);
 
   const selectedRoute = candidateRoutes[selectedRouteIndex] || candidateRoutes[0];
 
@@ -1608,7 +1877,7 @@ export const TacticalMapDeck: React.FC = () => {
       <div className={`flex-1 relative flex flex-col h-full overflow-hidden isolate ${mobileViewTab === 'MAP' ? 'flex' : 'hidden lg:flex'}`}>
         {/* Top Floating Controls Bar */}
         <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-          {/* Active Mission Pill if focused */}
+          {/* Active Mission or Community Focus Pill */}
           {activeMission ? (
             <div className="pointer-events-auto bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary shadow-md flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
@@ -1621,8 +1890,35 @@ export const TacticalMapDeck: React.FC = () => {
               <button
                 onClick={handleClearFocus}
                 className="ml-2 px-1.5 py-0.5 bg-surface hover:bg-surface-subtle text-[10px] font-semibold text-text-secondary hover:text-text-primary rounded-xs border border-border cursor-pointer"
+                title="Reset focus"
               >
                 Clear Focus
+              </button>
+            </div>
+          ) : selectedCommunity ? (
+            <div className="pointer-events-auto bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary shadow-md flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              <span className={`px-1.5 py-0.5 rounded-xs font-bold text-[10px] ${
+                selectedCommunity.metrics?.priorityTier === 'P1'
+                  ? 'bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid/40'
+                  : selectedCommunity.metrics?.priorityTier === 'P2'
+                  ? 'bg-status-highrisk-tint text-status-highrisk-text border border-status-highrisk-solid/40'
+                  : 'bg-status-restricted-tint text-status-restricted-text border border-status-restricted-solid/40'
+              }`}>
+                {selectedCommunity.metrics?.priorityTier || 'P3'}
+              </span>
+              <span className="text-xs font-bold text-text-primary">
+                {selectedCommunity.name}
+              </span>
+              <span className="text-[11px] text-text-secondary hidden sm:inline">
+                ({selectedCommunity.district})
+              </span>
+              <button
+                onClick={handleClearFocus}
+                className="ml-2 px-1.5 py-0.5 bg-surface hover:bg-surface-subtle text-[10px] font-semibold text-text-secondary hover:text-text-primary rounded-xs border border-border cursor-pointer"
+                title="Reset map view to whole Northeast region"
+              >
+                Reset Map View
               </button>
             </div>
           ) : (
@@ -1638,11 +1934,12 @@ export const TacticalMapDeck: React.FC = () => {
               onClick={() => toggleLayer('lhz')}
               className={`px-2 py-1 rounded-xs border font-medium cursor-pointer transition ${
                 activeLayers.lhz
-                  ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid/60'
+                  ? 'bg-primary-tint text-primary border-primary/60'
                   : 'bg-surface text-text-secondary border-border'
               }`}
+              title="Toggle Community Sector Boundary Polygons"
             >
-              CRITICAL AREAS
+              COMMUNITIES
             </button>
             <button
               onClick={() => toggleLayer('roadStatus')}

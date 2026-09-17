@@ -3,6 +3,8 @@ import { usePravahStore } from '../../store/usePravahStore';
 import type { ActiveView } from '../../types';
 import {
   Map,
+  Truck,
+  Users,
   Zap,
   Building2,
   MessageSquare,
@@ -22,10 +24,11 @@ interface NavItem {
 }
 
 export const Navigation: React.FC = () => {
-  const { activeView, setActiveView, activeRole, communities, alerts, incidents } = usePravahStore();
+  const { activeView, setActiveView, activeRole, communities, alerts, incidents, activeMissions } = usePravahStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const p1Count = communities.filter((c) => c.metrics.priorityTier === 'P1').length;
+  const suggestedCount = activeMissions.filter((m) => m.status === 'SUGGESTED').length;
 
   const navItems: NavItem[] = [
     {
@@ -35,10 +38,17 @@ export const Navigation: React.FC = () => {
       icon: Map,
     },
     {
-      id: 'COMMUNITY_PRIORITY',
-      label: 'Community Priority Engine',
-      shortLabel: 'Priority',
-      icon: Zap,
+      id: 'MISSIONS',
+      label: 'Missions',
+      shortLabel: 'Missions',
+      icon: Truck,
+      badge: suggestedCount > 0 ? `${suggestedCount} NEW` : undefined,
+    },
+    {
+      id: 'COMMUNITIES',
+      label: 'Communities',
+      shortLabel: 'Communities',
+      icon: Users,
       badge: p1Count > 0 ? `${p1Count} P1` : undefined,
     },
     {
@@ -74,7 +84,7 @@ export const Navigation: React.FC = () => {
       return item.id === 'MOBILE_COCKPIT';
     }
     if (activeRole === 'FIELD_OFFICER') {
-      return item.id === 'MOBILE_COCKPIT' || item.id === 'GROUND_FEED' || item.id === 'GIS_COMMAND';
+      return item.id === 'MOBILE_COCKPIT' || item.id === 'GROUND_FEED' || item.id === 'GIS_COMMAND' || item.id === 'COMMUNITIES' || item.id === 'MISSIONS';
     }
     // SUPER_ADMIN & FLEET_DISPATCHER have full central command access; cockpit is dedicated to field roles
     return item.id !== 'MOBILE_COCKPIT';
@@ -165,7 +175,7 @@ export const Navigation: React.FC = () => {
                       className={`px-1.5 py-0.5 text-[10px] font-bold rounded-sm ${
                         isActive
                           ? 'bg-white/20 text-white'
-                          : item.id === 'COMMUNITY_PRIORITY'
+                          : item.id === 'COMMUNITIES'
                           ? 'bg-status-blocked-tint text-status-blocked-text'
                           : 'bg-primary-tint text-primary'
                       }`}
@@ -201,7 +211,7 @@ export const Navigation: React.FC = () => {
                     className={`ml-1.5 px-1.5 py-0.5 text-[10px] lg:text-xs font-bold rounded-sm ${
                       isActive
                         ? 'bg-white/20 text-white'
-                        : item.id === 'COMMUNITY_PRIORITY'
+                        : item.id === 'COMMUNITIES'
                         ? 'bg-status-blocked-tint text-status-blocked-text'
                         : 'bg-primary-tint text-primary'
                     }`}

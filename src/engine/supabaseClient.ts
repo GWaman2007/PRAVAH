@@ -1,5 +1,5 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-import type { Incident, SegmentIncident, AlertEvent } from '../types';
+import type { Incident, SegmentIncident, AlertEvent, CommunityBase } from '../types';
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const supabasePublishableKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
@@ -295,5 +295,93 @@ export function cancelCloudSOS(vehicleId: string): void {
       event: 'DRIVER_SOS_CANCELLED',
       payload: { vehicleId },
     });
+  }
+}
+
+/**
+ * Cloud Communities API
+ */
+export async function fetchCloudCommunities(): Promise<CommunityBase[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from('communities').select('*');
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch communities:', error.message);
+      return null;
+    }
+    if (!data || data.length === 0) return null;
+
+    return data.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      state: row.state,
+      district: row.district,
+      coordinates: Array.isArray(row.coordinates)
+        ? row.coordinates
+        : [row.coordinates?.lat ?? 24.22, row.coordinates?.lng ?? 92.67],
+      boundary: row.boundary || undefined,
+      population: Number(row.population),
+      healthcareFacilities: Number(row.healthcare_facilities ?? row.healthcareFacilities ?? 2),
+      ingressRouteCount: Number(row.ingress_route_count ?? row.ingressRouteCount ?? 1),
+      primaryCorridor: row.primary_corridor || row.primaryCorridor,
+      nearestDepotName: row.nearest_depot_name || row.nearestDepotName,
+      transitTimeHours: Number(row.transit_time_hours ?? row.transitTimeHours ?? 2.5),
+      cutoffTimeHours: Number(row.cutoff_time_hours ?? row.cutoffTimeHours ?? 4.0),
+      disruptionProbMax: Number(row.disruption_prob_max ?? row.disruptionProbMax ?? 0.85),
+      elapsedTimeHours: Number(row.elapsed_time_hours ?? row.elapsedTimeHours ?? 0),
+      isMonsoonAlertActive: Boolean(row.is_monsoon_alert_active ?? row.isMonsoonAlertActive ?? true),
+      hasActiveIndent: Boolean(row.has_active_indent ?? row.hasActiveIndent ?? true),
+      inventories: row.inventories || {},
+    }));
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching communities:', err);
+    return null;
+  }
+}
+
+export async function upsertCloudCommunity(community: CommunityBase): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: community.id,
+      name: community.name,
+      state: community.state,
+      district: community.district,
+      coordinates: community.coordinates,
+      boundary: community.boundary,
+      population: community.population,
+      healthcare_facilities: community.healthcareFacilities,
+      ingress_route_count: community.ingressRouteCount,
+      primary_corridor: community.primaryCorridor,
+      nearest_depot_name: community.nearestDepotName,
+      transit_time_hours: community.transitTimeHours,
+      cutoff_time_hours: community.cutoffTimeHours,
+      disruption_prob_max: community.disruptionProbMax,
+      elapsed_time_hours: community.elapsedTimeHours,
+      is_monsoon_alert_active: community.isMonsoonAlertActive,
+      has_active_indent: community.hasActiveIndent,
+      inventories: community.inventories,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('communities').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert community error:', error.message);
+      return false;
+    }
+
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'COMMUNITY_UPDATED',
+        payload: { community },
+      });
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting community:', err);
+    return false;
   }
 }

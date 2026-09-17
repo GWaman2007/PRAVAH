@@ -11,6 +11,7 @@ import type {
   VehicleTelemetry,
   AlertEvent,
   Incident,
+  CommunityBase,
   CommunityWithCalculation,
   DistrictHealth,
   BROBottleneck,
@@ -40,6 +41,8 @@ import {
   persistDisruptions,
   getPersistedMissions,
   persistMissions,
+  getPersistedCommunities,
+  persistCommunities,
 } from '../engine/offlineSync';
 import {
   isSupabaseConfigured,
@@ -50,6 +53,8 @@ import {
   addCloudIncidentUpdate,
   fetchCloudDisruptions,
   upsertCloudDisruption,
+  fetchCloudCommunities,
+  upsertCloudCommunity,
   broadcastCloudSOS,
   cancelCloudSOS,
 } from '../engine/supabaseClient';
@@ -242,8 +247,40 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, []);
 
-  // 2. Navigation View
-  const [activeView, setActiveView] = useState<ActiveView>('GIS_COMMAND');
+  // 2. Navigation View with localStorage persistence across browser refresh
+  const [activeView, setActiveView] = useState<ActiveView>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('pravah_active_view');
+        if (stored === 'COMMUNITY_PRIORITY') return 'COMMUNITIES';
+        const validViews: ActiveView[] = [
+          'GIS_COMMAND',
+          'MISSIONS',
+          'COMMUNITIES',
+          'EXECUTIVE_INFRA',
+          'GROUND_FEED',
+          'BROADCAST_CENTER',
+          'MOBILE_COCKPIT',
+        ];
+        if (stored && validViews.includes(stored as ActiveView)) {
+          return stored as ActiveView;
+        }
+      } catch (err) {
+        console.warn('Failed to read pravah_active_view from localStorage', err);
+      }
+    }
+    return 'GIS_COMMAND';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pravah_active_view', activeView);
+      } catch (err) {
+        console.warn('Failed to write pravah_active_view to localStorage', err);
+      }
+    }
+  }, [activeView]);
 
   // 3. Theme
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -498,9 +535,15 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const init = INITIAL_RELIEF_MISSIONS.find((im) => im.id === pm.id);
         const fleetRoute = FLEET_ROUTES[pm.assignedRouteId];
         if (init && fleetRoute) {
+          const routeCoords = fleetRoute.coordinates;
+          const endCoord =
+            routeCoords && routeCoords.length > 0
+              ? routeCoords[routeCoords.length - 1]
+              : init.destinationEndpoint;
           return {
             ...pm,
-            destinationEndpoint: init.destinationEndpoint,
+            destinationEndpoint: endCoord,
+            destinationName: init.destinationName || pm.destinationName,
             originCoords: init.originCoords,
             originWarehouseId: init.originWarehouseId,
             originWarehouseName: init.originWarehouseName,
@@ -516,6 +559,35 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   });
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>('MISSION-MZ-04');
   const activeMissionsRef = useRef<ReliefMission[]>(activeMissions);
+
+  // Synchronize any in-memory or persisted missions with authoritative route terminus
+  useEffect(() => {
+    setActiveMissions((prev) =>
+      prev.map((pm) => {
+        const init = INITIAL_RELIEF_MISSIONS.find((im) => im.id === pm.id);
+        const fleetRoute = FLEET_ROUTES[pm.assignedRouteId];
+        if (init && fleetRoute) {
+          const routeCoords = fleetRoute.coordinates;
+          const endCoord =
+            routeCoords && routeCoords.length > 0
+              ? routeCoords[routeCoords.length - 1]
+              : init.destinationEndpoint;
+          return {
+            ...pm,
+            destinationEndpoint: endCoord,
+            destinationName: init.destinationName || pm.destinationName,
+            originCoords: init.originCoords,
+            originWarehouseId: init.originWarehouseId,
+            originWarehouseName: init.originWarehouseName,
+            routeDistanceKm: fleetRoute.distanceKm,
+            routeDurationMinutes: fleetRoute.expectedDurationMinutes,
+            routeGeometry: fleetRoute.coordinates,
+          };
+        }
+        return pm;
+      })
+    );
+  }, []);
 
   useEffect(() => {
     activeMissionsRef.current = activeMissions;
@@ -646,8 +718,41 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [isSimulationRunning, simulationSpeed]);
 
   // 7. Community Preemptive Depletion & Priority
-  const [rawCommunities, setRawCommunities] = useState(INITIAL_COMMUNITIES);
-  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>('MZ-KOL-004');
+  const [rawCommunities, setRawCommunities] = useState<CommunityBase[]>(() => {
+    if (typeof window !== 'undefined') {
+      const persisted = getPersistedCommunities();
+      if (persisted && Array.isArray(persisted) && persisted.length > 0) {
+        return persisted;
+      }
+    }
+    return INITIAL_COMMUNITIES;
+  });
+
+  useEffect(() => {
+    persistCommunities(rawCommunities);
+  }, [rawCommunities]);
+
+  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('pravah_selected_community_id');
+        if (stored) return stored;
+      } catch {}
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (selectedCommunityId) {
+          localStorage.setItem('pravah_selected_community_id', selectedCommunityId);
+        } else {
+          localStorage.removeItem('pravah_selected_community_id');
+        }
+      } catch {}
+    }
+  }, [selectedCommunityId]);
 
   const communities: CommunityWithCalculation[] = useMemo(() => {
     return rawCommunities.map((c) => {
@@ -1772,6 +1877,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
+    fetchCloudCommunities().then((cloudCommunities) => {
+      if (cloudCommunities && cloudCommunities.length > 0) {
+        setRawCommunities(cloudCommunities);
+        persistCommunities(cloudCommunities);
+      }
+    });
+
     // 2. Realtime Broadcast Channel Listener
     // Create a dedicated channel for this effect lifecycle to avoid
     // "tried to join multiple times" errors on React StrictMode / HMR re-mounts
@@ -1838,6 +1950,15 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 next[payload.corridorId] = payload.disruption;
               }
               persistDisruptions(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'COMMUNITY_UPDATED' }, ({ payload }) => {
+          if (payload?.community) {
+            setRawCommunities((prev) => {
+              const next = prev.map((c) => (c.id === payload.community.id ? payload.community : c));
+              persistCommunities(next);
               return next;
             });
           }

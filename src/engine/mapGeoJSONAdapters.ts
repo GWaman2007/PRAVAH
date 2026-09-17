@@ -11,6 +11,7 @@ import type {
 import { NER_NODES } from '../data/routingNetwork';
 import { LANDSLIDE_HAZARD_GEOJSON } from '../data/nerGeoJSON';
 import { DESTINATION_PIN_DATA_URL } from '../assets/destinationPinBase64';
+import { FLEET_ROUTES } from '../data/fleetData';
 import { haversineDistanceKm } from './gisMath';
 
 /**
@@ -34,8 +35,8 @@ export function toGeoJSONLineString(coords: [number, number][]): [number, number
  * Validates and resolves the authoritative road route for a mission.
  * Ensures that:
  * 1. The route starts near the mission origin.
- * 2. The route terminates EXACTLY at the mission destination endpoint.
- * 3. Never allows a route to continue past its designated destination.
+ * 2. The route terminates EXACTLY on the destination endpoint marker.
+ * 3. Detects and trims any route overshoots or U-turn loops past the endpoint.
  */
 export function validateAndResolveMissionRoute(
   mission: ReliefMission,
@@ -48,24 +49,32 @@ export function validateAndResolveMissionRoute(
   let rawCoords = fleetRouteCoords && fleetRouteCoords.length >= 2 ? fleetRouteCoords : missionCoords;
   if (!rawCoords || rawCoords.length < 2) return null;
 
-  const start = rawCoords[0];
-  const end = rawCoords[rawCoords.length - 1];
-  const startErrKm = haversineDistanceKm(mission.originCoords, start);
-  const endErrKm = haversineDistanceKm(mission.destinationEndpoint, end);
-
-  // If candidate route is mismatched (> 2.0 km) but fleetRoute is available, fallback to fleetRoute
-  if (endErrKm > 2.0 && fleetRouteCoords && fleetRouteCoords !== rawCoords) {
-    const fleetEnd = fleetRouteCoords[fleetRouteCoords.length - 1];
-    if (haversineDistanceKm(mission.destinationEndpoint, fleetEnd) < endErrKm) {
-      rawCoords = fleetRouteCoords;
+  const dest = mission.destinationEndpoint;
+  if (dest && dest.length === 2 && Number.isFinite(dest[0]) && Number.isFinite(dest[1])) {
+    // Check if route reaches destinationEndpoint earlier and then loops/overshoots past it
+    let firstArrivalIdx = -1;
+    for (let i = Math.floor(rawCoords.length * 0.6); i < rawCoords.length; i++) {
+      const d = haversineDistanceKm(dest, rawCoords[i]);
+      if (d <= 0.15) { // within 150 meters
+        firstArrivalIdx = i;
+        break;
+      }
     }
-  }
 
-  // Ensure route connects to destination endpoint
-  const finalEnd = rawCoords[rawCoords.length - 1];
-  const finalEndErrKm = haversineDistanceKm(mission.destinationEndpoint, finalEnd);
-  if (finalEndErrKm > 0.001 && finalEndErrKm <= 3.5) {
-    rawCoords = [...rawCoords, mission.destinationEndpoint];
+    if (firstArrivalIdx !== -1 && firstArrivalIdx < rawCoords.length - 1) {
+      let maxOvershootKm = 0;
+      for (let j = firstArrivalIdx + 1; j < rawCoords.length; j++) {
+        const d = haversineDistanceKm(dest, rawCoords[j]);
+        if (d > maxOvershootKm) maxOvershootKm = d;
+      }
+      if (maxOvershootKm > 0.3) {
+        rawCoords = rawCoords.slice(0, firstArrivalIdx + 1);
+      }
+    }
+
+    // Force the final point of rawCoords to match the destination endpoint EXACTLY
+    const lastIdx = rawCoords.length - 1;
+    rawCoords = [...rawCoords.slice(0, lastIdx), [dest[0], dest[1]]];
   }
 
   return rawCoords;
@@ -167,7 +176,8 @@ export function createVehicleSOSGeoJSON(
  */
 export function createMissionEndpointsGeoJSON(
   missions: ReliefMission[],
-  selectedMissionId: string | null
+  selectedMissionId: string | null,
+  fleetRoutes: Record<string, RouteDefinition> = FLEET_ROUTES
 ): GeoJSON.FeatureCollection<GeoJSON.Point> {
   // Only show endpoints for active ongoing missions or the currently inspected mission
   const activeMissions = missions.filter(
@@ -176,21 +186,32 @@ export function createMissionEndpointsGeoJSON(
 
   const features: GeoJSON.Feature<GeoJSON.Point>[] = activeMissions.map((m) => {
     const isSelected = m.id === selectedMissionId;
+
+    // Anchor endpoint coordinate directly at the terminus of the resolved route
+    const rawCoords = validateAndResolveMissionRoute(m, fleetRoutes || FLEET_ROUTES);
+    let endpointCoord = m.destinationEndpoint;
+
+    if (rawCoords && rawCoords.length > 0) {
+      endpointCoord = rawCoords[rawCoords.length - 1];
+    } else if (m.routeGeometry && m.routeGeometry.length > 0) {
+      endpointCoord = m.routeGeometry[m.routeGeometry.length - 1];
+    }
+
     return {
       type: 'Feature',
       geometry: {
         type: 'Point',
-        coordinates: toGeoJSONCoords(m.destinationEndpoint),
+        coordinates: toGeoJSONCoords(endpointCoord),
       },
       properties: {
         mission_id: m.id,
         community_name: m.communityName,
-        destination_name: m.destinationName,
+        destination_name: m.destinationName || m.communityName,
         disaster_zone_id: m.disasterZoneId,
         status: m.status,
         isSelected,
         icon: 'icon-destination-endpoint',
-        label: `DEST: ${m.id}`,
+        label: isSelected ? `🎯 TARGET: ${m.destinationName || m.communityName}` : (m.destinationName || m.communityName),
       },
     };
   });
@@ -223,11 +244,11 @@ export function createMissionRoutesGeoJSON(
     const rawCoords = validateAndResolveMissionRoute(m, fleetRoutes);
     if (!rawCoords || rawCoords.length < 2) return;
 
-    // Tactical Blue route for active ongoing missions
-    const color = '#2563EB';
-    const glowColor = '#60A5FA';
-    const lineWeight = selectedMissionId ? 2.5 : 3.5;
-    const opacity = selectedMissionId ? 0.35 : 0.85;
+    // Subdued slate styling for non-selected active routes so they don't blend with or visually extend the selected route
+    const color = selectedMissionId ? '#64748B' : '#2563EB';
+    const glowColor = selectedMissionId ? '#475569' : '#60A5FA';
+    const lineWeight = selectedMissionId ? 1.8 : 3.5;
+    const opacity = selectedMissionId ? 0.22 : 0.85;
 
     features.push({
       type: 'Feature',
@@ -347,61 +368,14 @@ export function createRoadStatusGeoJSON(
 }
 
 /**
- * 7. Disasters GeoJSON (Real Polygons / MultiPolygons from LHZ and Hazard zones)
+ * 7. Disasters GeoJSON - Removed older bigger generic hazard polygons (community-related polygons are used exclusively)
  */
 export function createDisastersGeoJSON(
-  hazardZones: HazardZone[]
+  _hazardZones?: HazardZone[]
 ): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
-  const features: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
-
-  if (LANDSLIDE_HAZARD_GEOJSON && Array.isArray(LANDSLIDE_HAZARD_GEOJSON.features)) {
-    LANDSLIDE_HAZARD_GEOJSON.features.forEach((feat: any) => {
-      if (feat.geometry?.type === 'Polygon') {
-        const sev = feat.properties?.severity || 'High';
-        let color = '#B8860B';
-        if (sev === 'Very High' || sev === 'Critical') color = '#DC2626';
-        else if (sev === 'High') color = '#EA580C';
-
-        features.push({
-          type: 'Feature',
-          geometry: feat.geometry,
-          properties: {
-            ...feat.properties,
-            hazard_type: 'Landslide Hazard Zone',
-            fillColor: color,
-            fillOpacity: 0.28,
-            outlineColor: color,
-          },
-        });
-      }
-    });
-  }
-
-  hazardZones.forEach((hz) => {
-    if (hz.polygon && hz.polygon.length >= 3) {
-      features.push({
-        type: 'Feature',
-        geometry: {
-          type: 'Polygon',
-          coordinates: [toGeoJSONLineString(hz.polygon)],
-        },
-        properties: {
-          zone_id: hz.id,
-          name: hz.name,
-          hazard_type: hz.hazardType,
-          severity: 'Critical',
-          fillColor: '#DC2626',
-          fillOpacity: 0.3,
-          outlineColor: '#DC2626',
-          advisory: 'Emergency recovery & bypass enforced',
-        },
-      });
-    }
-  });
-
   return {
     type: 'FeatureCollection',
-    features,
+    features: [],
   };
 }
 
@@ -441,6 +415,51 @@ export function createCommunitiesGeoJSON(
         primaryCorridor: c.primaryCorridor,
       },
     };
+  });
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  };
+}
+
+/**
+ * 8b. Community Boundaries GeoJSON (Real DB-Backed Polygons with Priority Styling)
+ */
+export function createCommunityBoundariesGeoJSON(
+  communities: CommunityWithCalculation[],
+  selectedCommunityId: string | null
+): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
+  const features: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+
+  communities.forEach((c) => {
+    if (!c.boundary || !c.boundary.coordinates) return;
+
+    const isSelected = c.id === selectedCommunityId;
+    const priority = c.metrics?.priorityTier || 'P3';
+
+    let color = '#16A34A'; // P4: Green
+    if (priority === 'P1') color = '#DC2626'; // P1: Red
+    else if (priority === 'P2') color = '#EA580C'; // P2: Orange
+    else if (priority === 'P3') color = '#D97706'; // P3: Amber
+
+    features.push({
+      type: 'Feature',
+      geometry: c.boundary,
+      properties: {
+        community_id: c.id,
+        name: c.name,
+        district: c.district,
+        state: c.state,
+        priorityTier: priority,
+        color,
+        isSelected,
+        population: c.population,
+        cutoffHours: c.cutoffTimeHours,
+        finalScore: c.metrics?.finalScore ? Math.round(c.metrics.finalScore * 100) : 0,
+        primaryCorridor: c.primaryCorridor,
+      },
+    });
   });
 
   return {
@@ -681,4 +700,55 @@ export function registerMapIcons(map: any): Promise<void> {
   });
 
   return Promise.all(promises).then(() => undefined);
+}
+
+/**
+ * 12. Ground Intel Feed Incidents GeoJSON
+ * Renders exact reported incident points from the Ground Intel Feed.
+ */
+export function createGroundIntelIncidentsGeoJSON(
+  incidents: Incident[] = []
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  const validIncidents = incidents.filter(
+    (inc) =>
+      inc &&
+      inc.location &&
+      Number.isFinite(inc.location.lat) &&
+      Number.isFinite(inc.location.lng)
+  );
+
+  const features: GeoJSON.Feature<GeoJSON.Point>[] = validIncidents.map((inc) => {
+    const isCritical =
+      inc.severity === 'Total Blockage' ||
+      inc.confidenceScore >= 20;
+
+    return {
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: toGeoJSONCoords([inc.location.lat, inc.location.lng]),
+      },
+      properties: {
+        id: inc.id,
+        title: inc.title,
+        incidentType: inc.incidentType,
+        severity: inc.severity,
+        placeName: inc.location.placeName,
+        state: inc.location.state,
+        corridorId: inc.location.corridorId || '',
+        corridorFlair: inc.corridorFlair || '',
+        authorName: inc.author?.name || 'Citizen Reporter',
+        authorRole: inc.author?.role || 'Citizen',
+        confidenceScore: inc.confidenceScore,
+        hasOfficerVerified: Boolean(inc.hasOfficerVerified),
+        timestamp: inc.timestamp,
+        color: isCritical ? '#EF4444' : '#F59E0B',
+      },
+    };
+  });
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  };
 }

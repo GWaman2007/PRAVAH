@@ -3,7 +3,8 @@ import { PravahStoreProvider, usePravahStore } from './store/usePravahStore';
 import { Header } from './components/layout/Header';
 import { Navigation } from './components/layout/Navigation';
 import { TacticalMapDeck } from './components/gis/TacticalMapDeck';
-import { CommunityPriorityDeck } from './components/priority/CommunityPriorityDeck';
+import { MissionsDeck } from './components/missions/MissionsDeck';
+import { CommunitiesDeck } from './components/communities/CommunitiesDeck';
 import { ExecutiveInfrastructureDeck } from './components/executive/ExecutiveInfrastructureDeck';
 import { GroundIntelligenceFeed } from './components/feed/GroundIntelligenceFeed';
 import { MultilingualBroadcastCenter } from './components/broadcast/MultilingualBroadcastCenter';
@@ -65,9 +66,14 @@ const AppContent: React.FC = () => {
       {/* Master View Routing */}
       <main className="flex-1 min-h-0 relative w-full overflow-hidden">
         {activeView === 'GIS_COMMAND' && <TacticalMapDeck />}
-        {activeView === 'COMMUNITY_PRIORITY' && (
+        {activeView === 'MISSIONS' && (
           <div className="h-full overflow-y-auto pb-16">
-            <CommunityPriorityDeck />
+            <MissionsDeck />
+          </div>
+        )}
+        {activeView === 'COMMUNITIES' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <CommunitiesDeck />
           </div>
         )}
         {activeView === 'EXECUTIVE_INFRA' && (

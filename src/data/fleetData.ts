@@ -34,7 +34,7 @@ export const FLEET_ROUTES: Record<string, RouteDefinition> = {
     endHub: 'Barail Range Clearance Sector',
     distanceKm: OSRM_PRECOMPUTED_ROUTES['MISSION-AS-03'].distanceKm,
     expectedDurationMinutes: OSRM_PRECOMPUTED_ROUTES['MISSION-AS-03'].durationMinutes,
-    coordinates: OSRM_PRECOMPUTED_ROUTES['MISSION-AS-03'].coordinates,
+    coordinates: OSRM_PRECOMPUTED_ROUTES['MISSION-AS-03'].coordinates.slice(0, 3519).concat([[25.18013, 93.07977]]),
     deviationPath: [],
   },
 
@@ -236,7 +236,7 @@ export const INITIAL_RELIEF_MISSIONS: ReliefMission[] = [
   {
     id: 'MISSION-MZ-04',
     communityId: 'MZ-KOL-004',
-    communityName: 'Bilkhawthlir Escarpment Relief Post',
+    communityName: 'Kolasib East (Mission MZ-04 Target)',
     recommendedVehicleType: 'Medic-01 (4x4 Emergency Van)',
     cargoAllocations: [
       { item: 'IV Fluids (Ringer Lactate)', quantity: 350, unit: 'Bags' },
@@ -335,7 +335,7 @@ export const INITIAL_RELIEF_MISSIONS: ReliefMission[] = [
   {
     id: 'MISSION-NL-01',
     communityId: 'NL-KOH-009',
-    communityName: 'Zubza Choke Relief Terminal',
+    communityName: 'Kohima South Sector (Phesama)',
     recommendedVehicleType: 'Ration-Convoy-07 (14T Shaktiman)',
     cargoAllocations: [
       { item: 'Fortified Subsistence Rice', quantity: 8500, unit: 'kg' },
@@ -532,7 +532,7 @@ export const INITIAL_RELIEF_MISSIONS: ReliefMission[] = [
   {
     id: 'MISSION-SK-02',
     communityId: 'SK-MAN-002',
-    communityName: '29th Mile Teesta Canyon Emergency Post',
+    communityName: 'Teesta Canyon 29th Mile Hub',
     recommendedVehicleType: 'Oxy-Tanker-04 (Cryogenic 32T)',
     cargoAllocations: [
       { item: 'Cryogenic Liquid Medical Oxygen', quantity: 9000, unit: 'Litres' },
@@ -541,7 +541,7 @@ export const INITIAL_RELIEF_MISSIONS: ReliefMission[] = [
     assignedRouteId: 'ROUTE-SK-02',
     suggestedDetour: 'NH-10 Teesta River Canyon Corridor (29th Mile)',
     status: 'IN_TRANSIT',
-    urgency: 'P1_CRITICAL',
+    urgency: 'P2_ELEVATED',
     createdAt: new Date(Date.now() - 120 * 60000).toISOString(),
     dispatchedAt: new Date(Date.now() - 60 * 60000).toISOString(),
     assignedDriver: 'Bikram Thapa (+91 98180-44219)',
@@ -551,8 +551,8 @@ export const INITIAL_RELIEF_MISSIONS: ReliefMission[] = [
     originCoords: [27.3314, 88.6138],
     disasterZoneId: 'LHZ-SK-01',
     disasterZoneName: 'NH-10 Teesta River Canyon Slide Belt',
-    destinationEndpoint: [27.02877, 88.47138],
-    destinationName: '29th Mile Teesta Canyon Emergency Post',
+    destinationEndpoint: [27.0288, 88.4714],
+    destinationName: 'Teesta Canyon 29th Mile Hub',
     assignedVehicleId: 'Oxy-Tanker-04',
     routeDistanceKm: OSRM_PRECOMPUTED_ROUTES['MISSION-SK-02'].distanceKm,
     routeDurationMinutes: OSRM_PRECOMPUTED_ROUTES['MISSION-SK-02'].durationMinutes,

@@ -60,7 +60,7 @@ export default defineConfig({
     exclude: ['maplibre-gl'],
   },
   server: {
-    port: 5173,
+    port: 5174,
     host: true,
   },
 });

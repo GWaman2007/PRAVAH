@@ -151,13 +151,8 @@ export const MapLegend: React.FC = () => {
             </span>
             <div className="grid grid-cols-1 gap-1 text-[11px]">
               <div className="flex items-center gap-2">
-                <div className="w-5 h-3 rounded-xs bg-red-600/30 border border-red-500 shrink-0" />
-                <span className="text-text-primary">ISRO Bhuvan Very High Landslide Susceptibility (LHZ) / IMD Red Alert</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-3 rounded-xs bg-amber-600/30 border border-amber-500 shrink-0" />
-                <span className="text-text-primary">High Landslide Susceptibility (LHZ) / IMD Orange Alert</span>
+                <div className="w-5 h-3 rounded-xs bg-red-600/40 border border-dashed border-red-500 shrink-0" />
+                <span className="text-text-primary">Community Boundary Polygon (P1/P2/P3 Operational Sector)</span>
               </div>
 
               <div className="flex items-center gap-2">
