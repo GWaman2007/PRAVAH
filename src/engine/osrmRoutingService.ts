@@ -160,3 +160,26 @@ export function seedRouteCache(
   const cacheKey = `${origin[0].toFixed(5)},${origin[1].toFixed(5)}->${destination[0].toFixed(5)},${destination[1].toFixed(5)}`;
   routeCache.set(cacheKey, result);
 }
+
+/**
+ * Snaps a target coordinate [lat, lng] to the nearest drivable road in OpenStreetMap using OSRM Nearest
+ */
+export async function snapToNearestRoad(coords: [number, number]): Promise<[number, number]> {
+  try {
+    const url = `https://router.project-osrm.org/nearest/v1/driving/${coords[1].toFixed(6)},${coords[0].toFixed(6)}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) return coords;
+    const data = await res.json();
+    if (data.waypoints && data.waypoints[0]?.location) {
+      const loc = data.waypoints[0].location;
+      return [Number(loc[1].toFixed(5)), Number(loc[0].toFixed(5))];
+    }
+    return coords;
+  } catch {
+    return coords;
+  }
+}
+

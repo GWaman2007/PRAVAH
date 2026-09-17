@@ -44,7 +44,6 @@ import {
 import {
   isSupabaseConfigured,
   supabase,
-  getRealtimeChannel,
   fetchCloudIncidents,
   upsertCloudIncident,
   voteCloudIncident,
@@ -493,7 +492,27 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // 6b. Preemptive Relief Missions (10 Ongoing + 3 Suggested)
   const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(() => {
     const persisted = typeof window !== 'undefined' ? getPersistedMissions() : null;
-    return persisted && persisted.length > 0 ? persisted : INITIAL_RELIEF_MISSIONS;
+    if (persisted && persisted.length > 0) {
+      // Synchronize with authoritative FLEET_ROUTES so stale localStorage geometry is refreshed
+      return persisted.map((pm: ReliefMission) => {
+        const init = INITIAL_RELIEF_MISSIONS.find((im) => im.id === pm.id);
+        const fleetRoute = FLEET_ROUTES[pm.assignedRouteId];
+        if (init && fleetRoute) {
+          return {
+            ...pm,
+            destinationEndpoint: init.destinationEndpoint,
+            originCoords: init.originCoords,
+            originWarehouseId: init.originWarehouseId,
+            originWarehouseName: init.originWarehouseName,
+            routeDistanceKm: fleetRoute.distanceKm,
+            routeDurationMinutes: fleetRoute.expectedDurationMinutes,
+            routeGeometry: fleetRoute.coordinates,
+          };
+        }
+        return pm;
+      });
+    }
+    return INITIAL_RELIEF_MISSIONS;
   });
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>('MISSION-MZ-04');
   const activeMissionsRef = useRef<ReliefMission[]>(activeMissions);
@@ -1047,7 +1066,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // 12. CLOSED-LOOP GROUND TRUTH: Mark Mission Delivered
   // =========================================================================
   const markMissionDelivered = useCallback((communityId: string, vehicleId?: string) => {
-    const targetVehId = vehicleId || 'Medic-01';
+    // Resolve vehicle from actual mission assignment — never hardcode a fallback vehicle
+    const matchingMission = activeMissionsRef.current.find((m) => m.communityId === communityId);
+    const targetVehId = vehicleId || matchingMission?.assignedVehicleId;
+    if (!targetVehId) {
+      console.warn(`[PRAVAH] markMissionDelivered: No vehicle assigned for community ${communityId}`);
+      return;
+    }
 
     // 1. Reset community inventory to 100% capacity and reset elapsed time Delta-t = 0
     setRawCommunities((prev) =>
@@ -1144,9 +1169,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const dispatchMission = useCallback((missionId: string, vehicleId?: string) => {
-    // 1. Synchronously resolve mission from current ref
+    // 1. Synchronously resolve mission from current ref — never invent a fallback vehicle
     const targetMission = activeMissionsRef.current.find((m) => m.id === missionId);
-    const assignedVehId = vehicleId || targetMission?.assignedVehicleId || 'Medic-04';
+    const assignedVehId = vehicleId || targetMission?.assignedVehicleId;
+    if (!assignedVehId) {
+      console.warn(`[PRAVAH] dispatchMission: No vehicle assigned for mission ${missionId}. Cannot dispatch without real vehicle assignment.`);
+      return;
+    }
     const originCoords = targetMission?.originCoords || [24.8333, 92.7789];
     const destName = targetMission?.destinationName || targetMission?.communityName || 'Disaster Operational Target';
 
@@ -1744,8 +1773,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
 
     // 2. Realtime Broadcast Channel Listener
-    const channel = getRealtimeChannel();
-    if (channel) {
+    // Create a dedicated channel for this effect lifecycle to avoid
+    // "tried to join multiple times" errors on React StrictMode / HMR re-mounts
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase.channel(`pravah-global-bus-${Date.now()}`, {
+        config: { broadcast: { ack: true } },
+      });
+
       channel
         .on('broadcast', { event: 'INCIDENT_ADDED' }, ({ payload }) => {
           if (payload?.incident) {
@@ -1829,11 +1864,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           }
         })
         .subscribe();
+    } catch (err) {
+      console.warn('[PRAVAH] Supabase Realtime channel setup error:', err);
     }
 
     return () => {
-      if (channel) {
-        channel.unsubscribe();
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
       }
     };
   }, []);

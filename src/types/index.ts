@@ -189,6 +189,11 @@ export interface SegmentIncident {
   cause?: string;
   description?: string;
   reportedBy?: string;
+  location?: { lat: number; lng: number };
+  incidentId?: string;
+  severity?: string;
+  reportedTime?: string;
+  estimatedClearanceHours?: number;
 }
 
 export interface SegmentEvaluation {

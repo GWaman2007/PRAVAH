@@ -24,12 +24,14 @@ import {
   registerMapIcons,
 } from '../../engine/mapGeoJSONAdapters';
 import { SegmentModal } from './SegmentModal';
+import { RoadIncidentModal } from './RoadIncidentModal';
 import { VehicleInspector } from './VehicleInspector';
 import { AlertFeedModal } from './AlertFeedModal';
 import { SOSModal } from './SOSModal';
 import { MapLegend } from './MapLegend';
 import { MissionDetailsPanel } from './MissionDetailsPanel';
-import type { Segment, VehicleProfile, ReliefMission } from '../../types';
+import { formatTimeAgo } from '../../engine/offlineSync';
+import type { Segment, VehicleProfile, ReliefMission, Incident, SegmentIncident } from '../../types';
 import {
   CloudRain,
   Navigation,
@@ -101,7 +103,18 @@ export const TacticalMapDeck: React.FC = () => {
     communities,
     selectedCommunityId,
     setSelectedCommunityId,
+    incidents,
   } = usePravahStore();
+
+  // Fresh refs for MapLibre event listeners
+  const activeMissionsRef = useRef(activeMissions);
+  activeMissionsRef.current = activeMissions;
+  const vehiclesRef = useRef(vehicles);
+  vehiclesRef.current = vehicles;
+  const activeDisruptionsRef = useRef(activeDisruptions);
+  activeDisruptionsRef.current = activeDisruptions;
+  const incidentsRef = useRef(incidents);
+  incidentsRef.current = incidents;
 
   // Active sidebar tab: 'MISSIONS' (Ongoing & Suggested) vs 'ROUTING' (K-Shortest & Constraints)
   const [sidebarTab, setSidebarTab] = useState<'MISSIONS' | 'ROUTING'>('MISSIONS');
@@ -114,6 +127,40 @@ export const TacticalMapDeck: React.FC = () => {
   const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
   const [activeSOSVehicleId, setActiveSOSVehicleId] = useState<string | null>(null);
   const [isMissionDetailsOpen, setIsMissionDetailsOpen] = useState<boolean>(true);
+
+  // Tactical GIS Hover & Detailed Incident State
+  const [hoveredVehicle, setHoveredVehicle] = useState<{
+    x: number;
+    y: number;
+    vehicle_id: string;
+    vehicle_name: string;
+    vehicle_type?: string;
+    startHub?: string;
+    endHub?: string;
+    destination_name?: string;
+    mission_id?: string;
+    status?: string;
+  } | null>(null);
+
+  const [hoveredBreakdown, setHoveredBreakdown] = useState<{
+    x: number;
+    y: number;
+    segment_id: string;
+    segment_name: string;
+    highway?: string;
+    status: string;
+    cause: string;
+    severity?: string;
+    reportedBy?: string;
+    lastUpdated?: string;
+  } | null>(null);
+
+  const [detailedIncident, setDetailedIncident] = useState<{
+    segment: Segment;
+    disruption: SegmentIncident;
+    incident: Incident | null;
+    affectedMissions: ReliefMission[];
+  } | null>(null);
 
   // Custom specs state
   const [isCustomSpecsActive, setIsCustomSpecsActive] = useState<boolean>(false);
@@ -351,13 +398,13 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       map.addLayer({
-        id: 'selected-mission-glow',
+        id: 'selected-mission-casing',
         type: 'line',
         source: 'selected-mission-route',
         paint: {
-          'line-color': '#38BDF8',
-          'line-width': 12,
-          'line-opacity': 0.55,
+          'line-color': '#0F172A',
+          'line-width': 8,
+          'line-opacity': 0.85,
         },
       });
 
@@ -366,10 +413,9 @@ export const TacticalMapDeck: React.FC = () => {
         type: 'line',
         source: 'selected-mission-route',
         paint: {
-          'line-color': '#0284C7',
-          'line-width': 5.5,
-          'line-opacity': 0.98,
-          'line-dasharray': [6, 4],
+          'line-color': '#2563EB',
+          'line-width': 5.2,
+          'line-opacity': 1.0,
         },
       });
 
@@ -382,31 +428,19 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       map.addLayer({
-        id: 'mission-endpoints-pulse',
-        type: 'circle',
-        source: 'mission-endpoints',
-        paint: {
-          'circle-radius': 16,
-          'circle-color': '#DC2626',
-          'circle-opacity': 0.35,
-          'circle-stroke-width': 1.5,
-          'circle-stroke-color': '#EF4444',
-        },
-      });
-
-      map.addLayer({
         id: 'mission-endpoints-symbol',
         type: 'symbol',
         source: 'mission-endpoints',
         layout: {
           'icon-image': 'icon-destination-endpoint',
           'icon-size': 0.85,
+          'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
           'text-field': ['get', 'destination_name'],
           'text-font': ['Noto Sans Bold'],
-          'text-size': 9.5,
-          'text-offset': [0, 1.4],
+          'text-size': 10,
+          'text-offset': [0, 0.5],
           'text-anchor': 'top',
         },
         paint: {
@@ -485,21 +519,24 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       // -------------------------------------------------------------
-      // 7. ROAD BREAKDOWNS (Dedicated pulsing point at real coordinate)
+      // 7. ROAD BREAKDOWNS (Data-driven pulsing point at real coordinate)
       // -------------------------------------------------------------
       map.addSource('road-breakdowns', {
         type: 'geojson',
-        data: createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS),
+        data: createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS, incidents, activeMissions),
       });
 
       map.addLayer({
         id: 'road-breakdowns-pulse',
         type: 'circle',
         source: 'road-breakdowns',
+        layout: {
+          visibility: activeLayers.roadStatus ? 'visible' : 'none',
+        },
         paint: {
-          'circle-radius': 16,
+          'circle-radius': 12,
           'circle-color': '#DC2626',
-          'circle-opacity': 0.35,
+          'circle-opacity': 0.32,
           'circle-stroke-width': 1.5,
           'circle-stroke-color': '#EF4444',
         },
@@ -509,8 +546,11 @@ export const TacticalMapDeck: React.FC = () => {
         id: 'road-breakdowns-point',
         type: 'circle',
         source: 'road-breakdowns',
+        layout: {
+          visibility: activeLayers.roadStatus ? 'visible' : 'none',
+        },
         paint: {
-          'circle-radius': 7,
+          'circle-radius': 6.5,
           'circle-color': '#DC2626',
           'circle-stroke-width': 2,
           'circle-stroke-color': '#FFFFFF',
@@ -600,12 +640,100 @@ export const TacticalMapDeck: React.FC = () => {
         }
       });
 
+      // Hover on vehicle marker
+      map.on('mousemove', 'vehicles-unclustered', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties?.vehicle_id) {
+          const vId = feat.properties.vehicle_id;
+          const currentVehicles = vehiclesRef.current;
+          const currentMissions = activeMissionsRef.current;
+          const veh = currentVehicles.find((v) => v.vehicle_id === vId);
+          const mission = currentMissions.find(
+            (m) => m.id === feat.properties.mission_id || m.assignedVehicleId === vId
+          );
+          const route = FLEET_ROUTES[veh?.assigned_route_id || mission?.assignedRouteId || ''];
+
+          setHoveredVehicle({
+            x: e.point.x,
+            y: e.point.y,
+            vehicle_id: vId,
+            vehicle_name: feat.properties.vehicle_name || vId,
+            vehicle_type: mission?.recommendedVehicleType || veh?.cargo_type,
+            startHub: route?.startHub || mission?.originWarehouseName,
+            endHub: route?.endHub || mission?.destinationName,
+            destination_name: veh?.destination_name || mission?.destinationName,
+            mission_id: feat.properties.mission_id || mission?.id,
+            status: feat.properties.status || veh?.status,
+          });
+        }
+      });
+
+      map.on('mouseleave', 'vehicles-unclustered', () => {
+        setHoveredVehicle(null);
+      });
+
       // Click road segment
       map.on('click', 'road-status-line', (e: any) => {
         const feat = e.features?.[0];
         if (feat?.properties?.segment_id) {
           const seg = NER_SEGMENTS.find((s) => s.id === feat.properties.segment_id);
           if (seg) setInspectedSegment(seg);
+        }
+      });
+
+      // Hover on road breakdown marker
+      map.on('mousemove', 'road-breakdowns-point', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          setHoveredBreakdown({
+            x: e.point.x,
+            y: e.point.y,
+            segment_id: feat.properties.segment_id,
+            segment_name: feat.properties.segment_name,
+            highway: feat.properties.highway,
+            status: feat.properties.status,
+            cause: feat.properties.cause,
+            severity: feat.properties.severity,
+            reportedBy: feat.properties.reportedBy,
+            lastUpdated: feat.properties.reportedTime ? formatTimeAgo(feat.properties.reportedTime) : undefined,
+          });
+        }
+      });
+
+      map.on('mouseleave', 'road-breakdowns-point', () => {
+        setHoveredBreakdown(null);
+      });
+
+      // Click on road breakdown -> Detailed incident modal
+      map.on('click', 'road-breakdowns-point', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties?.segment_id) {
+          const segId = feat.properties.segment_id;
+          const seg = NER_SEGMENTS.find((s) => s.id === segId);
+          const currentDisruptions = activeDisruptionsRef.current;
+          const currentIncidents = incidentsRef.current;
+          const currentMissions = activeMissionsRef.current;
+
+          const dis = currentDisruptions[segId];
+          const inc = currentIncidents.find(
+            (i) => i.location?.corridorId === segId || i.corridorFlair === seg?.highway || i.id === dis?.incidentId
+          );
+
+          if (seg && dis) {
+            const affected = currentMissions.filter(
+              (m) =>
+                m.assignedRouteId?.includes(seg.highway) ||
+                m.suggestedDetour?.includes(seg.highway) ||
+                seg.name.toLowerCase().includes(m.destinationName.toLowerCase())
+            );
+
+            setDetailedIncident({
+              segment: seg,
+              disruption: dis,
+              incident: inc || null,
+              affectedMissions: affected,
+            });
+          }
         }
       });
 
@@ -631,6 +759,9 @@ export const TacticalMapDeck: React.FC = () => {
         'vehicles-cluster',
         'vehicles-unclustered',
         'road-status-line',
+        'road-breakdowns-point',
+        'road-breakdowns-pulse',
+        'mission-endpoints-symbol',
         'communities-circle',
       ];
       interactiveLayers.forEach((layerId) => {
@@ -659,22 +790,18 @@ export const TacticalMapDeck: React.FC = () => {
 
     const animatePulse = (time: number) => {
       const elapsed = (time - start) / 1000;
-      const radiusOffset = (Math.sin(elapsed * 3) + 1) * 6; // 0 to 12
-      const opacity = 0.55 - (Math.sin(elapsed * 3) + 1) * 0.18;
+      const radiusOffset = (Math.sin(elapsed * 2.5) + 1) * 3; // 0 to 6 (subtle)
+      const opacity = 0.38 - (Math.sin(elapsed * 2.5) + 1) * 0.12; // 0.14 to 0.38
 
       const map = mapInstanceRef.current;
       if (map && isMapLoadedRef.current) {
         if (map.getLayer('vehicle-sos-pulse')) {
-          map.setPaintProperty('vehicle-sos-pulse', 'circle-radius', 18 + radiusOffset);
+          map.setPaintProperty('vehicle-sos-pulse', 'circle-radius', 18 + radiusOffset * 1.5);
           map.setPaintProperty('vehicle-sos-pulse', 'circle-opacity', Math.max(0.15, opacity));
         }
         if (map.getLayer('road-breakdowns-pulse')) {
-          map.setPaintProperty('road-breakdowns-pulse', 'circle-radius', 12 + radiusOffset * 0.7);
-          map.setPaintProperty('road-breakdowns-pulse', 'circle-opacity', Math.max(0.2, opacity));
-        }
-        if (map.getLayer('mission-endpoints-pulse')) {
-          map.setPaintProperty('mission-endpoints-pulse', 'circle-radius', 14 + radiusOffset * 0.6);
-          map.setPaintProperty('mission-endpoints-pulse', 'circle-opacity', Math.max(0.2, opacity));
+          map.setPaintProperty('road-breakdowns-pulse', 'circle-radius', 11 + radiusOffset * 0.6);
+          map.setPaintProperty('road-breakdowns-pulse', 'circle-opacity', Math.max(0.12, opacity));
         }
       }
 
@@ -725,7 +852,7 @@ export const TacticalMapDeck: React.FC = () => {
     }
     const breakdownSource = map.getSource('road-breakdowns') as maplibregl.GeoJSONSource;
     if (breakdownSource) {
-      breakdownSource.setData(createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS));
+      breakdownSource.setData(createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS, incidents, activeMissions));
     }
 
     // Update communities
@@ -742,6 +869,7 @@ export const TacticalMapDeck: React.FC = () => {
     activeDisruptions,
     communities,
     selectedCommunityId,
+    incidents,
   ]);
 
   // 5. Update Layer Visibility from activeLayers filters
@@ -755,21 +883,24 @@ export const TacticalMapDeck: React.FC = () => {
       }
     };
 
+    // CRITICAL AREAS: Disaster and Landslide Hazard Polygons
     setVisibility('disasters-fill', activeLayers.lhz);
     setVisibility('disasters-line', activeLayers.lhz);
 
-    // ROAD STATUS: strictly off by default to maintain clean operational map
+    // ROAD STATUS: Controls status lines and data-driven incident markers
     setVisibility('road-status-casing', activeLayers.roadStatus);
     setVisibility('road-status-line', activeLayers.roadStatus);
+    setVisibility('road-breakdowns-pulse', activeLayers.roadStatus);
+    setVisibility('road-breakdowns-point', activeLayers.roadStatus);
 
-    // MISSION ROUTES & ENDPOINTS: Active BLUE routes
+    // MISSION ROUTES & ENDPOINTS: Active routes and mission destination targets
     setVisibility('mission-routes-glow', activeLayers.routes);
     setVisibility('mission-routes-line', activeLayers.routes);
-    setVisibility('selected-mission-glow', activeLayers.routes);
+    setVisibility('selected-mission-casing', activeLayers.routes);
     setVisibility('selected-mission-line', activeLayers.routes);
-    setVisibility('mission-endpoints-pulse', activeLayers.routes);
     setVisibility('mission-endpoints-symbol', activeLayers.routes);
 
+    // FLEET: Vehicles and SOS alerts
     setVisibility('vehicles-selected-ring', activeLayers.fleet);
     setVisibility('vehicles-unclustered', activeLayers.fleet);
     setVisibility('vehicle-sos-pulse', activeLayers.fleet);
@@ -890,6 +1021,22 @@ export const TacticalMapDeck: React.FC = () => {
         onClose={() => setInspectedSegment(null)}
         onApplyDisruption={(segId, dis) => setSegmentDisruption(segId, dis)}
       />
+
+      {/* Detailed Road Incident / Disruption Modal */}
+      {detailedIncident && (
+        <RoadIncidentModal
+          isOpen={Boolean(detailedIncident)}
+          onClose={() => setDetailedIncident(null)}
+          segment={detailedIncident.segment}
+          disruption={detailedIncident.disruption}
+          incident={detailedIncident.incident}
+          affectedMissions={detailedIncident.affectedMissions}
+          onOpenSegmentEngineering={(seg) => {
+            setDetailedIncident(null);
+            setInspectedSegment(seg);
+          }}
+        />
+      )}
 
       {/* SOS Distress Modal */}
       <SOSModal
@@ -1092,7 +1239,11 @@ export const TacticalMapDeck: React.FC = () => {
                     return (
                       <div
                         key={m.id}
-                        className={`p-3 rounded-sm border transition-all space-y-2.5 text-xs shadow-xs ${
+                        onClick={() => {
+                          handleFocusMission(m);
+                          setIsMissionDetailsOpen(true);
+                        }}
+                        className={`p-3 rounded-sm border transition-all space-y-2.5 text-xs shadow-xs cursor-pointer ${
                           isSelected
                             ? 'bg-amber-500/10 border-amber-500 ring-1 ring-amber-500'
                             : 'bg-surface border-border hover:border-amber-500/50'
@@ -1148,7 +1299,7 @@ export const TacticalMapDeck: React.FC = () => {
                             className="w-full py-1.5 px-2.5 rounded-xs bg-[#1B4B73] hover:bg-[#123A5A] text-white font-bold text-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer shadow-xs transition-colors"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5 text-sky-300" />
-                            <span>REVIEW &amp; APPROVE</span>
+                            <span>REVIEW</span>
                           </button>
                         </div>
                       </div>
@@ -1491,7 +1642,7 @@ export const TacticalMapDeck: React.FC = () => {
                   : 'bg-surface text-text-secondary border-border'
               }`}
             >
-              ISRO LHZ
+              CRITICAL AREAS
             </button>
             <button
               onClick={() => toggleLayer('roadStatus')}
@@ -1502,7 +1653,7 @@ export const TacticalMapDeck: React.FC = () => {
               }`}
               title="Toggle road network status condition overlay (Open/Degraded/Blocked)"
             >
-              Road Status
+              ROAD STATUS
             </button>
             <button
               onClick={() => toggleLayer('routes')}
@@ -1512,7 +1663,7 @@ export const TacticalMapDeck: React.FC = () => {
                   : 'bg-surface text-text-secondary border-border'
               }`}
             >
-              Routes
+              ROUTES
             </button>
             <button
               onClick={() => toggleLayer('fleet')}
@@ -1522,7 +1673,7 @@ export const TacticalMapDeck: React.FC = () => {
                   : 'bg-surface text-text-secondary border-border'
               }`}
             >
-              Fleet
+              FLEET
             </button>
             <button
               onClick={toggleMonsoonDownpourSimulation}
@@ -1533,7 +1684,7 @@ export const TacticalMapDeck: React.FC = () => {
               }`}
             >
               <CloudRain className="w-3 h-3 text-sky-400" />
-              <span>{isMonsoonDownpourSimulated ? 'Monsoon Surge (58mm)' : 'Monsoon Sim'}</span>
+              <span>{isMonsoonDownpourSimulated ? 'MONSOON SURGE (58mm)' : 'MONSOON SIM'}</span>
             </button>
           </div>
         </div>
@@ -1558,6 +1709,108 @@ export const TacticalMapDeck: React.FC = () => {
                   Reload GIS Deck
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Vehicle Hover Preview Card */}
+          {activeLayers.fleet && hoveredVehicle && (
+            <div
+              className="absolute z-30 pointer-events-none bg-slate-900/95 border border-slate-700/80 rounded-sm p-3 shadow-xl backdrop-blur-md text-xs w-64 space-y-2 text-slate-200 animate-fadeIn select-none"
+              style={{
+                left: Math.min(Math.max(12, hoveredVehicle.x + 12), (mapContainerRef.current?.clientWidth || window.innerWidth) - 270),
+                top: Math.min(Math.max(12, hoveredVehicle.y - 20), (mapContainerRef.current?.clientHeight || window.innerHeight) - 180),
+              }}
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                <div>
+                  <div className="font-bold text-sm text-white">{hoveredVehicle.vehicle_name}</div>
+                  {hoveredVehicle.vehicle_type && (
+                    <div className="text-[11px] font-medium text-emerald-400">{hoveredVehicle.vehicle_type}</div>
+                  )}
+                </div>
+                {hoveredVehicle.status && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                      hoveredVehicle.status === 'IN_TRANSIT'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : hoveredVehicle.status === 'HALTED'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        : 'bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {hoveredVehicle.status.replace('_', ' ')}
+                  </span>
+                )}
+              </div>
+
+              {(hoveredVehicle.startHub || hoveredVehicle.endHub || hoveredVehicle.destination_name) && (
+                <div className="space-y-0.5">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Route</div>
+                  <div className="text-xs font-semibold text-slate-100 flex items-center gap-1.5">
+                    <span className="truncate">{hoveredVehicle.startHub || 'Origin'}</span>
+                    <span className="text-slate-500">→</span>
+                    <span className="truncate">
+                      {hoveredVehicle.endHub || hoveredVehicle.destination_name || 'Destination'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {hoveredVehicle.mission_id && (
+                <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
+                  <span className="text-slate-400">Mission</span>
+                  <span className="font-mono font-bold text-primary">{hoveredVehicle.mission_id}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Road Incident / Disruption Hover Preview Card */}
+          {activeLayers.roadStatus && hoveredBreakdown && (
+            <div
+              className="absolute z-30 pointer-events-none bg-slate-900/95 border border-red-500/60 rounded-sm p-3 shadow-xl backdrop-blur-md text-xs w-64 space-y-2 text-slate-200 animate-fadeIn select-none"
+              style={{
+                left: Math.min(Math.max(12, hoveredBreakdown.x + 12), (mapContainerRef.current?.clientWidth || window.innerWidth) - 270),
+                top: Math.min(Math.max(12, hoveredBreakdown.y - 20), (mapContainerRef.current?.clientHeight || window.innerHeight) - 180),
+              }}
+            >
+              <div className="flex items-start justify-between border-b border-slate-800 pb-1.5">
+                <div className="pr-2">
+                  <div className="font-bold text-sm text-red-400">{hoveredBreakdown.segment_name}</div>
+                  {hoveredBreakdown.highway && (
+                    <div className="text-[11px] font-mono text-slate-400">{hoveredBreakdown.highway}</div>
+                  )}
+                </div>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                    hoveredBreakdown.status === 'BLOCKED'
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  }`}
+                >
+                  {hoveredBreakdown.status}
+                </span>
+              </div>
+
+              <div className="space-y-1 text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Cause:</span>
+                  <span className="font-semibold text-slate-200">{hoveredBreakdown.cause}</span>
+                </div>
+                {hoveredBreakdown.severity && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Severity:</span>
+                    <span className="font-semibold text-amber-300 uppercase">{hoveredBreakdown.severity}</span>
+                  </div>
+                )}
+                {hoveredBreakdown.lastUpdated && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Last updated:</span>
+                    <span className="text-slate-300">{hoveredBreakdown.lastUpdated}</span>
+                  </div>
+                )}
+              </div>
+              <div className="pt-1 text-[10px] text-slate-500 italic text-right">Click marker for details</div>
             </div>
           )}
         </div>

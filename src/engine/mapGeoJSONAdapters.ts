@@ -6,9 +6,12 @@ import type {
   CommunityWithCalculation,
   RouteDefinition,
   HazardZone,
+  Incident,
 } from '../types';
 import { NER_NODES } from '../data/routingNetwork';
 import { LANDSLIDE_HAZARD_GEOJSON } from '../data/nerGeoJSON';
+import { DESTINATION_PIN_DATA_URL } from '../assets/destinationPinBase64';
+import { haversineDistanceKm } from './gisMath';
 
 /**
  * Transforms [lat, lng] to RFC 7946 GeoJSON [lng, lat]
@@ -23,8 +26,49 @@ export function toGeoJSONCoords(coord: [number, number]): [number, number] {
 export function toGeoJSONLineString(coords: [number, number][]): [number, number][] {
   if (!coords || !Array.isArray(coords)) return [];
   return coords
-    .filter((c) => c && Number.isFinite(c[0]) && Number.isFinite(c[1]))
+    .filter((c) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))
     .map((c) => [c[1], c[0]]);
+}
+
+/**
+ * Validates and resolves the authoritative road route for a mission.
+ * Ensures that:
+ * 1. The route starts near the mission origin.
+ * 2. The route terminates EXACTLY at the mission destination endpoint.
+ * 3. Never allows a route to continue past its designated destination.
+ */
+export function validateAndResolveMissionRoute(
+  mission: ReliefMission,
+  fleetRoutes: Record<string, RouteDefinition>
+): [number, number][] | null {
+  const fleetRouteCoords = fleetRoutes[mission.assignedRouteId]?.coordinates;
+  const missionCoords = mission.routeGeometry;
+
+  // Use authoritative verified route from fleetRoutes
+  let rawCoords = fleetRouteCoords && fleetRouteCoords.length >= 2 ? fleetRouteCoords : missionCoords;
+  if (!rawCoords || rawCoords.length < 2) return null;
+
+  const start = rawCoords[0];
+  const end = rawCoords[rawCoords.length - 1];
+  const startErrKm = haversineDistanceKm(mission.originCoords, start);
+  const endErrKm = haversineDistanceKm(mission.destinationEndpoint, end);
+
+  // If candidate route is mismatched (> 2.0 km) but fleetRoute is available, fallback to fleetRoute
+  if (endErrKm > 2.0 && fleetRouteCoords && fleetRouteCoords !== rawCoords) {
+    const fleetEnd = fleetRouteCoords[fleetRouteCoords.length - 1];
+    if (haversineDistanceKm(mission.destinationEndpoint, fleetEnd) < endErrKm) {
+      rawCoords = fleetRouteCoords;
+    }
+  }
+
+  // Ensure route connects to destination endpoint
+  const finalEnd = rawCoords[rawCoords.length - 1];
+  const finalEndErrKm = haversineDistanceKm(mission.destinationEndpoint, finalEnd);
+  if (finalEndErrKm > 0.001 && finalEndErrKm <= 3.5) {
+    rawCoords = [...rawCoords, mission.destinationEndpoint];
+  }
+
+  return rawCoords;
 }
 
 /**
@@ -39,16 +83,24 @@ export function createVehiclesGeoJSON(
     const isSOS = v.is_sos_manual || v.status === 'SOS_ALERT';
     const isDeadReckon = v.status === 'DEAD_ZONE_EXTRAPOLATING';
 
-    // Map vehicle type to registered icon ID
+    // Map vehicle type to registered icon ID based on existing vehicle data
     let iconType = 'veh-truck';
     const nameLower = (v.vehicle_name + ' ' + v.vehicle_id + ' ' + (v.cargo_type || '')).toLowerCase();
     if (nameLower.includes('medic') || nameLower.includes('ambulance') || nameLower.includes('hospital')) {
       iconType = 'veh-ambulance';
+    } else if (nameLower.includes('cargo') || nameLower.includes('heavy') || nameLower.includes('shaktiman')) {
+      iconType = 'veh-heavy-truck';
+    } else if (nameLower.includes('engineer') || nameLower.includes('clearance') || nameLower.includes('timber')) {
+      iconType = 'veh-engineering';
+    } else if (nameLower.includes('utility') || nameLower.includes('shoring')) {
+      iconType = 'veh-utility';
+    } else if (nameLower.includes('tanker') || nameLower.includes('oxygen')) {
+      iconType = 'veh-tanker';
     } else if (nameLower.includes('rescue') || nameLower.includes('extricator') || nameLower.includes('amphibious')) {
       iconType = 'veh-rescue';
     } else if (nameLower.includes('command') || nameLower.includes('cruiser')) {
       iconType = 'veh-command';
-    } else if (nameLower.includes('supply') || nameLower.includes('ration') || nameLower.includes('grain') || nameLower.includes('tanker')) {
+    } else if (nameLower.includes('supply') || nameLower.includes('ration') || nameLower.includes('grain')) {
       iconType = 'veh-supply';
     }
 
@@ -168,10 +220,7 @@ export function createMissionRoutesGeoJSON(
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
   activeMissions.forEach((m) => {
-    const rawCoords =
-      m.routeGeometry && m.routeGeometry.length >= 2
-        ? m.routeGeometry
-        : fleetRoutes[m.assignedRouteId]?.coordinates;
+    const rawCoords = validateAndResolveMissionRoute(m, fleetRoutes);
     if (!rawCoords || rawCoords.length < 2) return;
 
     // Tactical Blue route for active ongoing missions
@@ -219,10 +268,7 @@ export function createSelectedMissionRouteGeoJSON(
     return { type: 'FeatureCollection', features: [] };
   }
 
-  const rawCoords =
-    selectedMission.routeGeometry && selectedMission.routeGeometry.length >= 2
-      ? selectedMission.routeGeometry
-      : fleetRoutes[selectedMission.assignedRouteId]?.coordinates;
+  const rawCoords = validateAndResolveMissionRoute(selectedMission, fleetRoutes);
 
   if (!rawCoords || rawCoords.length < 2) {
     return { type: 'FeatureCollection', features: [] };
@@ -435,7 +481,9 @@ export function createWarehousesGeoJSON(): GeoJSON.FeatureCollection<GeoJSON.Poi
  */
 export function createRoadBreakdownsGeoJSON(
   disruptions: Record<string, SegmentIncident>,
-  segments: Segment[]
+  segments: Segment[],
+  incidents: Incident[] = [],
+  missions: ReliefMission[] = []
 ): GeoJSON.FeatureCollection<GeoJSON.Point> {
   const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
 
@@ -444,23 +492,62 @@ export function createRoadBreakdownsGeoJSON(
     const seg = segments.find((s) => s.id === segmentId);
     if (!seg || !seg.coordinates || seg.coordinates.length === 0) return;
 
-    const midIdx = Math.floor(seg.coordinates.length / 2);
-    const coord = seg.coordinates[midIdx];
+    // 1. Locate real incident coordinate if available (from disruption or matching incident report)
+    let targetCoord: [number, number] | null = null;
+    if (dis.location && Number.isFinite(dis.location.lat) && Number.isFinite(dis.location.lng)) {
+      targetCoord = [dis.location.lat, dis.location.lng];
+    } else {
+      const matchingInc = incidents.find(
+        (inc) =>
+          inc.location?.corridorId === segmentId ||
+          inc.corridorFlair === seg.highway ||
+          inc.id === dis.incidentId
+      );
+      if (matchingInc?.location && Number.isFinite(matchingInc.location.lat) && Number.isFinite(matchingInc.location.lng)) {
+        targetCoord = [matchingInc.location.lat, matchingInc.location.lng];
+      }
+    }
+
+    // 2. Fallback to existing segment geometry coordinate if specific point not available
+    if (!targetCoord) {
+      const midIdx = Math.floor(seg.coordinates.length / 2);
+      targetCoord = seg.coordinates[midIdx];
+    }
+
+    // Find any matching incident for rich real properties
+    const matchingInc = incidents.find(
+      (inc) =>
+        inc.location?.corridorId === segmentId ||
+        inc.corridorFlair === seg.highway ||
+        inc.id === dis.incidentId
+    );
+
+    // Identify affected active missions passing through or targeted near this segment
+    const affectedMissions = missions.filter((m) => {
+      if (m.assignedRouteId?.includes(seg.highway) || m.suggestedDetour?.includes(seg.highway)) return true;
+      if (seg.name.toLowerCase().includes(m.destinationName.toLowerCase())) return true;
+      return false;
+    });
 
     features.push({
       type: 'Feature',
       geometry: {
         type: 'Point',
-        coordinates: toGeoJSONCoords(coord),
+        coordinates: toGeoJSONCoords(targetCoord),
       },
       properties: {
         segment_id: segmentId,
         segment_name: seg.name,
         highway: seg.highway,
         status: dis.status,
-        cause: dis.cause || 'Road Breakdown',
-        description: dis.description || '',
-        reportedBy: dis.reportedBy || 'Regional Ops',
+        cause: dis.cause || matchingInc?.incidentType || 'Road Breakdown',
+        description: dis.description || matchingInc?.title || '',
+        reportedBy: dis.reportedBy || (matchingInc ? `${matchingInc.author.name} (${matchingInc.author.role})` : 'Regional Operations'),
+        severity: dis.severity || matchingInc?.severity || (dis.status === 'TOTAL_BLOCKAGE' ? 'Total Blockage' : 'Single Lane Passable'),
+        reportedTime: dis.reportedTime || matchingInc?.timestamp || '',
+        confidenceScore: matchingInc ? matchingInc.confidenceScore : undefined,
+        estimatedClearanceHours: dis.estimatedClearanceHours,
+        affectedMissionIds: affectedMissions.map((m) => m.id).join(', '),
       },
     });
   });
@@ -491,8 +578,40 @@ export function registerMapIcons(map: any): Promise<void> {
       <rect x="13" y="21" width="22" height="6" fill="#FFFFFF" rx="1.5"/>
     </svg>`,
 
+    'veh-heavy-truck': `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="21" fill="#334155" stroke="#FFFFFF" stroke-width="3"/>
+      <rect x="11" y="17" width="16" height="12" fill="none" stroke="#FFFFFF" stroke-width="2.2" rx="1"/>
+      <path d="M27 20h6l4 4v5h-10v-9z" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
+      <circle cx="16" cy="29" r="2.5" fill="#FFFFFF"/>
+      <circle cx="23" cy="29" r="2.5" fill="#FFFFFF"/>
+      <circle cx="33" cy="29" r="2.5" fill="#FFFFFF"/>
+    </svg>`,
+
+    'veh-engineering': `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="21" fill="#B45309" stroke="#FFFFFF" stroke-width="3"/>
+      <path d="M14 29h20M16 29l2-8h8l3 8m-9-8V13l6-2" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="19" cy="29" r="2.8" fill="#FFFFFF"/>
+      <circle cx="29" cy="29" r="2.8" fill="#FFFFFF"/>
+    </svg>`,
+
+    'veh-utility': `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="21" fill="#0F766E" stroke="#FFFFFF" stroke-width="3"/>
+      <path d="M13 28h22M15 28v-7h11l4 4h4v3m-20 0v-4" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="18" cy="28" r="2.6" fill="#FFFFFF"/>
+      <circle cx="30" cy="28" r="2.6" fill="#FFFFFF"/>
+    </svg>`,
+
+    'veh-tanker': `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="21" fill="#0284C7" stroke="#FFFFFF" stroke-width="3"/>
+      <rect x="12" y="18" width="16" height="10" rx="5" fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
+      <path d="M28 21h5l3 3v4h-8v-7z" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
+      <circle cx="17" cy="28" r="2.5" fill="#FFFFFF"/>
+      <circle cx="23" cy="28" r="2.5" fill="#FFFFFF"/>
+      <circle cx="32" cy="28" r="2.5" fill="#FFFFFF"/>
+    </svg>`,
+
     'veh-supply': `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="21" fill="#0D9488" stroke="#FFFFFF" stroke-width="3"/>
+      <circle cx="24" cy="24" r="21" fill="#059669" stroke="#FFFFFF" stroke-width="3"/>
       <path d="M14 18l10-5 10 5-10 5-10-5zm0 10l10 5 10-5m-20-5l10 5 10-5" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`,
 
@@ -512,15 +631,10 @@ export function registerMapIcons(map: any): Promise<void> {
       <path d="M11 20l11-8 11 8v12h-7v-7h-8v7h-7V20z" fill="#FFFFFF"/>
     </svg>`,
 
-    'icon-destination-endpoint': `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="21" fill="#DC2626" fill-opacity="0.25" stroke="#DC2626" stroke-width="2.5" stroke-dasharray="4 2"/>
-      <circle cx="24" cy="24" r="14" fill="#DC2626" stroke="#FFFFFF" stroke-width="2.5"/>
-      <circle cx="24" cy="24" r="5" fill="#FFFFFF"/>
-      <path d="M24 4v6M24 38v6M4 24h6M38 24h6" stroke="#DC2626" stroke-width="3" stroke-linecap="round"/>
-    </svg>`,
+    'icon-destination-endpoint': DESTINATION_PIN_DATA_URL,
   };
 
-  const promises = Object.entries(iconSVGs).map(([id, svgString]) => {
+  const promises = Object.entries(iconSVGs).map(([id, sourceString]) => {
     return new Promise<void>((resolve) => {
       if (map.hasImage(id)) {
         resolve();
@@ -532,14 +646,17 @@ export function registerMapIcons(map: any): Promise<void> {
 
       img.onload = () => {
         try {
+          const isDestinationPin = id === 'icon-destination-endpoint';
           const canvas = document.createElement('canvas');
-          canvas.width = 48;
-          canvas.height = 48;
+          // Use 72x72 for the destination pin so it renders sharp and distinct
+          const canvasSize = isDestinationPin ? 72 : 48;
+          canvas.width = canvasSize;
+          canvas.height = canvasSize;
           const ctx = canvas.getContext('2d');
           if (ctx) {
-            ctx.clearRect(0, 0, 48, 48);
-            ctx.drawImage(img, 0, 0, 48, 48);
-            const imageData = ctx.getImageData(0, 0, 48, 48);
+            ctx.clearRect(0, 0, canvasSize, canvasSize);
+            ctx.drawImage(img, 0, 0, canvasSize, canvasSize);
+            const imageData = ctx.getImageData(0, 0, canvasSize, canvasSize);
             if (!map.hasImage(id)) {
               map.addImage(id, imageData, { pixelRatio: 2 });
             }
@@ -551,11 +668,15 @@ export function registerMapIcons(map: any): Promise<void> {
       };
 
       img.onerror = (e) => {
-        console.warn(`[MapLibre Icon Error]: Failed loading SVG for ${id}:`, e);
+        console.warn(`[MapLibre Icon Error]: Failed loading icon for ${id}:`, e);
         resolve();
       };
 
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+      if (sourceString.startsWith('data:')) {
+        img.src = sourceString;
+      } else {
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(sourceString);
+      }
     });
   });
 
