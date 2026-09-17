@@ -2,17 +2,17 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from '@supaba
 import type { Incident, SegmentIncident, AlertEvent } from '../types';
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+const supabasePublishableKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
-  supabaseAnonKey &&
+  supabasePublishableKey &&
   supabaseUrl.startsWith('https://') &&
-  supabaseAnonKey.length > 20
+  supabasePublishableKey.length > 20
 );
 
 export const supabase: SupabaseClient | null = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+  ? createClient(supabaseUrl, supabasePublishableKey, {
       realtime: {
         params: {
           eventsPerSecond: 10,
