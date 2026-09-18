@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
 import type { UserRole } from '../../types';
 import {
@@ -13,6 +13,7 @@ import {
   Radio,
   UserCheck,
   X,
+  GripHorizontal,
 } from 'lucide-react';
 
 export const InteractiveWalkthroughToolbar: React.FC = () => {
@@ -28,10 +29,36 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
     activeView,
   } = usePravahStore();
 
-  // Default to minimized so map and cockpit view are 100% visible and unoccluded
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isActionRunning, setIsActionRunning] = useState(false);
+
+  // Drag state
+  const toolbarRef = useRef<HTMLElement>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const hasDraggedRef = useRef(false);
+  const dragStartInfo = useRef({ startX: 0, startY: 0, initialPosX: 0, initialPosY: 0 });
+
+  // Initialize position and handle clamping on expand/collapse
+  React.useEffect(() => {
+    if (!toolbarRef.current) return;
+
+    const rect = toolbarRef.current.getBoundingClientRect();
+
+    if (!position) {
+      // First mount: convert initial CSS position (bottom-center) to explicit x,y coordinates
+      setPosition({ x: rect.left, y: rect.top });
+    } else {
+      // Ensure panel stays on screen when resizing (e.g., expanding)
+      const newX = Math.max(0, Math.min(position.x, window.innerWidth - rect.width));
+      const newY = Math.max(0, Math.min(position.y, window.innerHeight - rect.height));
+      
+      if (newX !== position.x || newY !== position.y) {
+        setPosition({ x: newX, y: newY });
+      }
+    }
+  }, [isExpanded]);
 
   // Dynamic state checks
   const kolasib = communities.find((c) => c.id === 'MZ-KOL-004');
@@ -39,6 +66,57 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
   const kolasibMission = activeMissions.find((m) => m.communityId === 'MZ-KOL-004');
   const isMissionDispatched = kolasibMission?.status === 'IN_TRANSIT';
   const isMissionDelivered = kolasibMission?.status === 'DELIVERED';
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 || !position) return;
+    
+    // Ignore interactive elements inside the drag handle (unless they are the handle itself)
+    const target = e.target as HTMLElement;
+    if (target.closest('button') && !target.classList.contains('drag-handle')) {
+      return;
+    }
+
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setIsDragging(true);
+    hasDraggedRef.current = false;
+
+    dragStartInfo.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialPosX: position.x,
+      initialPosY: position.y
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || !position) return;
+    
+    const deltaX = e.clientX - dragStartInfo.current.startX;
+    const deltaY = e.clientY - dragStartInfo.current.startY;
+    
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+      hasDraggedRef.current = true;
+    }
+
+    let newX = dragStartInfo.current.initialPosX + deltaX;
+    let newY = dragStartInfo.current.initialPosY + deltaY;
+
+    if (toolbarRef.current) {
+      const rect = toolbarRef.current.getBoundingClientRect();
+      newX = Math.max(0, Math.min(newX, window.innerWidth - rect.width));
+      newY = Math.max(0, Math.min(newY, window.innerHeight - rect.height));
+    }
+    
+    setPosition({ x: newX, y: newY });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (isDragging) {
+      setIsDragging(false);
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+  };
 
   const handleStep1 = () => {
     setIsActionRunning(true);
@@ -68,14 +146,36 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
 
   return (
     <aside
+      ref={toolbarRef}
+      style={position ? {
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        touchAction: 'none'
+      } : {
+        bottom: '24px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        touchAction: 'none'
+      }}
       aria-label="Interactive Walkthrough Demo Toolbar"
-      className="fixed bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 z-[1100] pointer-events-auto select-none max-w-full px-2"
+      className="fixed z-[1100] pointer-events-auto select-none max-w-full px-2"
     >
       {/* Minimized Pill Button */}
       {!isExpanded && (
         <button
-          onClick={() => setIsExpanded(true)}
-          className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#1B4B73] hover:bg-[#123A5A] text-white font-semibold text-xs shadow-2xl border border-white/20 backdrop-blur-md transition-all duration-200 hover:scale-105 cursor-pointer ring-2 ring-primary/30 animate-pulse max-w-[95vw]"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onClick={(e) => {
+            if (hasDraggedRef.current) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            setIsExpanded(true);
+          }}
+          className="drag-handle flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#1B4B73] hover:bg-[#123A5A] text-white font-semibold text-xs shadow-2xl border border-white/20 backdrop-blur-md transition-all duration-200 hover:scale-105 cursor-grab active:cursor-grabbing ring-2 ring-primary/30 animate-pulse max-w-[95vw]"
         >
           <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 shrink-0" />
           <span className="tracking-wide font-medium truncate max-w-[135px] sm:max-w-none text-[11px] sm:text-xs">
@@ -105,10 +205,17 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
         <div className="w-[95vw] sm:w-[92vw] max-w-4xl max-h-[85vh] overflow-y-auto custom-scrollbar bg-surface/98 dark:bg-slate-900/98 backdrop-blur-xl border-2 border-[#1B4B73]/60 dark:border-blue-400/40 rounded-lg shadow-2xl p-3 sm:p-4 space-y-2.5 sm:space-y-3 animate-in fade-in zoom-in-95 duration-200">
           {/* Header Row: Title + Role Pills + Collapse Button */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/80 pb-2">
-            <div className="flex items-center gap-1.5 sm:gap-2">
+            <div 
+              className="drag-handle flex flex-1 items-center gap-1.5 sm:gap-2 cursor-grab active:cursor-grabbing"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+            >
+              <GripHorizontal className="w-4 h-4 text-text-tertiary shrink-0" />
               <div className="w-2 h-2 rounded-full bg-status-open-solid animate-ping shrink-0" />
               <div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 pointer-events-none">
                   <span className="font-bold uppercase tracking-wider text-[11px] sm:text-xs text-text-primary">
                     Resilience Demo Script
                   </span>
