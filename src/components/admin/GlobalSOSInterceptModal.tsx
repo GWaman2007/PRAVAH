@@ -1,5 +1,6 @@
 import React from 'react';
 import type { AlertEvent, VehicleTelemetry } from '../../types';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   Siren,
   AlertTriangle,
@@ -25,6 +26,7 @@ export const GlobalSOSInterceptModal: React.FC<GlobalSOSInterceptModalProps> = (
   onClose,
   onAcknowledge,
 }) => {
+  const { t } = useTranslation();
   if (!alert || alert.type !== 'SOS_TRIGGERED') return null;
 
   const veh = vehicle;
@@ -128,7 +130,7 @@ export const GlobalSOSInterceptModal: React.FC<GlobalSOSInterceptModalProps> = (
               }}
               className="w-full sm:w-auto px-3.5 py-2 rounded-sm border border-border text-text-secondary hover:bg-surface-subtle text-xs btn-press cursor-pointer"
             >
-              Acknowledge &amp; Stand Down
+              {t('standDownAlert')}
             </button>
 
             <div className="w-full sm:w-auto flex items-center gap-2">

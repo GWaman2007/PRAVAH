@@ -1,5 +1,6 @@
 import React from 'react';
 import type { DistrictHealth } from '../../types';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   X,
   MapPin,
@@ -20,6 +21,7 @@ export const DistrictDetailModal: React.FC<DistrictDetailModalProps> = ({
   onClose,
   onDeployBRO,
 }) => {
+  const { t } = useTranslation();
   if (!district) return null;
 
   const d = district;
@@ -184,7 +186,7 @@ export const DistrictDetailModal: React.FC<DistrictDetailModalProps> = ({
               onClick={onClose}
               className="px-3 py-1.5 rounded-sm border border-border text-text-secondary hover:bg-surface btn-press cursor-pointer"
             >
-              Close
+              {t('close')}
             </button>
             <button
               onClick={() => {
@@ -194,7 +196,7 @@ export const DistrictDetailModal: React.FC<DistrictDetailModalProps> = ({
               className="px-3.5 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white font-semibold rounded-sm flex items-center gap-1.5 btn-press shadow-xs cursor-pointer"
             >
               <HardHat className="w-3.5 h-3.5" />
-              <span>Prioritize BRO Support</span>
+              <span>{t('deployBroAsset')}</span>
             </button>
           </div>
         </div>

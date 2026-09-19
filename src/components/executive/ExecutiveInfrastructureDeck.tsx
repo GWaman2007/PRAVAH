@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
+import { useTranslation } from '../../data/uiTranslations';
 import type { BROBottleneck, DistrictHealth } from '../../types';
 import { DistrictDetailModal } from './DistrictDetailModal';
 import { EmergencyBriefingModal } from './EmergencyBriefingModal';
@@ -21,6 +22,7 @@ import {
 
 export const ExecutiveInfrastructureDeck: React.FC = () => {
   const { districtsHealth, broBottlenecks, deployBROAsset } = usePravahStore();
+  const { t } = useTranslation();
   const [selectedBottleneck, setSelectedBottleneck] = useState<BROBottleneck | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<DistrictHealth | null>(null);
   const [deployModalOpen, setDeployModalOpen] = useState(false);
@@ -76,7 +78,7 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
             <div className="flex items-center space-x-2">
               <Building2 className="w-5 h-5 text-primary" />
               <h1 className="text-lg font-semibold text-text-primary">
-                Executive Macro Analytics &amp; Strategic Infrastructure Board
+                {t('executiveDeckTitle')}
               </h1>
             </div>
             <p className="mt-1 text-xs text-text-secondary max-w-3xl">
@@ -91,7 +93,7 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
               className="px-3.5 py-2 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold flex items-center gap-1.5 btn-press shadow-xs cursor-pointer"
             >
               <FileText className="w-4 h-4" />
-              <span>Generate Executive Memo</span>
+              <span>{t('generateMemo')}</span>
             </button>
           </div>
         </div>
@@ -113,9 +115,9 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-text-primary flex items-center space-x-2">
               <Activity className="w-4 h-4 text-primary" />
-              <span>District Accessibility Health Index (0–100%)</span>
+              <span>{t('districtHealthIndex')}</span>
             </h2>
-            <span className="text-xs text-text-secondary font-mono">Click District to Inspect</span>
+            <span className="text-xs text-text-secondary font-mono">{t('clickDistrictInspect')}</span>
           </div>
 
           <div className="space-y-3">
@@ -151,7 +153,7 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
 
                     <div className="text-right font-mono">
                       <span className="text-lg font-bold text-text-primary">{score}%</span>
-                      <div className="text-[10px] text-text-secondary">Health Index</div>
+                      <div className="text-[10px] text-text-secondary">{t('healthIndex')}</div>
                     </div>
                   </div>
 
@@ -163,19 +165,19 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
                   {/* Days-of-Supply Buffer Gauges */}
                   <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border text-[11px] text-text-secondary">
                     <div>
-                      <span>Min Days Supply:</span>{' '}
+                      <span>{t('minDaysSupply')}</span>{' '}
                       <strong className={`font-bold ${d.minSupplyDays <= 3 ? 'text-status-blocked-text' : 'text-text-primary'}`}>
-                        {d.minSupplyDays.toFixed(1)} days
+                        {d.minSupplyDays.toFixed(1)} {t('days')}
                       </strong>
                     </div>
                     <div>
-                      <span>Open Corridors:</span>{' '}
+                      <span>{t('openCorridors')}</span>{' '}
                       <strong className="text-text-primary font-bold">
                         {d.openCorridorsCount} / {d.totalCorridorsCount}
                       </strong>
                     </div>
                     <div className="text-right text-primary flex items-center justify-end gap-1 font-medium">
-                      <span>View Runway</span>
+                      <span>{t('viewRunway')}</span>
                       <ExternalLink className="w-3 h-3" />
                     </div>
                   </div>
@@ -190,7 +192,7 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-text-primary flex items-center space-x-2">
               <HardHat className="w-4 h-4 text-primary" />
-              <span>Strategic Choke Point Queue (BRO Deployment Priority)</span>
+              <span>{t('strategicChokePoints')}</span>
             </h2>
             <span className="text-xs text-text-secondary font-mono">Project Vartak • Swastik • Pushpak • Sewak</span>
           </div>
@@ -231,11 +233,11 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-2 text-xs text-text-secondary">
                   <div>
-                    <span>Disruption:</span>{' '}
+                    <span>{t('disruption')}</span>{' '}
                     <strong className="text-text-primary">{btnk.disruptionType}</strong>
                   </div>
                   <div>
-                    <span>Estimated Clearance:</span>{' '}
+                    <span>{t('estimatedClearance')}</span>{' '}
                     <strong className="text-text-primary">{btnk.estimatedClearanceHours} hours</strong>
                   </div>
                 </div>
@@ -245,16 +247,16 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <CheckCircle className="w-4 h-4 text-status-open-solid" />
                       <span className="text-text-primary">
-                        Deployed: <strong>{btnk.assignedAsset}</strong>
+                        {t('deployed')} <strong>{btnk.assignedAsset}</strong>
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono text-status-open-text">CLEARANCE UNDERWAY</span>
+                    <span className="text-[10px] font-mono text-status-open-text">{t('clearanceUnderway')}</span>
                   </div>
                 ) : (
                   <div className="pt-2 border-t border-border flex items-center justify-between">
                     <span className="text-xs text-status-blocked-text font-medium flex items-center space-x-1">
                       <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>No Heavy Plant Assigned</span>
+                      <span>{t('noHeavyPlant')}</span>
                     </span>
 
                     <button
@@ -265,7 +267,7 @@ export const ExecutiveInfrastructureDeck: React.FC = () => {
                       className="px-3 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold btn-press shadow-xs flex items-center space-x-1 cursor-pointer"
                     >
                       <Wrench className="w-3 h-3" />
-                      <span>Deploy BRO Asset</span>
+                      <span>{t('deployBroAsset')}</span>
                     </button>
                   </div>
                 )}

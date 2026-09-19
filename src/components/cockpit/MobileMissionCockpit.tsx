@@ -25,9 +25,12 @@ import { playAckChime, playEmergencyAlertSound } from '../../utils/audioAlert';
 import { FLEET_ROUTES, BLACKOUT_ZONES } from '../../data/fleetData';
 import { IncidentReportModal } from '../feed/IncidentReportModal';
 import { DataStalenessChip } from '../layout/DataStalenessChip';
+import { useTranslation } from '../../data/uiTranslations';
 import type { CorridorFlair } from '../../types';
 
 export const MobileMissionCockpit: React.FC = () => {
+  const { t } = useTranslation();
+
   const {
     userContext,
     vehicles,
@@ -308,7 +311,7 @@ export const MobileMissionCockpit: React.FC = () => {
         <div className="flex items-center justify-between text-[11px] text-text-secondary px-0.5">
           <span className="font-semibold text-text-primary flex items-center gap-1">
             <Truck className="w-3.5 h-3.5 text-primary" />
-            <span>Assigned Mission Convoy</span>
+            <span>{t('assignedMissionConvoy')}</span>
           </span>
           <span className="font-mono text-[10px] text-text-secondary">
             {vehicles.length} Active Missions (Switch for Field Testing)
@@ -355,7 +358,7 @@ export const MobileMissionCockpit: React.FC = () => {
             <AlertOctagon className="w-5 h-5 shrink-0 animate-pulse text-white" />
             <div>
               <div className="font-bold text-xs uppercase tracking-wider text-white">
-                🚨 EMERGENCY DISTRESS BEACON ACTIVE
+                🚨 {t('emergencyDistressBeacon')}
               </div>
               <div className="text-[10px] text-white/90 leading-tight">
                 Broadcasting coordinates to State Command &amp; QRT squads.
@@ -366,7 +369,7 @@ export const MobileMissionCockpit: React.FC = () => {
             onClick={() => cancelVehicleSOS(activeVehicle.vehicle_id)}
             className="px-2.5 py-1 rounded-sm bg-white/20 hover:bg-white/30 text-white font-bold text-[10px] shrink-0 border border-white/30 transition-colors btn-press cursor-pointer"
           >
-            Cancel SOS
+            {t('cancelSos')}
           </button>
         </div>
       )}
@@ -454,7 +457,7 @@ export const MobileMissionCockpit: React.FC = () => {
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center space-x-1.5 font-bold">
             <Radio className={`w-4 h-4 ${isDeadZone ? 'text-amber-600 animate-pulse' : 'text-primary'}`} />
-            <span>Cellular Dead-Zone Watchdog SLA</span>
+            <span>{t('deadZoneWatchdog')}</span>
           </div>
           <span className="font-mono text-[10px] font-bold">
             {isDeadZone ? 'BLACKOUT EXTENUATION' : 'CELLULAR SATELLITE LOCK'}
@@ -518,7 +521,7 @@ export const MobileMissionCockpit: React.FC = () => {
         <div className="flex items-center justify-between text-[11px]">
           <span className="font-semibold text-text-primary flex items-center gap-1">
             <Sliders className="w-3 h-3 text-primary" />
-            <span>Telemetry Simulation &amp; Hazard Injection</span>
+            <span>{t('telemetrySimulationTitle')}</span>
           </span>
           <span className="text-[10px] font-mono text-text-secondary">Speed: {simulationSpeed}x</span>
         </div>
@@ -533,7 +536,7 @@ export const MobileMissionCockpit: React.FC = () => {
             }`}
           >
             {isSimulationRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-            <span>{isSimulationRunning ? 'Pause' : 'Resume'}</span>
+            <span>{isSimulationRunning ? t('pause') : t('resume')}</span>
           </button>
 
           <button
@@ -553,7 +556,7 @@ export const MobileMissionCockpit: React.FC = () => {
             }`}
           >
             <AlertTriangle className="w-3 h-3" />
-            <span>{isHalted ? 'Resume' : 'Halt'}</span>
+            <span>{isHalted ? t('resume') : t('halt')}</span>
           </button>
 
           <button
@@ -561,7 +564,7 @@ export const MobileMissionCockpit: React.FC = () => {
             className="py-1.5 px-1.5 bg-surface hover:bg-surface-subtle text-text-primary rounded-xs border border-border text-[10px] font-semibold btn-press cursor-pointer flex items-center justify-center gap-1"
           >
             <AlertOctagon className="w-3 h-3 text-status-blocked-solid" />
-            <span>Roadblock</span>
+            <span>{t('roadblock')}</span>
           </button>
         </div>
       </div>
@@ -571,7 +574,7 @@ export const MobileMissionCockpit: React.FC = () => {
         <div className="flex items-center justify-between text-[11px] font-semibold text-text-primary">
           <span className="flex items-center gap-1.5">
             <Package className="w-3.5 h-3.5 text-primary" />
-            <span>Relief Cargo Manifest ({activeVehicle.vehicle_id})</span>
+            <span>{t('cargoManifest')} ({activeVehicle.vehicle_id})</span>
           </span>
           <span className="text-[10px] font-mono text-status-open-text">VERIFIED</span>
         </div>
@@ -603,7 +606,7 @@ export const MobileMissionCockpit: React.FC = () => {
             className="touch-target p-2 rounded-md bg-status-blocked-solid hover:bg-status-blocked-text text-white font-semibold text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer"
           >
             <AlertOctagon className="w-5 h-5 text-white animate-pulse" />
-            <span className="text-[11px]">Emergency SOS</span>
+            <span className="text-[11px]">{t('emergencySOS')}</span>
           </button>
 
           {/* Action 2: Field Officer Roadblock Clearance Report */}
@@ -612,7 +615,7 @@ export const MobileMissionCockpit: React.FC = () => {
             className="touch-target p-2 rounded-md bg-surface border border-border text-text-primary hover:bg-surface-subtle font-medium text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer"
           >
             <ShieldCheck className="w-5 h-5 text-primary" />
-            <span className="text-[11px] text-center leading-tight">Report Roadblock</span>
+            <span className="text-[11px] text-center leading-tight">{t('submitGroundReport')}</span>
           </button>
 
           {/* Action 3: Single-Tap MARK DELIVERED Handover */}
@@ -630,7 +633,7 @@ export const MobileMissionCockpit: React.FC = () => {
           >
             <CheckCircle2 className="w-5 h-5" />
             <span className="text-[11px] text-center leading-tight">
-              {isDelivered ? 'Restock Complete' : 'CONFIRM DELIVERY'}
+              {isDelivered ? t('restockComplete') : t('confirmDelivery')}
             </span>
           </button>
         </div>

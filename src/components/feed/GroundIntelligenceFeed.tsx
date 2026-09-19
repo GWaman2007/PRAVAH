@@ -162,7 +162,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
           </h1>
           <div className="flex flex-wrap items-center gap-2 mt-0.5">
             <p className="text-xs text-text-secondary">
-              Crowdsourced and officer-verified road disruptions with offline local queueing and photo proof.
+              {t('groundIntelDesc')}
             </p>
             {isSupabaseConfigured ? (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
@@ -208,7 +208,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
             title="Launch Voice Speech-to-Text Dispatch"
           >
             <Mic className="w-4 h-4" />
-            <span className="hidden sm:inline">Voice Dispatch</span>
+            <span className="hidden sm:inline">{t('voiceDispatch')}</span>
           </button>
 
           {/* Report Roadblock Button */}

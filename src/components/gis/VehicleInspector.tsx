@@ -1,5 +1,6 @@
 import React from 'react';
 import type { VehicleTelemetry } from '../../types';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   Truck,
   Gauge,
@@ -34,6 +35,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
   onTriggerSOS,
   onFocusMission,
 }) => {
+  const { t } = useTranslation();
   if (!vehicle) return null;
 
   const v = vehicle;
@@ -89,7 +91,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
 
         {/* Cargo Priority Tag */}
         <div className="mt-2.5 flex items-center justify-between text-[11px] bg-surface px-3 py-1.5 rounded-xs border border-border">
-          <span className="text-text-secondary font-medium">Cargo Manifest:</span>
+          <span className="text-text-secondary font-medium">{t('cargoManifest')}:</span>
           <span className="font-semibold font-mono text-primary">
             {v.cargo_type}
           </span>
@@ -99,7 +101,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
         {v.mission_id && (
           <div className="mt-2 p-2 rounded-xs bg-primary-tint/30 border border-primary/30 flex items-center justify-between gap-2">
             <div>
-              <span className="text-[10px] text-text-secondary block">Assigned Mission:</span>
+              <span className="text-[10px] text-text-secondary block">{t('assignedMissionConvoy')}:</span>
               <strong className="font-mono text-xs text-primary font-bold">{v.mission_id}</strong>
             </div>
             {onFocusMission && (
@@ -107,7 +109,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
                 onClick={() => onFocusMission(v.mission_id)}
                 className="py-1 px-2 rounded-xs bg-[#1B4B73] hover:bg-[#123A5A] text-white text-[10px] font-semibold btn-press cursor-pointer transition-colors shadow-xs"
               >
-                Focus Mission ➔
+                {t('focusRoute')} ➔
               </button>
             )}
           </div>
@@ -136,10 +138,10 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
           <div>
             <span className="font-bold text-xs block">
               {isDR
-                ? 'Dead-Reckoning Extrapolation Active'
+                ? t('deadReckoningActive')
                 : isSOS
-                ? 'CONVOY SOS EMERGENCY TRIGGERED'
-                : 'Live Cellular / Satellite GPS Lock'}
+                ? t('emergencyDistressBeacon')
+                : t('cellularLock')}
             </span>
             <p className="text-[10px] text-text-secondary mt-0.5 leading-normal">
               {isDR
@@ -156,7 +158,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
           {/* Speed */}
           <div className="p-2.5 bg-surface-subtle/50 rounded-xs border border-border">
             <div className="flex items-center justify-between text-text-secondary mb-1">
-              <span className="text-[10px]">Ground Speed</span>
+              <span className="text-[10px]">{t('currentSpeed')}</span>
               <Gauge className="w-3.5 h-3.5 text-primary" />
             </div>
             <div className="font-mono text-sm font-bold text-text-primary">
@@ -168,7 +170,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
           {/* Altitude */}
           <div className="p-2.5 bg-surface-subtle/50 rounded-xs border border-border">
             <div className="flex items-center justify-between text-text-secondary mb-1">
-              <span className="text-[10px]">Altitude</span>
+              <span className="text-[10px]">{t('elevation')}</span>
               <Mountain className="w-3.5 h-3.5 text-primary" />
             </div>
             <div className="font-mono text-sm font-bold text-text-primary">
@@ -180,7 +182,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
           {/* Compass & Heading */}
           <div className="p-2.5 bg-surface-subtle/50 rounded-xs border border-border">
             <div className="flex items-center justify-between text-text-secondary mb-1">
-              <span className="text-[10px]">Heading</span>
+              <span className="text-[10px]">{t('heading')}</span>
               <Compass className="w-3.5 h-3.5 text-primary" />
             </div>
             <div className="font-mono text-sm font-bold text-text-primary flex items-center gap-1">
@@ -192,7 +194,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
           {/* Incline */}
           <div className="p-2.5 bg-surface-subtle/50 rounded-xs border border-border">
             <div className="flex items-center justify-between text-text-secondary mb-1">
-              <span className="text-[10px]">Grade Slope</span>
+              <span className="text-[10px]">{t('roadIncline')}</span>
               <Navigation className="w-3.5 h-3.5 text-primary" />
             </div>
             <div className="font-mono text-sm font-bold text-text-primary">
@@ -203,7 +205,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
           {/* Fuel */}
           <div className="p-2.5 bg-surface-subtle/50 rounded-xs border border-border">
             <div className="flex items-center justify-between text-text-secondary mb-1">
-              <span className="text-[10px]">Fuel Level</span>
+              <span className="text-[10px]">{t('fuelReserve')}</span>
               <Zap className="w-3.5 h-3.5 text-amber-500" />
             </div>
             <div className="font-mono text-sm font-bold text-text-primary">
@@ -214,7 +216,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
           {/* Watchdog Timer */}
           <div className="p-2.5 bg-surface-subtle/50 rounded-xs border border-border">
             <div className="flex items-center justify-between text-text-secondary mb-1">
-              <span className="text-[10px]">Watchdog Timer</span>
+              <span className="text-[10px]">{t('deadZoneWatchdog')}</span>
               <Clock className="w-3.5 h-3.5 text-primary" />
             </div>
             <div className={`font-mono text-sm font-bold ${v.overdue_duration_min && v.overdue_duration_min > 0 ? 'text-status-blocked-text' : 'text-text-primary'}`}>
@@ -242,7 +244,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
         {/* Live Simulation Trigger Controls */}
         <div className="space-y-2 pt-2 border-t border-border">
           <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary block">
-            Watchdog Anomaly Ingestion
+            {t('remoteControls')}
           </span>
 
           <div className="grid grid-cols-1 gap-2">
@@ -254,7 +256,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
                   : 'bg-surface hover:bg-surface-subtle text-text-primary border-border'
               }`}
             >
-              <span>{v.is_deviated_manual ? '✓ Reset Route Breach' : 'Induce Off-Route Deviation'}</span>
+              <span>{v.is_deviated_manual ? t('clearDeviation') : t('injectDeviation')}</span>
               <AlertTriangle className="w-3.5 h-3.5" />
             </button>
 
@@ -266,7 +268,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
                   : 'bg-surface hover:bg-surface-subtle text-text-primary border-border'
               }`}
             >
-              <span>{v.is_stopped_manual ? '✓ Clear Mechanical Halt' : 'Simulate Breakdown / Halt'}</span>
+              <span>{v.is_stopped_manual ? t('resumeConvoy') : t('haltConvoy')}</span>
               <AlertOctagon className="w-3.5 h-3.5" />
             </button>
 
@@ -278,7 +280,7 @@ export const VehicleInspector: React.FC<VehicleInspectorProps> = ({
                   : 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid hover:bg-status-blocked-solid hover:text-white'
               }`}
             >
-              <span>{v.is_sos_manual ? '🚨 SOS Transmitting (Active)' : 'Trigger Emergency SOS'}</span>
+              <span>{v.is_sos_manual ? `🚨 ${t('emergencyDistressBeacon')}` : t('emergencySOS')}</span>
               <ShieldAlert className="w-3.5 h-3.5" />
             </button>
           </div>

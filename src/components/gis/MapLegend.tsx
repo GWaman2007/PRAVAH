@@ -10,9 +10,11 @@ import {
   Radio,
   ShieldAlert,
 } from 'lucide-react';
+import { useTranslation } from '../../data/uiTranslations';
 
 export const MapLegend: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const { t } = useTranslation();
 
   return (
     <div className="absolute bottom-3 sm:bottom-4 left-2 sm:left-4 z-20 select-none max-w-[calc(100vw-16px)]">
@@ -22,7 +24,7 @@ export const MapLegend: React.FC = () => {
         className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md bg-surface/90 dark:bg-slate-900/90 backdrop-blur-md border border-border text-text-primary text-[11px] sm:text-xs font-semibold shadow-lg hover:bg-surface transition-all cursor-pointer ring-1 ring-border/50"
       >
         <Layers className="w-3.5 h-3.5 text-primary" />
-        <span>Tactical Legend</span>
+        <span>{t('tacticalLegend')}</span>
         {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-text-secondary" /> : <ChevronUp className="w-3.5 h-3.5 text-text-secondary" />}
       </button>
 
@@ -32,20 +34,20 @@ export const MapLegend: React.FC = () => {
           <div className="flex items-center justify-between border-b border-border/70 pb-2">
             <span className="font-bold uppercase tracking-wider text-[11px] text-text-primary flex items-center gap-1.5">
               <Info className="w-3.5 h-3.5 text-primary" />
-              <span>Map Symbology Guide</span>
+              <span>{t('mapSymbologyGuide')}</span>
             </span>
             <button
               onClick={() => setIsOpen(false)}
               className="text-text-tertiary hover:text-text-primary text-[11px] cursor-pointer"
             >
-              Close
+              {t('close')}
             </button>
           </div>
 
           {/* Section 1: Fleet Vehicle Telemetry & Routes */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block">
-              1. Fleet Convoys &amp; Active Routes
+              {t('fleetConvoysRoutes')}
             </span>
             <div className="grid grid-cols-1 gap-1 text-[11px]">
               <div className="flex items-center gap-2">
@@ -99,7 +101,7 @@ export const MapLegend: React.FC = () => {
           {/* Section 2: Choke Point Rainfall Weather Stations */}
           <div className="space-y-1.5 border-t border-border/60 pt-2">
             <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block">
-              2. Mountain Choke Point Rainfall (mm/h)
+              {t('mountainRainfall')}
             </span>
             <div className="grid grid-cols-1 gap-1 text-[11px]">
               <div className="flex items-center gap-2">
@@ -147,7 +149,7 @@ export const MapLegend: React.FC = () => {
           {/* Section 3: Hazard Polygons & Route Lines */}
           <div className="space-y-1.5 border-t border-border/60 pt-2">
             <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block">
-              3. Hazard Zonation &amp; Corridors
+              {t('hazardZonation')}
             </span>
             <div className="grid grid-cols-1 gap-1 text-[11px]">
               <div className="flex items-center gap-2">

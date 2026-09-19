@@ -74,19 +74,19 @@ export const MissionsDeck: React.FC = () => {
           {/* Operational Metrics Counter */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="px-3 py-1.5 rounded-sm bg-status-blocked-tint/30 border border-status-blocked-solid/30 text-left">
-              <span className="text-[10px] text-text-secondary block font-medium">Pending Suggestions</span>
+              <span className="text-[10px] text-text-secondary block font-medium">{t('pendingSuggestions')}</span>
               <span className="text-base font-bold text-status-blocked-text font-mono">
                 {suggestedMissions.length}
               </span>
             </div>
             <div className="px-3 py-1.5 rounded-sm bg-primary-tint/20 border border-primary/30 text-left">
-              <span className="text-[10px] text-text-secondary block font-medium">Active En Route</span>
+              <span className="text-[10px] text-text-secondary block font-medium">{t('activeEnRoute')}</span>
               <span className="text-base font-bold text-primary font-mono">
                 {ongoingMissions.filter((m) => m.status === 'IN_TRANSIT').length}
               </span>
             </div>
             <div className="px-3 py-1.5 rounded-sm bg-status-open-tint/30 border border-status-open-solid/30 text-left">
-              <span className="text-[10px] text-text-secondary block font-medium">Completed Deliveries</span>
+              <span className="text-[10px] text-text-secondary block font-medium">{t('completedDeliveries')}</span>
               <span className="text-base font-bold text-status-open-text font-mono">
                 {ongoingMissions.filter((m) => m.status === 'DELIVERED').length}
               </span>
@@ -103,7 +103,7 @@ export const MissionsDeck: React.FC = () => {
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
             <h2 className="text-sm font-bold text-text-primary tracking-wide uppercase">
-              AI Preemptive Relief Convoy Suggestions ({suggestedMissions.length})
+              {t('aiReliefSuggestions')} ({suggestedMissions.length})
             </h2>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-xs bg-amber-500/10 text-amber-500 border border-amber-500/30 font-bold">
@@ -116,7 +116,7 @@ export const MissionsDeck: React.FC = () => {
             <div className="w-10 h-10 rounded-full bg-status-open-tint text-status-open-solid flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-5 h-5" />
             </div>
-            <h3 className="font-semibold text-text-primary text-sm">No Pending Mission Suggestions</h3>
+            <h3 className="font-semibold text-text-primary text-sm">{t('noPendingMissions')}</h3>
             <p className="text-text-secondary text-[11px] max-w-md mx-auto">
               All regional community inventory buffers are within nominal parameters. When any sector surges to P1 (Critical), an AI-tailored relief convoy mission will be generated here.
             </p>
@@ -147,14 +147,14 @@ export const MissionsDeck: React.FC = () => {
                     </div>
 
                     <span className="px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid">
-                      SUGGESTED
+                      {t('suggested')}
                     </span>
                   </div>
 
                   {/* Convoy & Logistics Breakdown */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] bg-surface-subtle p-3 rounded-sm border border-border">
                     <div>
-                      <span className="text-[10px] text-text-secondary block font-medium">Recommended Vehicle</span>
+                      <span className="text-[10px] text-text-secondary block font-medium">{t('recommendedVehicle')}</span>
                       <span className="font-semibold text-text-primary flex items-center gap-1 mt-0.5">
                         <Truck className="w-3.5 h-3.5 text-primary shrink-0" />
                         {mission.recommendedVehicleType || '4x4 High-Clearance Medic Carrier'}
@@ -162,7 +162,7 @@ export const MissionsDeck: React.FC = () => {
                     </div>
 
                     <div>
-                      <span className="text-[10px] text-text-secondary block font-medium">Origin Warehouse</span>
+                      <span className="text-[10px] text-text-secondary block font-medium">{t('originWarehouse')}</span>
                       <span className="font-semibold text-text-primary flex items-center gap-1 mt-0.5">
                         <MapPin className="w-3.5 h-3.5 text-text-secondary shrink-0" />
                         {mission.originWarehouseName || 'Regional Strategic Depot'}
@@ -170,7 +170,7 @@ export const MissionsDeck: React.FC = () => {
                     </div>
 
                     <div className="sm:col-span-2 pt-1 border-t border-border/60">
-                      <span className="text-[10px] text-text-secondary block font-medium">Approved Bypass Detour</span>
+                      <span className="text-[10px] text-text-secondary block font-medium">{t('approvedBypass')}</span>
                       <span className="font-mono text-text-primary text-[10px] block mt-0.5">
                         {mission.suggestedDetour || 'Direct corridor routing'}
                       </span>
@@ -180,7 +180,7 @@ export const MissionsDeck: React.FC = () => {
                   {/* Cargo Manifest */}
                   <div>
                     <span className="text-[10px] text-text-secondary uppercase tracking-wider font-semibold block mb-1.5">
-                      Tailored Relief Consignment
+                      {t('tailoredReliefConsignment')}
                     </span>
                     <div className="grid grid-cols-2 gap-1.5">
                       {mission.cargoAllocations?.map((cargo, idx) => (
@@ -204,7 +204,7 @@ export const MissionsDeck: React.FC = () => {
                       className="flex-1 py-2 px-3 rounded-sm bg-status-blocked-solid hover:bg-red-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs btn-press cursor-pointer transition-colors"
                     >
                       <Send className="w-3.5 h-3.5" />
-                      <span>Approve &amp; Dispatch Convoy</span>
+                      <span>{t('dispatchMission')}</span>
                     </button>
 
                     <button
@@ -212,7 +212,7 @@ export const MissionsDeck: React.FC = () => {
                       className="py-2 px-3 rounded-sm bg-surface-subtle hover:bg-surface border border-border text-text-primary font-medium text-xs flex items-center justify-center gap-1 btn-press cursor-pointer transition-colors"
                     >
                       <Sliders className="w-3.5 h-3.5" />
-                      <span>Review / Customize</span>
+                      <span>{t('reviewCustomize')}</span>
                     </button>
 
                     <button
@@ -238,7 +238,7 @@ export const MissionsDeck: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-status-open-solid animate-ping shrink-0" />
             <h2 className="text-sm font-bold text-text-primary tracking-wide uppercase">
-              Active Logistics En Route &amp; Dispatched Convoys ({ongoingMissions.length})
+              {t('activeEnRouteTitle')} ({ongoingMissions.length})
             </h2>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-xs bg-status-open-tint text-status-open-text border border-status-open-solid/40 font-bold">
@@ -296,7 +296,7 @@ export const MissionsDeck: React.FC = () => {
                     {/* Telemetry Progress Bar */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
-                        <span>Route Progress</span>
+                        <span>{t('routeProgress')}</span>
                         <span className="font-bold text-text-primary">{progressPct.toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-border rounded-full h-1.5 overflow-hidden">
@@ -312,21 +312,21 @@ export const MissionsDeck: React.FC = () => {
                     {/* Driver & Convoy Details */}
                     <div className="bg-surface-subtle p-2.5 rounded-sm border border-border text-[11px] space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-text-secondary">Assigned Convoy:</span>
+                        <span className="text-[10px] text-text-secondary">{t('assignedConvoy')}:</span>
                         <span className="font-mono font-bold text-text-primary">
                           {mission.assignedVehicleId || veh?.vehicle_name || 'Convoy Unit'}
                         </span>
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-text-secondary">Lead Driver:</span>
+                        <span className="text-[10px] text-text-secondary">{t('leadDriver')}:</span>
                         <span className="font-medium text-text-primary">
                           {mission.assignedDriver || veh?.driver_name || 'Designated Driver'}
                         </span>
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-text-secondary">Telemetry Speed:</span>
+                        <span className="text-[10px] text-text-secondary">{t('telemetrySpeed')}:</span>
                         <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                           {veh?.current_speed_kmh ?? 42} km/h
                         </span>
@@ -348,7 +348,7 @@ export const MissionsDeck: React.FC = () => {
                       className="flex-1 py-1.5 px-2 bg-primary-tint hover:bg-primary/20 text-primary border border-primary/30 rounded-sm font-semibold text-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer transition-colors"
                     >
                       <MapPin className="w-3.5 h-3.5" />
-                      <span>Track on Tactical GIS</span>
+                      <span>{t('trackOnGis')}</span>
                     </button>
 
                     {!isDelivered && (
@@ -362,7 +362,7 @@ export const MissionsDeck: React.FC = () => {
                         title="Sign off delivery confirmation"
                       >
                         <PackageCheck className="w-3.5 h-3.5" />
-                        <span>Sign Off</span>
+                        <span>{t('signOff')}</span>
                       </button>
                     )}
                   </div>

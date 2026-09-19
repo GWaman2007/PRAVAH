@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { ReliefMission, CandidateRoute } from '../../types';
 import { CustomizeMissionModal } from './CustomizeMissionModal';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   Sparkles,
   Truck,
@@ -26,6 +27,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
   onApproveAndDispatch,
   onCustomizedDispatch,
 }) => {
+  const { t } = useTranslation();
   const [activeCustomizeMission, setActiveCustomizeMission] = useState<ReliefMission | null>(null);
 
   if (!missions || missions.length === 0) {
@@ -34,9 +36,9 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
         <div className="w-10 h-10 rounded-full bg-status-open-tint text-status-open-solid flex items-center justify-center mx-auto">
           <CheckCircle2 className="w-5 h-5" />
         </div>
-        <h3 className="font-semibold text-text-primary text-sm">No Pending Mission Suggestions</h3>
+        <h3 className="font-semibold text-text-primary text-sm">{t('noPendingSuggestions')}</h3>
         <p className="text-text-secondary text-[11px] max-w-sm mx-auto">
-          All regional community inventory buffers are within nominal safe parameters. When any sector surges to P1 (Critical), an AI-tailored relief convoy mission will be auto-generated here.
+          {t('allBuffersNominal')}
         </p>
       </div>
     );
@@ -48,7 +50,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-primary animate-pulse" />
           <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-            AI Preemptive Relief Convoy Suggestions ({missions.length})
+            {t('pendingSuggestions')} ({missions.length})
           </h2>
         </div>
         <span className="text-[10px] font-mono px-2 py-0.5 rounded-xs bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid/40 font-bold">
@@ -83,12 +85,12 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
                   </div>
                   <div className="flex items-center gap-1.5 mt-1">
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                      AI Preemptive Trigger: Window Closing
+                      {t('windowClosing')}
                     </span>
                   </div>
                   <p className="text-[11px] text-text-secondary mt-0.5 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3 text-status-blocked-text shrink-0" />
-                    <span>Impending road cutoff. Actionable dispatch window closing!</span>
+                    <span>{t('impendingCutoff')}</span>
                   </p>
                 </div>
 
@@ -108,7 +110,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-text-secondary flex items-center gap-1">
                     <Truck className="w-3.5 h-3.5 text-primary" />
-                    <span>Allocated Rig:</span>
+                    <span>{t('allocatedRig')}:</span>
                   </span>
                   <span className="font-semibold text-text-primary font-mono">
                     {mission.recommendedVehicleType}
@@ -118,7 +120,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-text-secondary flex items-center gap-1 shrink-0">
                     <Route className="w-3.5 h-3.5 text-primary" />
-                    <span>Safe Detour:</span>
+                    <span>{t('corridor')}:</span>
                   </span>
                   <span className="font-semibold text-status-open-text font-mono text-right flex-1 truncate ml-2" title={mission.suggestedDetour}>
                     {mission.suggestedDetour}
@@ -129,7 +131,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
               {/* Cargo Allocations */}
               <div className="space-y-1">
                 <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider block">
-                  Preemptive Cargo Allocation Manifest
+                  {t('cargoManifestTitle')}
                 </span>
                 <div className="grid grid-cols-2 gap-1.5">
                   {mission.cargoAllocations.map((c, i) => (
@@ -157,14 +159,14 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
                     className="h-10 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs shadow-sm transition-colors text-center cursor-pointer btn-press"
                   >
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span className="leading-tight">1. Approve Mission</span>
+                    <span className="leading-tight">{t('approveMission')}</span>
                   </button>
                   <button
                     onClick={() => onApproveAndDispatch(mission.id)}
                     className="h-10 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs shadow-sm transition-colors text-center cursor-pointer btn-press"
                   >
                     <Send className="w-4 h-4 shrink-0" />
-                    <span className="leading-tight">Approve &amp; Dispatch</span>
+                    <span className="leading-tight">{t('approveAndDispatch')}</span>
                   </button>
                 </div>
               )}
@@ -173,7 +175,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
                 <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border">
                   <div className="flex items-center gap-1.5 text-status-open-text font-medium text-[11px]">
                     <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping" />
-                    <span>Convoy Medic-01 Live Tracking Active</span>
+                    <span>{t('liveTrackingActive')}</span>
                   </div>
 
                   <button
@@ -181,7 +183,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
                     className="px-3.5 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white font-semibold rounded-sm flex items-center gap-1.5 btn-press shadow-xs cursor-pointer text-xs"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>View &amp; Track on Tactical GIS Map ➔</span>
+                    <span>{t('viewTrackTacticalGis')}</span>
                   </button>
                 </div>
               )}

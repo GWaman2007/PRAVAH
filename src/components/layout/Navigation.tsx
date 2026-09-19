@@ -44,7 +44,7 @@ export const Navigation: React.FC = () => {
       label: t('navMissions'),
       shortLabel: t('navMissions'),
       icon: Truck,
-      badge: suggestedCount > 0 ? `${suggestedCount} NEW` : undefined,
+      badge: suggestedCount > 0 ? `${suggestedCount} ${t('badgeNew')}` : undefined,
     },
     {
       id: 'COMMUNITIES',
@@ -77,7 +77,7 @@ export const Navigation: React.FC = () => {
       label: t('navCockpit'),
       shortLabel: t('navCockpitShort'),
       icon: Smartphone,
-      badge: activeRole === 'DRIVER' || activeRole === 'FIELD_OFFICER' ? 'ACTIVE' : undefined,
+      badge: activeRole === 'DRIVER' || activeRole === 'FIELD_OFFICER' ? t('badgeActive') : undefined,
     },
   ];
 
@@ -131,7 +131,7 @@ export const Navigation: React.FC = () => {
             aria-expanded={mobileMenuOpen}
             aria-label="Toggle navigation menu"
           >
-            <span>{mobileMenuOpen ? t('close') : t('selectLanguage') === 'Language' ? 'Views' : 'মেনি/তালিকা'}</span>
+            <span>{mobileMenuOpen ? t('close') : t('views')}</span>
             {mobileMenuOpen ? (
               <X className="w-4 h-4 text-text-secondary" />
             ) : (

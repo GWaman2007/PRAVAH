@@ -1,5 +1,6 @@
 import React from 'react';
 import type { DistrictHealth, BROBottleneck } from '../../types';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   X,
   Printer,
@@ -21,6 +22,7 @@ export const EmergencyBriefingModal: React.FC<EmergencyBriefingModalProps> = ({
   districtsHealth,
   broBottlenecks,
 }) => {
+  const { t } = useTranslation();
   if (!isOpen) return null;
 
   const criticalDistricts = districtsHealth.filter(
@@ -55,7 +57,7 @@ export const EmergencyBriefingModal: React.FC<EmergencyBriefingModalProps> = ({
                 <span className="text-xs font-mono text-text-secondary">REF: NER-LOG-2026-M4</span>
               </div>
               <h2 className="text-base font-bold text-text-primary tracking-tight">
-                Executive Logistics Bottleneck &amp; District Accessibility Memo
+                {t('emergencyMemo')}
               </h2>
             </div>
           </div>
@@ -66,7 +68,7 @@ export const EmergencyBriefingModal: React.FC<EmergencyBriefingModalProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-surface border border-border text-text-primary text-xs font-semibold hover:bg-surface-subtle transition cursor-pointer btn-press"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Print Briefing</span>
+              <span>{t('print')}</span>
             </button>
             <button
               onClick={onClose}
@@ -205,7 +207,7 @@ export const EmergencyBriefingModal: React.FC<EmergencyBriefingModalProps> = ({
             onClick={onClose}
             className="px-4 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-sm text-xs font-semibold btn-press cursor-pointer"
           >
-            Acknowledge Memo
+            {t('acknowledge')}
           </button>
         </div>
       </div>

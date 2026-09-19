@@ -32,6 +32,7 @@ import { AlertFeedModal } from './AlertFeedModal';
 import { SOSModal } from './SOSModal';
 import { MapLegend } from './MapLegend';
 import { MissionDetailsPanel } from './MissionDetailsPanel';
+import { useTranslation } from '../../data/uiTranslations';
 import { formatTimeAgo } from '../../engine/offlineSync';
 import type { Segment, VehicleProfile, ReliefMission, Incident, SegmentIncident } from '../../types';
 import {
@@ -107,6 +108,8 @@ export const TacticalMapDeck: React.FC = () => {
     setSelectedCommunityId,
     incidents,
   } = usePravahStore();
+
+  const { t } = useTranslation();
 
   // Fresh refs for MapLibre event listeners
   const activeMissionsRef = useRef(activeMissions);
@@ -1261,7 +1264,7 @@ export const TacticalMapDeck: React.FC = () => {
           }`}
         >
           <Navigation className="w-3.5 h-3.5" />
-          <span>Tactical GIS Map</span>
+          <span>{t('tacticalGisMap')}</span>
         </button>
         <button
           onClick={() => setMobileViewTab('CONTROLS')}
@@ -1272,7 +1275,7 @@ export const TacticalMapDeck: React.FC = () => {
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
-          <span>Mission Operations</span>
+          <span>{t('missionOperations')}</span>
           {suggestedMissions.length > 0 && (
             <span className="px-1.5 py-0.2 rounded-xs bg-status-blocked-solid text-white text-[9px] font-mono font-bold">
               {suggestedMissions.length}
@@ -1344,7 +1347,7 @@ export const TacticalMapDeck: React.FC = () => {
             }`}
           >
             <Shield className="w-3.5 h-3.5 text-primary" />
-            <span>Mission Operations</span>
+            <span>{t('missionOperations')}</span>
             <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-xs bg-primary/10 text-primary">
               {activeMissions.length}
             </span>
@@ -1358,7 +1361,7 @@ export const TacticalMapDeck: React.FC = () => {
             }`}
           >
             <Navigation className="w-3.5 h-3.5 text-sky-500" />
-            <span>K-Shortest Paths</span>
+            <span>{t('kShortestPaths')}</span>
           </button>
         </div>
 
@@ -1377,7 +1380,7 @@ export const TacticalMapDeck: React.FC = () => {
                   }`}
                 >
                   <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping" />
-                  <span>ONGOING</span>
+                  <span>{t('ongoing')}</span>
                   <span
                     className={`px-1.5 py-0.2 rounded-xs font-mono text-[9px] ${
                       missionTab === 'ONGOING' ? 'bg-white/20 text-white' : 'bg-surface-subtle text-text-secondary'
@@ -1396,7 +1399,7 @@ export const TacticalMapDeck: React.FC = () => {
                   }`}
                 >
                   <Sparkles className="w-3 h-3 text-amber-400" />
-                  <span>SUGGESTED</span>
+                  <span>{t('suggested')}</span>
                   {suggestedMissions.length > 0 && (
                     <span
                       className={`px-1.5 py-0.2 rounded-xs font-mono text-[9px] font-bold ${
@@ -1415,8 +1418,8 @@ export const TacticalMapDeck: React.FC = () => {
               <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
                 {ongoingMissions.length === 0 ? (
                   <div className="p-4 text-center bg-surface-subtle rounded-sm text-text-secondary text-[11px] space-y-1">
-                    <p className="font-semibold">No ongoing missions currently en route.</p>
-                    <p className="text-[10px]">Switch to Suggested Missions to review and dispatch a new convoy.</p>
+                    <p className="font-semibold">{t('noOngoingMissions')}</p>
+                    <p className="text-[10px]">{t('switchToSuggested')}</p>
                   </div>
                 ) : (
                   ongoingMissions.map((m) => {
@@ -1444,7 +1447,7 @@ export const TacticalMapDeck: React.FC = () => {
                               <span className="font-bold text-text-primary">{m.destinationName}</span>
                             </div>
                             <span className="text-[10px] text-text-secondary block mt-0.5">
-                              Origin: <strong>{m.originWarehouseName}</strong> ➔ Target:{' '}
+                              {t('origin')}: <strong>{m.originWarehouseName}</strong> ➔ {t('target')}:{' '}
                               <strong>{m.disasterZoneName}</strong>
                             </span>
                           </div>
@@ -1456,23 +1459,23 @@ export const TacticalMapDeck: React.FC = () => {
 
                         <div className="grid grid-cols-2 gap-1.5 text-[10px] text-text-secondary bg-surface-subtle p-1.5 rounded-xs">
                           <div>
-                            <span>Rig:</span>{' '}
+                            <span>{t('rig')}:</span>{' '}
                             <strong className="text-text-primary font-mono">
                               {veh?.vehicle_id || m.assignedVehicleId || 'Convoy Unit'}
                             </strong>
                           </div>
                           <div>
-                            <span>Progress:</span>{' '}
+                            <span>{t('progress')}:</span>{' '}
                             <strong className="text-status-open-text font-mono">
                               {veh?.route_progress_pct ?? 45}%
                             </strong>
                           </div>
                           <div>
-                            <span>Dist:</span>{' '}
+                            <span>{t('dist')}:</span>{' '}
                             <strong className="text-text-primary font-mono">{m.routeDistanceKm || 60} km</strong>
                           </div>
                           <div>
-                            <span>ETA:</span>{' '}
+                            <span>{t('eta')}:</span>{' '}
                             <strong className="text-text-primary font-mono">
                               {m.routeDurationMinutes || 90} min
                             </strong>
@@ -1482,9 +1485,9 @@ export const TacticalMapDeck: React.FC = () => {
                         <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px]">
                           <span className="text-text-secondary flex items-center gap-1">
                             <Route className="w-3 h-3 text-sky-500" />
-                            <span>Road Route Active</span>
+                            <span>{t('roadRouteActive')}</span>
                           </span>
-                          <span className="text-primary font-bold">Focus Route ➔</span>
+                          <span className="text-primary font-bold">{t('focusRoute')}</span>
                         </div>
                       </div>
                     );
@@ -1498,7 +1501,7 @@ export const TacticalMapDeck: React.FC = () => {
               <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
                 {suggestedMissions.length === 0 ? (
                   <div className="p-4 text-center bg-surface-subtle rounded-sm text-text-secondary text-[11px]">
-                    All disaster relief requirements currently dispatched.
+                    {t('allMissionsDispatched')}
                   </div>
                 ) : (
                   suggestedMissions.map((m) => {
@@ -1527,7 +1530,7 @@ export const TacticalMapDeck: React.FC = () => {
                               <span className="font-bold text-text-primary">{m.destinationName}</span>
                             </div>
                             <span className="text-[10px] text-text-secondary block mt-0.5">
-                              Origin: <strong>{m.originWarehouseName}</strong> ➔ Target:{' '}
+                              {t('origin')}: <strong>{m.originWarehouseName}</strong> ➔ {t('target')}:{' '}
                               <strong>{m.disasterZoneName}</strong>
                             </span>
                           </div>
@@ -1545,16 +1548,16 @@ export const TacticalMapDeck: React.FC = () => {
 
                         <div className="p-1.5 rounded-xs bg-surface-subtle text-[10px] space-y-1">
                           <div className="text-text-secondary">
-                            <span>Allocated Rig:</span>{' '}
+                            <span>{t('allocatedRig')}:</span>{' '}
                             <strong className="text-text-primary">{m.recommendedVehicleType}</strong>
                           </div>
                           <div className="text-text-secondary">
-                            <span>Corridor:</span>{' '}
+                            <span>{t('corridor')}:</span>{' '}
                             <strong className="text-status-open-text">{m.suggestedDetour}</strong>
                           </div>
                           <div className="text-text-secondary flex justify-between">
-                            <span>Distance: <strong>{m.routeDistanceKm || 65} km</strong></span>
-                            <span>ETA: <strong>{m.routeDurationMinutes || 100} min</strong></span>
+                            <span>{t('distance')}: <strong>{m.routeDistanceKm || 65} km</strong></span>
+                            <span>{t('eta')}: <strong>{m.routeDurationMinutes || 100} min</strong></span>
                           </div>
                         </div>
 
@@ -1568,7 +1571,7 @@ export const TacticalMapDeck: React.FC = () => {
                             className="w-full py-1.5 px-2.5 rounded-xs bg-[#1B4B73] hover:bg-[#123A5A] text-white font-bold text-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer shadow-xs transition-colors"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5 text-sky-300" />
-                            <span>REVIEW</span>
+                            <span>{t('review')}</span>
                           </button>
                         </div>
                       </div>
@@ -1587,7 +1590,7 @@ export const TacticalMapDeck: React.FC = () => {
             <div className="space-y-2 bg-surface-subtle p-3 rounded-sm border border-border">
               <div>
                 <label className="text-[10px] font-bold text-text-secondary uppercase">
-                  Origin Logistics Hub
+                  {t('originLogisticsHub')}
                 </label>
                 <select
                   value={originHub}
@@ -1604,7 +1607,7 @@ export const TacticalMapDeck: React.FC = () => {
 
               <div>
                 <label className="text-[10px] font-bold text-text-secondary uppercase">
-                  Destination Community
+                  {t('destinationCommunity')}
                 </label>
                 <select
                   value={destinationHub}
@@ -1623,13 +1626,13 @@ export const TacticalMapDeck: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold text-text-secondary uppercase">
-                    Vehicle Constraint Profile
+                    {t('vehicleConstraintProfile')}
                   </label>
                   <button
                     onClick={() => setIsCustomSpecsActive(!isCustomSpecsActive)}
                     className="text-[10px] text-primary hover:underline cursor-pointer"
                   >
-                    {isCustomSpecsActive ? 'Presets' : 'Custom Specs'}
+                    {isCustomSpecsActive ? t('presets') : t('customSpecs')}
                   </button>
                 </div>
 
@@ -1651,7 +1654,7 @@ export const TacticalMapDeck: React.FC = () => {
                 ) : (
                   <div className="mt-2 p-2 bg-surface rounded-xs border border-border space-y-1.5 text-[11px]">
                     <div className="flex justify-between">
-                      <span>Gross Weight:</span>
+                      <span>{t('grossWeight')}:</span>
                       <span className="font-mono font-bold">{customWeight}T</span>
                     </div>
                     <input
@@ -1679,7 +1682,7 @@ export const TacticalMapDeck: React.FC = () => {
                       }}
                       className="w-full py-1 text-[10px] font-semibold bg-[#1B4B73] text-white rounded-xs"
                     >
-                      Apply Custom Load
+                      {t('applyCustomLoad')}
                     </button>
                   </div>
                 )}
@@ -1691,7 +1694,7 @@ export const TacticalMapDeck: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-text-primary flex items-center gap-1.5">
                   <CloudRain className="w-3.5 h-3.5 text-sky-500" />
-                  <span>Rainfall Degradation</span>
+                  <span>{t('rainfallDegradation')}</span>
                 </span>
                 <span className="font-mono text-xs font-bold bg-surface-subtle px-1.5 py-0.5 rounded border border-border">
                   {rainfallMmHr} mm/h
@@ -1710,19 +1713,19 @@ export const TacticalMapDeck: React.FC = () => {
                   onClick={() => setRainfallMmHr(0)}
                   className="py-0.5 text-[9px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-text-secondary"
                 >
-                  Clear (0mm)
+                  {t('clearRain')}
                 </button>
                 <button
                   onClick={() => setRainfallMmHr(24)}
                   className="py-0.5 text-[9px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-text-secondary"
                 >
-                  Rain (24mm)
+                  {t('rainLight')}
                 </button>
                 <button
                   onClick={() => setRainfallMmHr(48)}
                   className="py-0.5 text-[9px] rounded-xs bg-surface-subtle hover:bg-border/60 border border-border text-status-blocked-text"
                 >
-                  Surge (48mm)
+                  {t('rainSurge')}
                 </button>
               </div>
             </div>
@@ -1732,14 +1735,14 @@ export const TacticalMapDeck: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-text-primary flex items-center gap-1">
                   <AlertTriangle className="w-3.5 h-3.5 text-status-blocked-solid" />
-                  <span>Disruption Scenarios</span>
+                  <span>{t('disruptionScenarios')}</span>
                 </span>
                 {Object.keys(activeDisruptions).length > 0 && (
                   <button
                     onClick={clearAllDisruptions}
                     className="text-[10px] text-status-blocked-text hover:underline cursor-pointer"
                   >
-                    Clear All
+                    {t('clearAll')}
                   </button>
                 )}
               </div>
@@ -1750,9 +1753,9 @@ export const TacticalMapDeck: React.FC = () => {
                   className="w-full p-2 rounded-xs border border-status-blocked-solid/30 bg-status-blocked-tint/30 hover:bg-status-blocked-tint/60 text-left cursor-pointer transition"
                 >
                   <span className="font-semibold block text-[11px] text-status-blocked-text">
-                    NH-6 Landslide (Lubha Bridge)
+                    {t('nh6LandslideTitle')}
                   </span>
-                  <span className="text-[10px] text-text-secondary block">Total road blockage Jowai-Silchar</span>
+                  <span className="text-[10px] text-text-secondary block">{t('nh6LandslideDesc')}</span>
                 </button>
 
                 <button
@@ -1760,9 +1763,9 @@ export const TacticalMapDeck: React.FC = () => {
                   className="w-full p-2 rounded-xs border border-status-blocked-solid/30 bg-status-blocked-tint/30 hover:bg-status-blocked-tint/60 text-left cursor-pointer transition"
                 >
                   <span className="font-semibold block text-[11px] text-status-blocked-text">
-                    NH-29 Mudflow (Pagla Pahar)
+                    {t('nh29MudflowTitle')}
                   </span>
-                  <span className="text-[10px] text-text-secondary block">Dimapur-Kohima mudflow impassable</span>
+                  <span className="text-[10px] text-text-secondary block">{t('nh29MudflowDesc')}</span>
                 </button>
 
                 <button
@@ -1770,9 +1773,9 @@ export const TacticalMapDeck: React.FC = () => {
                   className="w-full p-2 rounded-xs border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-left cursor-pointer transition"
                 >
                   <span className="font-semibold block text-[11px] text-amber-500">
-                    Haflong Bridge Risk (18T Limit)
+                    {t('haflongBridgeTitle')}
                   </span>
-                  <span className="text-[10px] text-text-secondary block">Barail Pass structural scour</span>
+                  <span className="text-[10px] text-text-secondary block">{t('haflongBridgeDesc')}</span>
                 </button>
               </div>
             </div>
@@ -1780,7 +1783,7 @@ export const TacticalMapDeck: React.FC = () => {
             {/* Evaluated Paths List */}
             <div className="space-y-2">
               <span className="text-[11px] font-bold text-text-primary block">
-                Evaluated K-Shortest Paths ({candidateRoutes.length})
+                {t('evaluatedPaths')} ({candidateRoutes.length})
               </span>
               {candidateRoutes.map((route, idx) => {
                 const isSelected = idx === selectedRouteIndex;
@@ -1797,7 +1800,7 @@ export const TacticalMapDeck: React.FC = () => {
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: route.color }} />
-                        <strong className="text-text-primary">Rank {route.rank}: {route.rankLabel}</strong>
+                        <strong className="text-text-primary">{t('rank')} {route.rank}: {route.rankLabel}</strong>
                       </div>
                       <span className={`font-mono font-bold ${route.isPassable ? 'text-status-open-text' : 'text-status-blocked-text'}`}>
                         {route.isPassable ? `${route.compositeSafetyScore}% Safe` : 'BLOCKED'}
@@ -1819,7 +1822,7 @@ export const TacticalMapDeck: React.FC = () => {
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-text-primary flex items-center gap-1">
               <Truck className="w-3.5 h-3.5 text-primary" />
-              <span>Fleet Telemetry Sim</span>
+              <span>{t('fleetTelemetrySim')}</span>
             </span>
 
             <button
@@ -1844,12 +1847,12 @@ export const TacticalMapDeck: React.FC = () => {
               {isSimulationRunning ? (
                 <>
                   <Pause className="w-3 h-3 text-amber-500" />
-                  <span>Pause</span>
+                  <span>{t('pause')}</span>
                 </>
               ) : (
                 <>
                   <Play className="w-3 h-3 text-status-open-solid" />
-                  <span>Resume</span>
+                  <span>{t('resume')}</span>
                 </>
               )}
             </button>
@@ -1892,7 +1895,7 @@ export const TacticalMapDeck: React.FC = () => {
                 className="ml-2 px-1.5 py-0.5 bg-surface hover:bg-surface-subtle text-[10px] font-semibold text-text-secondary hover:text-text-primary rounded-xs border border-border cursor-pointer"
                 title="Reset focus"
               >
-                Clear Focus
+                {t('clearFocus')}
               </button>
             </div>
           ) : selectedCommunity ? (
@@ -1918,13 +1921,13 @@ export const TacticalMapDeck: React.FC = () => {
                 className="ml-2 px-1.5 py-0.5 bg-surface hover:bg-surface-subtle text-[10px] font-semibold text-text-secondary hover:text-text-primary rounded-xs border border-border cursor-pointer"
                 title="Reset map view to whole Northeast region"
               >
-                Reset Map View
+                {t('resetMapView')}
               </button>
             </div>
           ) : (
             <div className="pointer-events-auto bg-surface/90 dark:bg-slate-900/90 backdrop-blur-md px-2.5 py-1.5 rounded-sm border border-border shadow-xs text-xs font-semibold text-text-primary flex items-center gap-2">
               <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-              <span>PRAVAH 2.0 Tactical Map Deck</span>
+              <span>PRAVAH 2.0 {t('tacticalGisMap')}</span>
             </div>
           )}
 
@@ -1939,7 +1942,7 @@ export const TacticalMapDeck: React.FC = () => {
               }`}
               title="Toggle Community Sector Boundary Polygons"
             >
-              COMMUNITIES
+              {t('layerCommunities')}
             </button>
             <button
               onClick={() => toggleLayer('roadStatus')}
@@ -1950,7 +1953,7 @@ export const TacticalMapDeck: React.FC = () => {
               }`}
               title="Toggle road network status condition overlay (Open/Degraded/Blocked)"
             >
-              ROAD STATUS
+              {t('layerRoadStatus')}
             </button>
             <button
               onClick={() => toggleLayer('routes')}
@@ -1960,7 +1963,7 @@ export const TacticalMapDeck: React.FC = () => {
                   : 'bg-surface text-text-secondary border-border'
               }`}
             >
-              ROUTES
+              {t('layerRoutes')}
             </button>
             <button
               onClick={() => toggleLayer('fleet')}
@@ -1970,7 +1973,7 @@ export const TacticalMapDeck: React.FC = () => {
                   : 'bg-surface text-text-secondary border-border'
               }`}
             >
-              FLEET
+              {t('layerFleet')}
             </button>
             <button
               onClick={toggleMonsoonDownpourSimulation}
@@ -1981,7 +1984,7 @@ export const TacticalMapDeck: React.FC = () => {
               }`}
             >
               <CloudRain className="w-3 h-3 text-sky-400" />
-              <span>{isMonsoonDownpourSimulated ? 'MONSOON SURGE (58mm)' : 'MONSOON SIM'}</span>
+              <span>{isMonsoonDownpourSimulated ? t('layerMonsoonSurge') : t('layerMonsoonSim')}</span>
             </button>
           </div>
         </div>
@@ -2042,12 +2045,12 @@ export const TacticalMapDeck: React.FC = () => {
 
               {(hoveredVehicle.startHub || hoveredVehicle.endHub || hoveredVehicle.destination_name) && (
                 <div className="space-y-0.5">
-                  <div className="text-[10px] uppercase font-bold text-slate-400">Route</div>
+                  <div className="text-[10px] uppercase font-bold text-slate-400">{t('route')}</div>
                   <div className="text-xs font-semibold text-slate-100 flex items-center gap-1.5">
-                    <span className="truncate">{hoveredVehicle.startHub || 'Origin'}</span>
+                    <span className="truncate">{hoveredVehicle.startHub || t('origin')}</span>
                     <span className="text-slate-500">→</span>
                     <span className="truncate">
-                      {hoveredVehicle.endHub || hoveredVehicle.destination_name || 'Destination'}
+                      {hoveredVehicle.endHub || hoveredVehicle.destination_name || t('target')}
                     </span>
                   </div>
                 </div>
@@ -2055,7 +2058,7 @@ export const TacticalMapDeck: React.FC = () => {
 
               {hoveredVehicle.mission_id && (
                 <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
-                  <span className="text-slate-400">Mission</span>
+                  <span className="text-slate-400">{t('mission')}</span>
                   <span className="font-mono font-bold text-primary">{hoveredVehicle.mission_id}</span>
                 </div>
               )}
@@ -2091,23 +2094,23 @@ export const TacticalMapDeck: React.FC = () => {
 
               <div className="space-y-1 text-[11px]">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Cause:</span>
+                  <span className="text-slate-400">{t('cause')}:</span>
                   <span className="font-semibold text-slate-200">{hoveredBreakdown.cause}</span>
                 </div>
                 {hoveredBreakdown.severity && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Severity:</span>
+                    <span className="text-slate-400">{t('severity')}:</span>
                     <span className="font-semibold text-amber-300 uppercase">{hoveredBreakdown.severity}</span>
                   </div>
                 )}
                 {hoveredBreakdown.lastUpdated && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Last updated:</span>
+                    <span className="text-slate-400">{t('lastUpdated')}:</span>
                     <span className="text-slate-300">{hoveredBreakdown.lastUpdated}</span>
                   </div>
                 )}
               </div>
-              <div className="pt-1 text-[10px] text-slate-500 italic text-right">Click marker for details</div>
+              <div className="pt-1 text-[10px] text-slate-500 italic text-right">{t('clickForDetails')}</div>
             </div>
           )}
         </div>

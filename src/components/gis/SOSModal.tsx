@@ -1,5 +1,6 @@
 import React from 'react';
 import type { VehicleTelemetry } from '../../types';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   AlertTriangle,
   MapPin,
@@ -17,6 +18,7 @@ interface SOSModalProps {
 }
 
 export const SOSModal: React.FC<SOSModalProps> = ({ vehicle, onClose, onStandDown }) => {
+  const { t } = useTranslation();
   if (!vehicle) return null;
 
   const v = vehicle;
@@ -94,7 +96,7 @@ export const SOSModal: React.FC<SOSModalProps> = ({ vehicle, onClose, onStandDow
               }}
               className="w-full sm:w-auto px-3 py-2 rounded-sm border border-border text-text-secondary hover:bg-surface-subtle btn-press cursor-pointer text-center"
             >
-              Stand Down / Clear SOS
+              {t('standDownAlert')}
             </button>
             <button
               onClick={() => {

@@ -182,7 +182,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
         >
           <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 shrink-0" />
           <span className="tracking-wide font-medium truncate max-w-[135px] sm:max-w-none text-[11px] sm:text-xs">
-            1-Click Resilience Demo
+            {t('resilienceDemo')}
           </span>
           {isP1 && (
             <span className="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-mono font-bold shrink-0">
@@ -220,7 +220,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
               <div>
                 <div className="flex items-center gap-1.5 pointer-events-none">
                   <span className="font-bold uppercase tracking-wider text-[11px] sm:text-xs text-text-primary">
-                    Resilience Demo Script
+                    {t('demoScript')}
                   </span>
                   <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded-xs bg-primary-tint text-primary font-bold hidden xs:inline">
                     Kolasib NH-306
@@ -286,7 +286,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                 <div className="flex items-center justify-between gap-1">
                   <div className="flex items-center gap-1.5 font-bold text-xs text-text-primary">
                     <CloudRain className="w-3.5 h-3.5 text-status-blocked-solid shrink-0" />
-                    <span>1. Landslide Spike</span>
+                    <span>{t('step1Spike')}</span>
                   </div>
                   {isP1 && (
                     <span className="text-[9px] font-mono px-1 py-0.5 rounded-xs bg-status-blocked-solid text-white font-bold shrink-0">
@@ -295,7 +295,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                   )}
                 </div>
                 <p className="text-[10px] text-text-secondary mt-1 leading-snug">
-                  65mm/h cloudburst &amp; mudflow block NH-306. Kolasib surges to P1.
+                  {t('step1Desc')}
                 </p>
               </div>
             </button>
@@ -314,7 +314,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                 <div className="flex items-center justify-between gap-1">
                   <div className="flex items-center gap-1.5 font-bold text-xs text-text-primary">
                     <Truck className="w-3.5 h-3.5 text-primary shrink-0" />
-                    <span>2. Dispatch Detour</span>
+                    <span>{t('step2Detour')}</span>
                   </div>
                   {isMissionDispatched && (
                     <span className="text-[9px] font-mono px-1 py-0.5 rounded-xs bg-[#1B4B73] dark:bg-[#2E6B9E] text-white font-bold shrink-0">
@@ -323,7 +323,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                   )}
                 </div>
                 <p className="text-[10px] text-text-secondary mt-1 leading-snug">
-                  Approve Medic-01 convoy with Bairabi Pass alternate bypass route.
+                  {t('step2Desc')}
                 </p>
               </div>
             </button>
@@ -342,7 +342,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                 <div className="flex items-center justify-between gap-1">
                   <div className="flex items-center gap-1.5 font-bold text-xs text-text-primary">
                     <PackageCheck className="w-3.5 h-3.5 text-status-open-solid shrink-0" />
-                    <span>3. Delivery Loop</span>
+                    <span>{t('step3Delivery')}</span>
                   </div>
                   {isMissionDelivered && (
                     <span className="text-[9px] font-mono px-1 py-0.5 rounded-xs bg-status-open-solid text-white font-bold shrink-0">
@@ -351,7 +351,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                   )}
                 </div>
                 <p className="text-[10px] text-text-secondary mt-1 leading-snug">
-                  Transit dead-zone, verify handover &amp; restore Kolasib to P4.
+                  {t('step3Desc')}
                 </p>
               </div>
             </button>
@@ -365,14 +365,14 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                 <div className="flex items-center justify-between gap-1">
                   <div className="flex items-center gap-1.5 font-bold text-xs text-text-secondary group-hover:text-text-primary">
                     <RotateCcw className="w-3.5 h-3.5 text-text-secondary group-hover:rotate-180 transition-transform duration-300 shrink-0" />
-                    <span>Reset State</span>
+                    <span>{t('resetState')}</span>
                   </div>
                   <span className="text-[9px] font-mono px-1 py-0.5 rounded-xs bg-surface-subtle text-text-tertiary shrink-0">
                     CLEAN
                   </span>
                 </div>
                 <p className="text-[10px] text-text-tertiary mt-1 leading-snug">
-                  Clear disruptions, restore initial inventory &amp; fleet coordinates.
+                  {t('resetDesc')}
                 </p>
               </div>
             </button>

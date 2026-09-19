@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { DistrictHealth } from '../../types';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   Package,
   HeartPulse,
@@ -19,6 +20,7 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
   districtsHealth,
   onSelectDistrict,
 }) => {
+  const { t } = useTranslation();
   const [targetDays, setTargetDays] = useState<number>(7);
 
   // Compute total stocks below target threshold
@@ -42,7 +44,7 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
           </div>
           <div>
             <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-              Essential Supply Runway &amp; Depletion Forecaster
+              {t('supplyForecasterTitle')}
             </h2>
             <p className="text-[11px] text-text-secondary">
               Macro buffer monitoring across Medical Oxygen, PDS Grains, and POL Fuel
@@ -53,8 +55,8 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
         {/* Target Runway Threshold Slider */}
         <div className="flex items-center gap-2 bg-surface-subtle p-2 rounded-sm border border-border">
           <Sliders className="w-3.5 h-3.5 text-primary" />
-          <span className="text-[11px] text-text-secondary font-medium">Safe Runway Target:</span>
-          <span className="font-mono font-bold text-primary">{targetDays} Days</span>
+          <span className="text-[11px] text-text-secondary font-medium">{t('safeRunwayTarget')}</span>
+          <span className="font-mono font-bold text-primary">{targetDays} {t('days')}</span>
           <input
             type="range"
             min={3}
@@ -74,7 +76,7 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
           <div className="flex items-center justify-between">
             <span className="font-semibold text-text-primary flex items-center gap-1.5">
               <HeartPulse className="w-4 h-4 text-primary" />
-              Medical Oxygen
+              {t('medicalOxygen')}
             </span>
             <span
               className={`px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] ${
@@ -83,7 +85,7 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
                   : 'bg-status-open-tint text-status-open-text'
               }`}
             >
-              {atRiskOxygen.length} Below Target
+              {atRiskOxygen.length} {t('belowTarget')}
             </span>
           </div>
           <p className="text-[11px] text-text-secondary">
@@ -101,7 +103,7 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
           <div className="flex items-center justify-between">
             <span className="font-semibold text-text-primary flex items-center gap-1.5">
               <Wheat className="w-4 h-4 text-amber-500" />
-              PDS Staple Grains
+              {t('pdsStapleGrains')}
             </span>
             <span
               className={`px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] ${
@@ -110,7 +112,7 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
                   : 'bg-status-open-tint text-status-open-text'
               }`}
             >
-              {atRiskRations.length} Below Target
+              {atRiskRations.length} {t('belowTarget')}
             </span>
           </div>
           <p className="text-[11px] text-text-secondary">
@@ -128,7 +130,7 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
           <div className="flex items-center justify-between">
             <span className="font-semibold text-text-primary flex items-center gap-1.5">
               <Fuel className="w-4 h-4 text-sky-500" />
-              POL Petroleum & Fuel
+              {t('polFuel')}
             </span>
             <span
               className={`px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] ${
@@ -137,7 +139,7 @@ export const SupplyForecaster: React.FC<SupplyForecasterProps> = ({
                   : 'bg-status-open-tint text-status-open-text'
               }`}
             >
-              {atRiskFuel.length} Below Target
+              {atRiskFuel.length} {t('belowTarget')}
             </span>
           </div>
           <p className="text-[11px] text-text-secondary">

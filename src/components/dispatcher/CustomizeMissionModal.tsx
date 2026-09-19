@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { ReliefMission, VehicleProfile, CandidateRoute } from '../../types';
 import { VEHICLE_PROFILES } from '../../data/routingNetwork';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   X,
   Truck,
@@ -26,6 +27,7 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
   onClose,
   onDispatch,
 }) => {
+  const { t } = useTranslation();
   const [selectedVehicleType, setSelectedVehicleType] = useState<string>(
     mission.recommendedVehicleType || '4x4 Emergency Van (Medic-01)'
   );
@@ -77,10 +79,10 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-semibold text-text-primary">
-                Customize Relief Mission Manifest &amp; Routing
+                {t('customizeMission')}
               </h3>
               <p className="text-[11px] text-text-secondary">
-                Destination: <strong className="text-text-primary">{mission.communityName}</strong> ({mission.urgency})
+                {t('destination')}: <strong className="text-text-primary">{mission.communityName}</strong> ({mission.urgency})
               </p>
             </div>
           </div>
@@ -99,7 +101,7 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold text-text-primary flex items-center gap-1.5 uppercase tracking-wider">
               <Truck className="w-3.5 h-3.5 text-primary" />
-              <span>Assigned Convoy Vehicle Rig</span>
+              <span>{t('assignedVehicleRig')}</span>
             </label>
             <select
               value={selectedVehicleType}
@@ -117,7 +119,7 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold text-text-primary flex items-center gap-1.5 uppercase tracking-wider">
               <Route className="w-3.5 h-3.5 text-primary" />
-              <span>Transit Corridor (Yen's K-Shortest Detour)</span>
+              <span>{t('transitCorridor')}</span>
             </label>
             <select
               value={selectedRouteId}
@@ -160,7 +162,7 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
             <div className="flex items-center justify-between text-[11px] font-semibold text-text-primary uppercase tracking-wider border-b border-border pb-1">
               <span className="flex items-center gap-1.5">
                 <Package className="w-3.5 h-3.5 text-primary" />
-                <span>Cargo Allocation Manifest</span>
+                <span>{t('cargoManifestTitle')}</span>
               </span>
               <span className="text-[10px] text-primary font-mono">Mission-Tailored</span>
             </div>
@@ -241,7 +243,7 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
             <div className="space-y-1">
               <label className="text-[11px] font-semibold text-text-primary flex items-center gap-1 uppercase">
                 <UserCheck className="w-3 h-3 text-primary" />
-                <span>Assigned Convoy Driver</span>
+                <span>{t('assignedConvoyDriver')}</span>
               </label>
               <input
                 type="text"
@@ -254,7 +256,7 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
             <div className="space-y-1">
               <label className="text-[11px] font-semibold text-text-primary flex items-center gap-1 uppercase">
                 <UserCheck className="w-3 h-3 text-primary" />
-                <span>Lead Field Escort Officer</span>
+                <span>{t('leadFieldOfficer')}</span>
               </label>
               <input
                 type="text"
@@ -272,14 +274,14 @@ export const CustomizeMissionModal: React.FC<CustomizeMissionModalProps> = ({
               onClick={onClose}
               className="px-3 py-2 rounded-sm border border-border text-text-secondary hover:bg-surface-subtle btn-press cursor-pointer"
             >
-              Cancel
+              {t('cancel')}
             </button>
             <button
               type="submit"
               className="px-4 py-2 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white font-semibold rounded-sm flex items-center gap-1.5 btn-press shadow-xs cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Confirm &amp; Launch Convoy</span>
+              <span>{t('confirmAndLaunch')}</span>
             </button>
           </div>
         </form>

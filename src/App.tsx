@@ -1,5 +1,6 @@
 import React from 'react';
 import { PravahStoreProvider, usePravahStore } from './store/usePravahStore';
+import { useTranslation } from './data/uiTranslations';
 import { Header } from './components/layout/Header';
 import { Navigation } from './components/layout/Navigation';
 import { TacticalMapDeck } from './components/gis/TacticalMapDeck';
@@ -16,6 +17,7 @@ import { Analytics } from '@vercel/analytics/react';
 import { AlertOctagon, X } from 'lucide-react';
 
 const AppContent: React.FC = () => {
+  const { t } = useTranslation();
   const {
     activeView,
     activeRole,
@@ -58,7 +60,7 @@ const AppContent: React.FC = () => {
             onClick={() => acknowledgeAlert(unacknowledgedCriticalAlert.id)}
             className="w-full sm:w-auto px-3 py-1.5 rounded-sm bg-white/20 hover:bg-white/30 text-white font-medium sm:ml-4 shrink-0 transition-colors btn-press cursor-pointer text-center text-xs"
           >
-            Acknowledge
+            {t('acknowledge')}
           </button>
         </div>
       )}
