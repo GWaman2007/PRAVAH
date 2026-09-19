@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
+import { useTranslation } from '../../data/uiTranslations';
 import type { ActiveView } from '../../types';
 import {
   Map,
@@ -25,6 +26,7 @@ interface NavItem {
 
 export const Navigation: React.FC = () => {
   const { activeView, setActiveView, activeRole, communities, alerts, incidents, activeMissions } = usePravahStore();
+  const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const p1Count = communities.filter((c) => c.metrics.priorityTier === 'P1').length;
@@ -33,47 +35,47 @@ export const Navigation: React.FC = () => {
   const navItems: NavItem[] = [
     {
       id: 'GIS_COMMAND',
-      label: 'Tactical GIS Command',
-      shortLabel: 'GIS Map',
+      label: t('navGis'),
+      shortLabel: t('navGisShort'),
       icon: Map,
     },
     {
       id: 'MISSIONS',
-      label: 'Missions',
-      shortLabel: 'Missions',
+      label: t('navMissions'),
+      shortLabel: t('navMissions'),
       icon: Truck,
       badge: suggestedCount > 0 ? `${suggestedCount} NEW` : undefined,
     },
     {
       id: 'COMMUNITIES',
-      label: 'Communities',
-      shortLabel: 'Communities',
+      label: t('navCommunities'),
+      shortLabel: t('navCommunities'),
       icon: Users,
       badge: p1Count > 0 ? `${p1Count} P1` : undefined,
     },
     {
       id: 'EXECUTIVE_INFRA',
-      label: 'Infrastructure & BRO Board',
-      shortLabel: 'Infra & BRO',
+      label: t('navInfra'),
+      shortLabel: t('navInfraShort'),
       icon: Building2,
     },
     {
       id: 'GROUND_FEED',
-      label: 'Ground Intel Feed',
-      shortLabel: 'Intel Feed',
+      label: t('navGroundFeed'),
+      shortLabel: t('navGroundFeedShort'),
       icon: MessageSquare,
       badge: incidents.length,
     },
     {
       id: 'BROADCAST_CENTER',
-      label: 'Emergency Broadcasts',
-      shortLabel: 'Broadcasts',
+      label: t('navBroadcast'),
+      shortLabel: t('navBroadcastShort'),
       icon: Radio,
     },
     {
       id: 'MOBILE_COCKPIT',
-      label: 'Field Mission Cockpit',
-      shortLabel: 'Cockpit',
+      label: t('navCockpit'),
+      shortLabel: t('navCockpitShort'),
       icon: Smartphone,
       badge: activeRole === 'DRIVER' || activeRole === 'FIELD_OFFICER' ? 'ACTIVE' : undefined,
     },
@@ -118,7 +120,7 @@ export const Navigation: React.FC = () => {
                 )}
               </div>
               <span className="text-[10px] text-text-secondary block">
-                Tap to switch operational view
+                {t('mobileMenuToggle')}
               </span>
             </div>
           </button>
@@ -129,7 +131,7 @@ export const Navigation: React.FC = () => {
             aria-expanded={mobileMenuOpen}
             aria-label="Toggle navigation menu"
           >
-            <span>{mobileMenuOpen ? 'Close' : 'Views'}</span>
+            <span>{mobileMenuOpen ? t('close') : t('selectLanguage') === 'Language' ? 'Views' : 'মেনি/তালিকা'}</span>
             {mobileMenuOpen ? (
               <X className="w-4 h-4 text-text-secondary" />
             ) : (

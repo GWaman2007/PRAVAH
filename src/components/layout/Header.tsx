@@ -2,6 +2,8 @@ import React from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
 import type { UserRole } from '../../types';
 import { DataStalenessChip } from './DataStalenessChip';
+import { LanguageSwitcher } from './LanguageSwitcher';
+import { useTranslation } from '../../data/uiTranslations';
 import {
   ShieldAlert,
   Radio,
@@ -35,6 +37,8 @@ export const Header: React.FC = () => {
     alerts,
   } = usePravahStore();
 
+  const { t } = useTranslation();
+
   // Macro KPI calculations
   const totalBlockages = incidents.filter((i) => i.severity === 'Total Blockage').length;
   const p1Communities = communities.filter((c) => c.metrics.priorityTier === 'P1').length;
@@ -43,36 +47,36 @@ export const Header: React.FC = () => {
 
   return (
     <div className="bg-surface">
-      {/* Top Banner: Brand, Network Pill, Role Selector, Theme */}
+      {/* Top Banner: Brand, Network Pill, Role Selector, Language Switcher, Theme */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-16">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-2">
           {/* Left: Branding */}
-          <div className="flex items-center gap-3 select-none">
+          <div className="flex items-center gap-2.5 sm:gap-3 select-none min-w-0">
             {/* Emblem Icon */}
             <img 
               src={theme === 'dark' ? '/assets/pravah-logo-white.png' : '/assets/pravah-logo.png'} 
               alt="PRAVAH Emblem" 
-              className="h-10 w-10 object-contain dark:brightness-0 dark:invert drop-shadow-sm flex-shrink-0"
+              className="h-8 w-8 sm:h-10 sm:w-10 object-contain dark:brightness-0 dark:invert drop-shadow-sm flex-shrink-0"
             />
 
             {/* Text Hierarchy */}
-            <div className="flex flex-col justify-center">
-              <div className="flex items-center gap-2 leading-none">
-                <span className="text-xl font-black tracking-tight text-slate-900 dark:text-white font-sans">
+            <div className="flex flex-col justify-center min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 leading-none">
+                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-white font-sans">
                   PRAVAH
                 </span>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide bg-blue-50 text-blue-700 border border-blue-200 dark:bg-slate-800 dark:text-sky-400 dark:border-slate-700/80">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-wide bg-blue-50 text-blue-700 border border-blue-200 dark:bg-slate-800 dark:text-sky-400 dark:border-slate-700/80 shrink-0">
                   MDoNER
                 </span>
               </div>
-              <span className="hidden lg:block text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 whitespace-nowrap">
-                Predictive Resilient Accessibility &amp; Logistics Intelligence Network
+              <span className="hidden lg:block text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 truncate max-w-[420px]">
+                {t('appSubtitle')}
               </span>
             </div>
           </div>
 
           {/* Right Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 ml-auto">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 ml-auto">
             {/* Real-Time Data Staleness Indicator */}
             <DataStalenessChip className="hidden xl:flex shrink-0" />
 
@@ -94,14 +98,14 @@ export const Header: React.FC = () => {
                 <>
                   <Wifi className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500 animate-pulse shrink-0" />
                   <span className="hidden md:inline font-medium">
-                    {isSupabaseConfigured ? 'Supabase Live Cloud' : 'Online / Live Sync'}
+                    {isSupabaseConfigured ? t('liveCloud') : t('onlineLive')}
                   </span>
                 </>
               ) : (
                 <>
                   <WifiOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-status-highrisk-solid shrink-0" />
                   <span className="hidden md:inline font-medium">
-                    Offline Mode ({offlineQueueCount} queued)
+                    {t('offlineMode')} ({offlineQueueCount} {t('queuedOffline')})
                   </span>
                   <span className="md:hidden font-medium text-[10px]">
                     {offlineQueueCount}
@@ -118,22 +122,25 @@ export const Header: React.FC = () => {
                 value={activeRole}
                 onChange={(e) => switchRole(e.target.value as UserRole)}
                 style={{ colorScheme: theme === 'dark' ? 'dark' : 'light' }}
-                className="bg-transparent text-[10px] sm:text-xs font-medium text-text-primary border-none focus:ring-0 cursor-pointer pl-0.5 pr-3 sm:pr-6 py-0.5 sm:py-1 truncate w-full"
+                className="bg-transparent text-[10px] sm:text-xs font-medium text-text-primary border-none focus:ring-0 cursor-pointer pl-0.5 pr-2 sm:pr-6 py-0.5 sm:py-1 truncate max-w-[85px] sm:max-w-none"
               >
                 <option value="SUPER_ADMIN" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
-                  Admin (MDoNER)
+                  {t('roleAdmin')}
                 </option>
                 <option value="FLEET_DISPATCHER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
-                  Dispatcher (Logistics)
+                  {t('roleDispatcher')}
                 </option>
                 <option value="FIELD_OFFICER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
-                  Field Officer (MZ-04)
+                  {t('roleFieldOfficer')}
                 </option>
                 <option value="DRIVER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
-                  Driver (Medic-01)
+                  {t('roleDriver')}
                 </option>
               </select>
             </div>
+
+            {/* Regional Language Switcher */}
+            <LanguageSwitcher />
 
             {/* Theme Toggle: ALWAYS visible with shrink-0 */}
             <button
@@ -158,7 +165,7 @@ export const Header: React.FC = () => {
             <span className="hidden sm:inline truncate max-w-[180px] lg:max-w-none">{userContext.department}</span>
             {userContext.activeMissionId && (
               <span className="px-1.5 py-0.2 rounded-sm bg-primary-tint text-primary font-mono font-medium text-[9px] sm:text-[10px]">
-                Mission {userContext.activeMissionId}
+                {t('missionBadge')} {userContext.activeMissionId}
               </span>
             )}
           </div>
@@ -167,25 +174,25 @@ export const Header: React.FC = () => {
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-4 text-[10px] sm:text-xs pt-1 sm:pt-0 border-t sm:border-t-0 border-border/50">
             <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
               <AlertTriangle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-blocked-solid shrink-0" />
-              <span className="text-text-secondary truncate">Blockages:</span>
+              <span className="text-text-secondary truncate">{t('kpiBlockages')}</span>
               <span className="font-bold text-status-blocked-text ml-auto sm:ml-0">{totalBlockages}</span>
             </div>
 
             <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
               <Flame className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-highrisk-solid shrink-0" />
-              <span className="text-text-secondary truncate">P1 Hubs:</span>
+              <span className="text-text-secondary truncate">{t('kpiP1Hubs')}</span>
               <span className="font-bold text-status-highrisk-text ml-auto sm:ml-0">{p1Communities}</span>
             </div>
 
             <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
               <Truck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-open-solid shrink-0" />
-              <span className="text-text-secondary truncate">Convoys:</span>
+              <span className="text-text-secondary truncate">{t('kpiConvoys')}</span>
               <span className="font-bold text-status-open-text ml-auto sm:ml-0">{activeConvoys}</span>
             </div>
 
             <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
               <Radio className={`w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 ${overdueWatchdogs > 0 ? 'text-status-blocked-solid animate-ping' : 'text-text-tertiary'}`} />
-              <span className="text-text-secondary truncate">Overdue:</span>
+              <span className="text-text-secondary truncate">{t('kpiOverdue')}</span>
               <span className={`font-bold ml-auto sm:ml-0 ${overdueWatchdogs > 0 ? 'text-status-blocked-text' : 'text-text-primary'}`}>
                 {overdueWatchdogs}
               </span>

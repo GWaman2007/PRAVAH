@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
+import { useTranslation } from '../../data/uiTranslations';
 import { CustomizeMissionModal } from '../dispatcher/CustomizeMissionModal';
 import type { ReliefMission } from '../../types';
 import {
@@ -27,6 +28,8 @@ export const MissionsDeck: React.FC = () => {
     setActiveView,
     markMissionDelivered,
   } = usePravahStore();
+
+  const { t } = useTranslation();
 
   const [activeCustomizeMission, setActiveCustomizeMission] = useState<ReliefMission | null>(null);
 
@@ -59,7 +62,7 @@ export const MissionsDeck: React.FC = () => {
             <div className="flex items-center space-x-2">
               <Truck className="w-5 h-5 text-primary shrink-0" />
               <h1 className="text-base sm:text-lg font-semibold text-text-primary">
-                Relief Mission Operations &amp; Convoy Command
+                {t('navMissions')} — Relief Operations &amp; Convoy Command
               </h1>
             </div>
             <p className="mt-1 text-xs text-text-secondary max-w-3xl leading-relaxed">

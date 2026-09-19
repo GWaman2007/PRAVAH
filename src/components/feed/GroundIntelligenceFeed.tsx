@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
+import { useTranslation } from '../../data/uiTranslations';
 import { calculateIncidentConfidence, formatTimeAgo } from '../../engine/offlineSync';
 import { playAckChime, playDispatchPacketSound } from '../../utils/audioAlert';
 import { CorridorFilterBar, type FeedSortOption } from './CorridorFilterBar';
@@ -40,6 +41,8 @@ export const GroundIntelligenceFeed: React.FC = () => {
     flushOfflineQueue,
     isSupabaseConfigured,
   } = usePravahStore();
+
+  const { t } = useTranslation();
 
   const [selectedFlair, setSelectedFlair] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<FeedSortOption>('Hot');
@@ -155,7 +158,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
         <div>
           <h1 className="text-base font-semibold text-text-primary flex items-center space-x-2">
             <MessageSquare className="w-5 h-5 text-primary" />
-            <span>Ground Intelligence & Road Verification Feed</span>
+            <span>{t('navGroundFeed')}</span>
           </h1>
           <div className="flex flex-wrap items-center gap-2 mt-0.5">
             <p className="text-xs text-text-secondary">
@@ -187,7 +190,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
             title="Inspect Offline Queue"
           >
             <Database className="w-4 h-4" />
-            <span>Offline Queue</span>
+            <span>{t('offlineMode')}</span>
             {offlineQueueCount > 0 && (
               <span className="px-1.5 py-0.2 rounded-xs bg-amber-500 text-slate-950 font-mono font-bold text-[10px]">
                 {offlineQueueCount}
@@ -217,7 +220,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
             className="px-3.5 py-2 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white text-xs font-semibold rounded-sm flex items-center justify-center space-x-1.5 btn-press shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Report Roadblock</span>
+            <span>{t('submitGroundReport')}</span>
           </button>
         </div>
       </div>

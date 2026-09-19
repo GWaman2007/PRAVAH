@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
+import { useTranslation } from '../../data/uiTranslations';
 import type { UserRole } from '../../types';
 import {
   CloudRain,
@@ -28,6 +29,8 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
     communities,
     activeView,
   } = usePravahStore();
+
+  const { t } = useTranslation();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentStep, setCurrentStep] = useState<number>(0);
@@ -231,10 +234,10 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
               <div className="flex items-center gap-0.5 sm:gap-1 bg-surface-subtle p-0.5 rounded-sm border border-border">
                 {(
                   [
-                    { role: 'SUPER_ADMIN', label: 'Admin', icon: Shield },
-                    { role: 'FLEET_DISPATCHER', label: 'Dispatch', icon: Radio },
-                    { role: 'FIELD_OFFICER', label: 'Officer', icon: UserCheck },
-                    { role: 'DRIVER', label: 'Driver', icon: Truck },
+                    { role: 'SUPER_ADMIN', label: t('roleAdmin').split(' ')[0], icon: Shield },
+                    { role: 'FLEET_DISPATCHER', label: t('roleDispatcher').split(' ')[0], icon: Radio },
+                    { role: 'FIELD_OFFICER', label: t('roleFieldOfficer').split(' ')[0], icon: UserCheck },
+                    { role: 'DRIVER', label: t('roleDriver').split(' ')[0], icon: Truck },
                   ] as const
                 ).map((r) => {
                   const Icon = r.icon;

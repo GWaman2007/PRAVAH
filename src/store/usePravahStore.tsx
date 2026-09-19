@@ -157,7 +157,9 @@ interface PravahStoreContextType {
   broBottlenecks: BROBottleneck[];
   deployBROAsset: (bottleneckId: string, assetName: string) => void;
 
-  // Multilingual Broadcasts
+  // Multilingual & Global Regional Language
+  currentLanguage: LanguageId;
+  setLanguage: (lang: LanguageId) => void;
   broadcastDrafts: BroadcastDraft[];
   activeBroadcastLanguage: LanguageId;
   setActiveBroadcastLanguage: (lang: LanguageId) => void;
@@ -855,8 +857,34 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     );
   }, []);
 
-  // 10. Multilingual Emergency Broadcasts
-  const [activeBroadcastLanguage, setActiveBroadcastLanguage] = useState<LanguageId>('en');
+  // 10. Multilingual Emergency Broadcasts & Global Interface Language
+  const [currentLanguage, setCurrentLanguage] = useState<LanguageId>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('pravah_language') as LanguageId;
+      if (stored && ['en', 'hi', 'as', 'bn', 'mn'].includes(stored)) {
+        return stored;
+      }
+    }
+    return 'en';
+  });
+
+  const [activeBroadcastLanguage, setActiveBroadcastLanguage] = useState<LanguageId>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('pravah_language') as LanguageId;
+      if (stored && ['en', 'hi', 'as', 'bn', 'mn'].includes(stored)) {
+        return stored;
+      }
+    }
+    return 'en';
+  });
+
+  const setLanguage = useCallback((lang: LanguageId) => {
+    setCurrentLanguage(lang);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pravah_language', lang);
+    }
+    setActiveBroadcastLanguage(lang);
+  }, []);
   const [broadcastDrafts, setBroadcastDrafts] = useState<BroadcastDraft[]>([
     {
       id: 'draft-nh29',
@@ -2251,6 +2279,8 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     districtsHealth,
     broBottlenecks,
     deployBROAsset,
+    currentLanguage,
+    setLanguage,
     broadcastDrafts,
     activeBroadcastLanguage,
     setActiveBroadcastLanguage,

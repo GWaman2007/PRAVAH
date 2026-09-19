@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
+import { useTranslation } from '../../data/uiTranslations';
 import { COMMODITY_CONFIG } from '../../engine/priorityEngine';
 import { NER_SEGMENTS } from '../../data/routingNetwork';
 import type { CommodityType, PriorityTier, CommunityWithCalculation } from '../../types';
@@ -41,6 +42,8 @@ export const CommunitiesDeck: React.FC = () => {
     setSelectedMissionId,
     setSelectedVehicleId,
   } = usePravahStore();
+
+  const { t } = useTranslation();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTier, setFilterTier] = useState<string>('ALL');
@@ -157,7 +160,7 @@ export const CommunitiesDeck: React.FC = () => {
             <div className="flex items-center space-x-2">
               <Users className="w-5 h-5 text-primary shrink-0" />
               <h1 className="text-base sm:text-lg font-semibold text-text-primary">
-                Critical &amp; Cutoff Community Intelligence
+                {t('navCommunities')} — Preemptive Depletion &amp; Cutoff Triage
               </h1>
             </div>
             <p className="mt-1 text-xs text-text-secondary max-w-3xl leading-relaxed">
@@ -196,7 +199,7 @@ export const CommunitiesDeck: React.FC = () => {
           <Search className="w-4 h-4 text-text-secondary absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search community, district, corridor..."
+            placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-surface-subtle border border-border rounded-sm pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-primary"
