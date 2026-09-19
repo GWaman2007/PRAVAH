@@ -81,6 +81,11 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
                       {mission.communityName}
                     </h3>
                   </div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      AI Preemptive Trigger: Window Closing
+                    </span>
+                  </div>
                   <p className="text-[11px] text-text-secondary mt-0.5 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3 text-status-blocked-text shrink-0" />
                     <span>Impending road cutoff. Actionable dispatch window closing!</span>
@@ -146,21 +151,20 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
 
               {/* Action Buttons */}
               {isPending && (
-                <div className="pt-2 flex items-center justify-end gap-2 border-t border-border">
-                  <button
-                    onClick={() => setActiveCustomizeMission(mission)}
-                    className="px-3 py-1.5 rounded-sm border border-border text-text-secondary hover:text-text-primary hover:bg-surface-subtle font-medium flex items-center gap-1.5 btn-press cursor-pointer"
-                  >
-                    <Sliders className="w-3.5 h-3.5 text-primary" />
-                    <span>Edit &amp; Customize</span>
-                  </button>
-
+                <div className="grid grid-cols-2 gap-3 mt-4 w-full">
                   <button
                     onClick={() => onApproveAndDispatch(mission.id)}
-                    className="px-3.5 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white font-semibold rounded-sm flex items-center gap-1.5 btn-press shadow-xs cursor-pointer"
+                    className="h-10 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs shadow-sm transition-colors text-center cursor-pointer btn-press"
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Approve &amp; Dispatch</span>
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span className="leading-tight">1. Approve Mission</span>
+                  </button>
+                  <button
+                    onClick={() => onApproveAndDispatch(mission.id)}
+                    className="h-10 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs shadow-sm transition-colors text-center cursor-pointer btn-press"
+                  >
+                    <Send className="w-4 h-4 shrink-0" />
+                    <span className="leading-tight">Approve &amp; Dispatch</span>
                   </button>
                 </div>
               )}

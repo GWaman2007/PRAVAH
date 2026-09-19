@@ -1894,7 +1894,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       });
 
       channel
-        .on('broadcast', { event: 'INCIDENT_ADDED' }, ({ payload }) => {
+        .on('broadcast', { event: 'INCIDENT_ADDED' }, ({ payload }: any) => {
           if (payload?.incident) {
             setIncidents((prev) => {
               if (prev.some((p) => p.id === payload.incident.id)) return prev;
@@ -1904,7 +1904,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             });
           }
         })
-        .on('broadcast', { event: 'INCIDENT_VOTED' }, ({ payload }) => {
+        .on('broadcast', { event: 'INCIDENT_VOTED' }, ({ payload }: any) => {
           if (payload?.incidentId) {
             setIncidents((prev) => {
               const next = prev.map((p) => {
@@ -1925,7 +1925,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             });
           }
         })
-        .on('broadcast', { event: 'INCIDENT_UPDATE_ADDED' }, ({ payload }) => {
+        .on('broadcast', { event: 'INCIDENT_UPDATE_ADDED' }, ({ payload }: any) => {
           if (payload?.incidentId && payload?.update) {
             setIncidents((prev) => {
               const next = prev.map((p) => {
@@ -1940,7 +1940,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             });
           }
         })
-        .on('broadcast', { event: 'DISRUPTION_UPDATED' }, ({ payload }) => {
+        .on('broadcast', { event: 'DISRUPTION_UPDATED' }, ({ payload }: any) => {
           if (payload?.corridorId) {
             setActiveDisruptions((prev) => {
               const next = { ...prev };
@@ -1954,7 +1954,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             });
           }
         })
-        .on('broadcast', { event: 'COMMUNITY_UPDATED' }, ({ payload }) => {
+        .on('broadcast', { event: 'COMMUNITY_UPDATED' }, ({ payload }: any) => {
           if (payload?.community) {
             setRawCommunities((prev) => {
               const next = prev.map((c) => (c.id === payload.community.id ? payload.community : c));
@@ -1963,7 +1963,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             });
           }
         })
-        .on('broadcast', { event: 'DRIVER_SOS_SIGNAL' }, ({ payload }) => {
+        .on('broadcast', { event: 'DRIVER_SOS_SIGNAL' }, ({ payload }: any) => {
           if (payload?.alert) {
             setAlerts((prev) => [payload.alert, ...prev]);
             if (activeRoleRef.current === 'SUPER_ADMIN' || activeRoleRef.current === 'FLEET_DISPATCHER') {
@@ -1976,7 +1976,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             );
           }
         })
-        .on('broadcast', { event: 'DRIVER_SOS_CANCELLED' }, ({ payload }) => {
+        .on('broadcast', { event: 'DRIVER_SOS_CANCELLED' }, ({ payload }: any) => {
           if (payload?.vehicleId) {
             setVehicles((prev) =>
               prev.map((v) => (v.vehicle_id === payload.vehicleId ? { ...v, is_sos_manual: false, status: 'ON_ROUTE' } : v))

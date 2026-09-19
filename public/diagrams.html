@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project PRAVAH — SIH 2026 Presentation Master Diagrams</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0F172A;
+      --card-bg: #1E293B;
+      --card-border: #334155;
+      --text: #F8FAFC;
+      --text-muted: #94A3B8;
+      --accent: #38BDF8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font);
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem 1.5rem 5rem;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+      padding-bottom: 1.75rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: var(--accent-glow);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: 2.15rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(to right, #F8FAFC, #94A3B8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .nav-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .nav-btn {
+      padding: 0.55rem 1.15rem;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      color: var(--text);
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .nav-btn:hover {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.08);
+      color: var(--accent);
+    }
+
+    .slide-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1rem;
+      margin-bottom: 3rem;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      scroll-margin-top: 2rem;
+    }
+
+    .card-header {
+      padding: 1.25rem 1.75rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .card-title-group {
+      flex: 1;
+    }
+
+    .slide-number {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.2rem;
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #FFFFFF;
+    }
+
+    .card-narrative {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .diagram-stage {
+      background: #FFFFFF;
+      padding: 2.25rem 1.5rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow-x: auto;
+      min-height: 240px;
+    }
+
+    .diagram-stage svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .card-footer {
+      padding: 1.25rem 1.75rem;
+      background: rgba(15, 23, 42, 0.6);
+      border-top: 1px solid var(--card-border);
+    }
+
+    .script-box {
+      background: rgba(56, 189, 248, 0.05);
+      border-left: 3px solid var(--accent);
+      padding: 0.85rem 1.15rem;
+      border-radius: 0.375rem;
+    }
+
+    .script-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin-bottom: 0.3rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .script-text {
+      font-size: 0.95rem;
+      font-style: italic;
+      color: #E2E8F0;
+      line-height: 1.6;
+    }
+
+    .copy-btn {
+      background: var(--bg);
+      color: var(--text-muted);
+      border: 1px solid var(--card-border);
+      padding: 0.45rem 0.85rem;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:hover {
+      color: #FFFFFF;
+      border-color: var(--accent);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: #0284C7;
+      color: #FFFFFF;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      font-size: 0.875rem;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s ease;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <span class="badge">SIH 2026 • PS ID: 26002 (MDoNER)</span>
+      <h1>Project PRAVAH — Presentation Master Diagrams</h1>
+      <p class="subtitle">Harmonizing the Master Solution Architecture with the Live Working Prototype into four 5-second glance presentation slides.</p>
+      <div class="nav-tabs">
+        <a href="#slide-1" class="nav-btn">Slide 1: Core Solution</a>
+        <a href="#slide-2" class="nav-btn">Slide 2: 3-Role Workflow</a>
+        <a href="#slide-3" class="nav-btn">Slide 3: 5-Engine Intelligence</a>
+        <a href="#slide-4" class="nav-btn">Slide 4: Resilient Architecture</a>
+      </div>
+    </header>
+
+    <!-- Slide 1 -->
+    <div id="slide-1" class="slide-card">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="slide-number">Slide 1 • 5-Second Solution Overview</div>
+          <div class="card-title">The Disruption-to-Decision Loop</div>
+          <div class="card-narrative">Connecting physical road failure to medical supply depletion & pre-emptive bypass dispatch.</div>
+        </div>
+        <button class="copy-btn" onclick="copyMermaid('code-1')">Copy Code</button>
+      </div>
+      <div class="diagram-stage">
+        <div class="mermaid" id="code-1">
+flowchart LR
+    A["🌧️ Heavy Rain<br/>& Landslides Hit"] --> B["💥 Bridge Blocked<br/>Road Cut Off"]
+    B --> C["🏥 Remote Clinic<br/>Medicine Drops &lt;12h"]
+    C --> D["🧠 PRAVAH Re-evaluates<br/>Prunes Trucks, Picks 4x4"]
+    D --> E["🚚 Safe Detour Dispatched<br/>Supplies Saved"]
+
+    style A fill:#E0F2FE,stroke:#0284C7,stroke-width:2px,color:#0F172A
+    style B fill:#FEE2E2,stroke:#DC2626,stroke-width:2px,color:#0F172A
+    style C fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#0F172A
+    style D fill:#EEF2FF,stroke:#4F46E5,stroke-width:2px,color:#0F172A
+    style E fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#0F172A
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="script-box">
+          <div class="script-label">🎙️ Presenter Script (15s Pitch Cue)</div>
+          <div class="script-text">"When a mountain bridge washes out, the real emergency isn't the roadblock—it is the remote clinic that runs out of antivenom 12 hours later. PRAVAH connects road failures directly to hospital supply depletion, instantly prunes out heavy trucks that can't pass, and dispatches a feasible 4x4 bypass before lives are lost."</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 2 -->
+    <div id="slide-2" class="slide-card">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="slide-number">Slide 2 • Operational Workflow & Roles (Doc Sec 17 & 35)</div>
+          <div class="card-title">Three Roles, One Operational Loop</div>
+          <div class="card-narrative">Unified command chain with human-in-the-loop authorization and closed-loop delivery confirmation.</div>
+        </div>
+        <button class="copy-btn" onclick="copyMermaid('code-2')">Copy Code</button>
+      </div>
+      <div class="diagram-stage">
+        <div class="mermaid" id="code-2">
+flowchart TD
+    subgraph StateCommand ["🏛️ State / Ministry Command (Web)"]
+        S1["Monitors 28-District<br/>Accessibility Health"] --> S2["Receives Critical Alert:<br/>Kolasib Medicine Depleting"]
+    end
+
+    subgraph LogisticsDispatch ["📋 District Logistics Hub (Web Dispatcher)"]
+        D1["Reviews Alternate Corridors<br/>& Vehicle Clearances"] --> D2["Approves Pre-positioned<br/>4x4 Mission Package"]
+    end
+
+    subgraph FieldConvoy ["🚚 Field Driver & Ground Team (Offline PWA)"]
+        F1["Downloads Mission Cache<br/>Enters Mountain Blackout"] --> F2["Reports Blocked Pass Offline<br/>Takes Photo & Voice Memo"]
+        F2 --> F3["Delivers Life-Saving Cargo<br/>One-Tap Proof of Delivery"]
+    end
+
+    S2 --> D1
+    D2 --> F1
+    F3 -.->|Auto-Syncs When Online| S1
+
+    style StateCommand fill:#F8FAFC,stroke:#0284C7,stroke-width:2px,color:#0F172A
+    style LogisticsDispatch fill:#F8FAFC,stroke:#4F46E5,stroke-width:2px,color:#0F172A
+    style FieldConvoy fill:#F8FAFC,stroke:#16A34A,stroke-width:2px,color:#0F172A
+
+    style S1 fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px,color:#0F172A
+    style S2 fill:#FEE2E2,stroke:#DC2626,stroke-width:1.5px,color:#0F172A
+    style D1 fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#0F172A
+    style D2 fill:#EEF2FF,stroke:#4F46E5,stroke-width:1.5px,color:#0F172A
+    style F1 fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#0F172A
+    style F2 fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,color:#0F172A
+    style F3 fill:#DCFCE7,stroke:#15803D,stroke-width:2px,color:#0F172A
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="script-box">
+          <div class="script-label">🎙️ Presenter Script (15s Pitch Cue)</div>
+          <div class="script-text">"State commanders spot district shortages from above, logistics dispatchers approve feasible routes with a single click, and mountain drivers continue operating fully offline in cellular blackouts. When they confirm delivery, the loop closes and the target district's alert level drops back to safe."</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 3 -->
+    <div id="slide-3" class="slide-card">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="slide-number">Slide 3 • The Technical Intelligence Engines (Doc Sec 5 to 11)</div>
+          <div class="card-title">The 5-Engine Intelligence Chain</div>
+          <div class="card-narrative">Separation of predictive ML risk, dynamic depletion mathematics, and vehicle clearance pruning.</div>
+        </div>
+        <button class="copy-btn" onclick="copyMermaid('code-3')">Copy Code</button>
+      </div>
+      <div class="diagram-stage">
+        <div class="mermaid" id="code-3">
+flowchart TD
+    subgraph Step1 ["1. Live Network & Hazard Signals"]
+        E1["Dynamic Road Graph<br/>Open / Restricted / Blocked"]
+        E2["Predictive Risk Engine<br/>Rainfall + ISRO Landslide Hazard"]
+    end
+
+    subgraph Step2 ["2. Impact Propagation & Priority"]
+        E3["Impact Propagation<br/>Which Roads & Clinics Cut Off?"]
+        E4["Dynamic Priority Engine<br/>Medicine Burn Rate & Stockout Horizon"]
+        E1 & E2 --> E3 --> E4
+    end
+
+    subgraph Step3 ["3. Decision & Vehicle Pruning"]
+        E5["Physical Vehicle Filter<br/>Reject Overweight / Tall Trucks"]
+        E6["Risk-Aware K-Shortest Route<br/>Bypass High-Hazard Corridors"]
+        E4 --> E5 --> E6
+    end
+
+    subgraph Step4 ["4. Mission & Feedback Loop"]
+        M1["Executable Mission Package<br/>ETA, Safe Path & Checkpoints"]
+        M2["Closed-Loop Recalculation<br/>Live GPS Telemetry & Delivery"]
+        E6 --> M1 --> M2
+        M2 -.->|State Mutates| E1
+    end
+
+    style Step1 fill:#EFF6FF,stroke:#3B82F6,stroke-width:1.5px,color:#0F172A
+    style Step2 fill:#FFFBEB,stroke:#F59E0B,stroke-width:1.5px,color:#0F172A
+    style Step3 fill:#FEF2F2,stroke:#EF4444,stroke-width:1.5px,color:#0F172A
+    style Step4 fill:#F0FDF4,stroke:#22C55E,stroke-width:1.5px,color:#0F172A
+
+    style E1 fill:#FFFFFF,stroke:#3B82F6,stroke-width:1.5px,color:#0F172A
+    style E2 fill:#FFFFFF,stroke:#3B82F6,stroke-width:1.5px,color:#0F172A
+    style E3 fill:#FFFFFF,stroke:#F59E0B,stroke-width:1.5px,color:#0F172A
+    style E4 fill:#FFFFFF,stroke:#F59E0B,stroke-width:1.5px,color:#0F172A
+    style E5 fill:#FFFFFF,stroke:#EF4444,stroke-width:1.5px,color:#0F172A
+    style E6 fill:#FFFFFF,stroke:#EF4444,stroke-width:1.5px,color:#0F172A
+    style M1 fill:#FFFFFF,stroke:#22C55E,stroke-width:1.5px,color:#0F172A
+    style M2 fill:#FFFFFF,stroke:#22C55E,stroke-width:2px,color:#0F172A
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="script-box">
+          <div class="script-label">🎙️ Presenter Script (15s Pitch Cue)</div>
+          <div class="script-text">"Our architecture keeps machine learning and operational rules cleanly separated. ML predicts road cut-off probability, graph algorithms evaluate the cascading supply damage, and our decision engine rejects vehicles too heavy for mountain bridges to deliver a guaranteed safe mission."</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 4 -->
+    <div id="slide-4" class="slide-card">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="slide-number">Slide 4 • Resilient System Architecture (Doc Sec 19, 21 & 30)</div>
+          <div class="card-title">Central Intelligence with Offline Edge Resilience</div>
+          <div class="card-narrative">Enterprise cloud intelligence coupled with an offline-first mobile edge built for mountain blackouts.</div>
+        </div>
+        <button class="copy-btn" onclick="copyMermaid('code-4')">Copy Code</button>
+      </div>
+      <div class="diagram-stage">
+        <div class="mermaid" id="code-4">
+flowchart TB
+    subgraph WebLayer ["🖥️ Central Web Command (Connected)"]
+        W1["Interactive GIS Deck<br/>Leaflet & PostGIS Layers"]
+        W2["State Logistics Dashboard<br/>28-District Supply Monitor"]
+    end
+
+    subgraph CloudEngines ["☁️ Central PRAVAH Intelligence"]
+        C1["Dynamic Graph Routing Engine"]
+        C2["Community Stockout Forecaster"]
+        C3["Event Stream & Disruption Broker"]
+    end
+
+    subgraph ExternalData ["🌐 External Integration Adapters"]
+        X1["Open-Meteo Weather Stream"]
+        X2["ISRO Bhuvan Landslide Data"]
+    end
+
+    subgraph EdgeLayer ["📱 Rugged Field PWA (Offline-First Edge)"]
+        M1["Driver Navigation & HUD"]
+        M2["Local IndexedDB Offline Queue"]
+        M3["Voice & Camera Incident Logger"]
+    end
+
+    WebLayer <--> CloudEngines
+    ExternalData --> CloudEngines
+    CloudEngines <-->|When Online| EdgeLayer
+    M1 <--> M2
+    M3 --> M2
+
+    style WebLayer fill:#F1F5F9,stroke:#475569,stroke-width:2px,color:#0F172A
+    style CloudEngines fill:#EEF2FF,stroke:#4F46E5,stroke-width:2px,color:#0F172A
+    style ExternalData fill:#FFFBEB,stroke:#D97706,stroke-width:2px,color:#0F172A
+    style EdgeLayer fill:#ECFDF5,stroke:#059669,stroke-width:2px,color:#0F172A
+
+    style W1 fill:#FFFFFF,stroke:#475569,stroke-width:1.5px,color:#0F172A
+    style W2 fill:#FFFFFF,stroke:#475569,stroke-width:1.5px,color:#0F172A
+    style C1 fill:#FFFFFF,stroke:#4F46E5,stroke-width:1.5px,color:#0F172A
+    style C2 fill:#FFFFFF,stroke:#4F46E5,stroke-width:1.5px,color:#0F172A
+    style C3 fill:#FFFFFF,stroke:#4F46E5,stroke-width:1.5px,color:#0F172A
+    style X1 fill:#FFFFFF,stroke:#D97706,stroke-width:1.5px,color:#0F172A
+    style X2 fill:#FFFFFF,stroke:#D97706,stroke-width:1.5px,color:#0F172A
+    style M1 fill:#FFFFFF,stroke:#059669,stroke-width:1.5px,color:#0F172A
+    style M2 fill:#FFFFFF,stroke:#059669,stroke-width:2px,color:#0F172A
+    style M3 fill:#FFFFFF,stroke:#059669,stroke-width:1.5px,color:#0F172A
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="script-box">
+          <div class="script-label">🎙️ Presenter Script (15s Pitch Cue)</div>
+          <div class="script-text">"PRAVAH combines centralized macro intelligence with a rugged edge client. Central servers process heavy spatial predictions and external weather streams, while field teams retain cached mission maps and report blocked passes securely into local flash storage until connectivity returns."</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Mermaid code copied to clipboard!</div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        curve: 'basis'
+      }
+    });
+
+    function copyMermaid(elementId) {
+      const el = document.getElementById(elementId);
+      if (!el) return;
+      const text = el.innerText || el.textContent;
+      navigator.clipboard.writeText(text.trim()).then(() => {
+        showToast();
+      });
+    }
+
+    function showToast() {
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2500);
+    }
+  </script>
+</body>
+</html>

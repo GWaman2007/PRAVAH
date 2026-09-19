@@ -314,11 +314,11 @@ export const TacticalMapDeck: React.FC = () => {
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
-    map.on('error', (e) => {
+    map.on('error', (e: any) => {
       console.warn('MapLibre operational event:', e);
     });
 
-    map.on('styleimagemissing', (e) => {
+    map.on('styleimagemissing', (e: any) => {
       const id = e.id;
       if (!map.hasImage(id)) {
         const width = 1;

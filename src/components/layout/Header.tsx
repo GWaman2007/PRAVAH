@@ -11,6 +11,7 @@ import {
   Moon,
   Truck,
   Users,
+  User,
   AlertTriangle,
   Flame,
   CheckCircle,
@@ -64,18 +65,18 @@ export const Header: React.FC = () => {
                   MDoNER
                 </span>
               </div>
-              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 whitespace-nowrap">
+              <span className="hidden lg:block text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 whitespace-nowrap">
                 Predictive Resilient Accessibility &amp; Logistics Intelligence Network
               </span>
             </div>
           </div>
 
           {/* Right Controls */}
-          <div className="flex items-center space-x-1 sm:space-x-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 ml-auto">
             {/* Real-Time Data Staleness Indicator */}
-            <DataStalenessChip className="hidden xs:flex" />
+            <DataStalenessChip className="hidden xl:flex shrink-0" />
 
-            {/* Network / Offline PWA Status Pill */}
+            {/* Sync Status: Compact badge on small screens */}
             <button
               onClick={toggleSimulatedOffline}
               title={
@@ -83,7 +84,7 @@ export const Header: React.FC = () => {
                   ? "Connected to Supabase Cloud Database & Realtime Bus. Click to toggle simulated offline mountain dead-zone mode."
                   : "Running local/offline mode. Connect Supabase to sync across devices on Vercel. Click to toggle simulated offline."
               }
-              className={`flex items-center space-x-1 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-sm text-[11px] sm:text-xs font-medium border transition-colors btn-press cursor-pointer shrink-0 ${
+              className={`shrink-0 flex items-center gap-1.5 px-2 py-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs font-medium border transition-colors btn-press cursor-pointer ${
                 isOnline
                   ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
                   : 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
@@ -91,35 +92,32 @@ export const Header: React.FC = () => {
             >
               {isOnline ? (
                 <>
-                  <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-open-solid animate-pulse" />
-                  <span className="font-medium hidden sm:inline">
+                  <Wifi className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500 animate-pulse shrink-0" />
+                  <span className="hidden md:inline font-medium">
                     {isSupabaseConfigured ? 'Supabase Live Cloud' : 'Online / Live Sync'}
-                  </span>
-                  <span className="font-medium sm:hidden text-[10px]">
-                    {isSupabaseConfigured ? 'Cloud Live' : 'Live'}
                   </span>
                 </>
               ) : (
                 <>
-                  <WifiOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-highrisk-solid" />
-                  <span className="font-medium hidden sm:inline">
+                  <WifiOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-status-highrisk-solid shrink-0" />
+                  <span className="hidden md:inline font-medium">
                     Offline Mode ({offlineQueueCount} queued)
                   </span>
-                  <span className="font-medium sm:hidden text-[10px]">
-                    Off ({offlineQueueCount})
+                  <span className="md:hidden font-medium text-[10px]">
+                    {offlineQueueCount}
                   </span>
                 </>
               )}
             </button>
 
-            {/* Persistent Role Switcher / Demo Simulator */}
-            <div className="flex items-center bg-surface-subtle border border-border px-1 py-0.5 rounded-sm max-w-[95px] sm:max-w-none">
-              <Users className="w-3 h-3 text-text-secondary ml-0.5 shrink-0 hidden sm:inline" />
+            {/* Admin Profile Pill / Role Switcher: Collapse label on mobile */}
+            <div className="flex items-center gap-1 bg-surface-subtle border border-border px-1.5 sm:px-2 py-1 rounded-lg shrink-0">
+              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-text-secondary shrink-0" />
               <select
                 aria-label="Select User Role Simulator"
                 value={activeRole}
                 onChange={(e) => switchRole(e.target.value as UserRole)}
-                className="bg-transparent text-[10px] sm:text-xs font-medium text-text-primary border-none focus:ring-0 cursor-pointer pl-0.5 pr-3 sm:pr-6 py-0.5 sm:py-1 truncate w-full"
+                className="bg-transparent text-xs font-medium text-text-primary border-none focus:ring-0 cursor-pointer py-0.5 pl-0.5 pr-2 sm:pr-4 truncate max-w-[75px] sm:max-w-none"
               >
                 <option value="SUPER_ADMIN">Admin (MDoNER)</option>
                 <option value="FLEET_DISPATCHER">Dispatcher (Logistics)</option>
@@ -128,14 +126,14 @@ export const Header: React.FC = () => {
               </select>
             </div>
 
-            {/* Theme Toggle */}
+            {/* Theme Toggle: ALWAYS visible with shrink-0 */}
             <button
               id="theme-toggle-btn"
               onClick={toggleTheme}
-              aria-label="Toggle light or dark theme"
-              className="p-1 sm:p-2 rounded-sm border border-border bg-surface text-text-secondary hover:text-text-primary hover:bg-surface-subtle transition-colors btn-press cursor-pointer shrink-0"
+              aria-label="Toggle Theme"
+              className="shrink-0 p-2 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 dark:border-slate-700 dark:bg-slate-800/80 dark:hover:bg-slate-700 transition-colors btn-press cursor-pointer"
             >
-              {theme === 'dark' ? <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" /> : <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#1B4B73]" />}
+              {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-sky-400" />}
             </button>
           </div>
         </div>

@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Truck,
   PackageCheck,
+  Send,
 } from 'lucide-react';
 
 interface ExplainabilityPanelProps {
@@ -230,6 +231,42 @@ export const ExplainabilityPanel: React.FC<ExplainabilityPanelProps> = ({
             </button>
           </div>
         </div>
+
+        {/* AI Preemptive Trigger: Window Closing Card */}
+        {community.metrics.actionableDispatchWindow <= 6 && (
+          <div className="p-3 bg-status-blocked-tint/30 border border-status-blocked-solid/50 rounded-sm space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-status-blocked-text flex items-center gap-1.5 text-xs">
+                <AlertTriangle className="w-3.5 h-3.5 text-status-blocked-solid shrink-0" />
+                AI Preemptive Trigger: Window Closing
+              </span>
+              <span className="font-mono text-[10px] text-status-blocked-text font-bold">
+                {community.metrics.actionableDispatchWindow > 0
+                  ? `${community.metrics.actionableDispatchWindow.toFixed(1)}h Remaining`
+                  : 'CUTOFF BREACHED'}
+              </span>
+            </div>
+            <p className="text-[11px] text-text-secondary leading-snug">
+              Impending road cutoff. Actionable dispatch window closing before mountain corridor severed.
+            </p>
+            <div className="grid grid-cols-2 gap-3 mt-4 w-full">
+              <button
+                onClick={() => onRestock(community.id)}
+                className="h-10 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs shadow-sm transition-colors text-center cursor-pointer btn-press"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span className="leading-tight">1. Approve Mission</span>
+              </button>
+              <button
+                onClick={() => onRestock(community.id)}
+                className="h-10 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs shadow-sm transition-colors text-center cursor-pointer btn-press"
+              >
+                <Send className="w-4 h-4 shrink-0" />
+                <span className="leading-tight">Approve &amp; Dispatch</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Emergency Replenishment CTA */}
         <button

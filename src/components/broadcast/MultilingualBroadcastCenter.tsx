@@ -24,6 +24,10 @@ import {
   CheckCircle2,
   Languages,
   Sparkles,
+  Globe2,
+  BookA,
+  Navigation2,
+  MountainSnow,
 } from 'lucide-react';
 
 export const MultilingualBroadcastCenter: React.FC = () => {
@@ -285,6 +289,24 @@ export const MultilingualBroadcastCenter: React.FC = () => {
                     const isSelected = activeBroadcastLanguage === lang.id;
                     const isVoicePlayingThis = isPlayingAudio && playingLangId === lang.id;
 
+                    const renderLanguageIcon = (langId: LanguageId) => {
+                      const iconClass = `w-5 h-5 ${isSelected ? 'text-white' : 'text-sky-500 dark:text-sky-400'}`;
+                      switch (langId) {
+                        case 'en':
+                          return <Globe2 className={iconClass} strokeWidth={1.75} />;
+                        case 'hi':
+                          return <BookA className={iconClass} strokeWidth={1.75} />;
+                        case 'as':
+                          return <Navigation2 className={iconClass} strokeWidth={1.75} />;
+                        case 'bn':
+                          return <Radio className={iconClass} strokeWidth={1.75} />;
+                        case 'mn':
+                          return <MountainSnow className={iconClass} strokeWidth={1.75} />;
+                        default:
+                          return <Languages className={iconClass} strokeWidth={1.75} />;
+                      }
+                    };
+
                     return (
                       <button
                         key={lang.id}
@@ -296,13 +318,15 @@ export const MultilingualBroadcastCenter: React.FC = () => {
                             setPlayingLangId(null);
                           }
                         }}
-                        className={`p-2.5 rounded-sm border flex flex-col items-center justify-center space-y-1 transition-all btn-press ${
+                        className={`p-2.5 rounded-sm border flex flex-col items-center justify-center space-y-1.5 transition-all btn-press ${
                           isSelected
                             ? 'border-primary bg-[#1B4B73] dark:bg-[#2E6B9E] text-white shadow-xs'
                             : 'border-border bg-surface-subtle hover:bg-surface text-text-primary'
                         } ${isVoicePlayingThis ? 'ring-2 ring-amber-400 animate-pulse' : ''}`}
                       >
-                        <span className="text-base">{lang.flag}</span>
+                        <div className="flex items-center justify-center h-6 w-6">
+                          {renderLanguageIcon(lang.id)}
+                        </div>
                         <span className="font-semibold text-xs">{lang.name}</span>
                         <span className="text-[10px] opacity-80">{lang.nativeName}</span>
                       </button>
