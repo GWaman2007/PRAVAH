@@ -98,6 +98,41 @@
     outline-offset: 2px;
   }
 
+  /* Native Form Controls Color Scheme & Accessibility (WCAG AA/AAA Contrast) */
+  :root {
+    color-scheme: light;
+  }
+
+  html.dark,
+  .dark {
+    color-scheme: dark;
+  }
+
+  select,
+  input,
+  textarea {
+    color-scheme: light;
+  }
+
+  .dark select,
+  .dark input,
+  .dark textarea {
+    color-scheme: dark;
+  }
+
+  /* Explicit high-contrast rendering for native select dropdown options on all OS/browsers */
+  select option,
+  select optgroup {
+    background-color: #FFFFFF;
+    color: #1A1D1F;
+  }
+
+  .dark select option,
+  .dark select optgroup {
+    background-color: #1B1F23;
+    color: #F1F2F3;
+  }
+
   /* Touch Target minimums for mobile actions (Section 8) */
   .touch-target {
     min-height: 44px;
