@@ -1,5 +1,5 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-import type { Incident, SegmentIncident, AlertEvent, CommunityBase } from '../types';
+import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission } from '../types';
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const supabasePublishableKey = (
@@ -390,3 +390,129 @@ export async function upsertCloudCommunity(community: CommunityBase): Promise<bo
     return false;
   }
 }
+
+/**
+ * Cloud Relief Missions API
+ */
+export async function fetchCloudMissions(): Promise<ReliefMission[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from('missions').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch missions:', error.message);
+      return null;
+    }
+    if (!data || data.length === 0) return null;
+
+    return data.map((row: any) => ({
+      id: row.id,
+      communityId: row.community_id || row.communityId,
+      communityName: row.community_name || row.communityName,
+      recommendedVehicleType: row.recommended_vehicle_type || row.recommendedVehicleType,
+      cargoAllocations: Array.isArray(row.cargo_allocations) ? row.cargo_allocations : (row.cargoAllocations || []),
+      assignedRouteId: row.assigned_route_id || row.assignedRouteId,
+      suggestedDetour: row.suggested_detour || row.suggestedDetour || '',
+      status: row.status,
+      urgency: row.urgency,
+      createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+      dispatchedAt: row.dispatched_at || row.dispatchedAt,
+      deliveredAt: row.delivered_at || row.deliveredAt,
+      assignedDriver: row.assigned_driver || row.assignedDriver,
+      assignedOfficer: row.assigned_officer || row.assignedOfficer,
+      originWarehouseId: row.origin_warehouse_id || row.originWarehouseId || 'silchar',
+      originWarehouseName: row.origin_warehouse_name || row.originWarehouseName || 'Silchar Strategic Depot',
+      originCoords: Array.isArray(row.origin_coords) ? row.origin_coords : [24.8333, 92.7789],
+      disasterZoneId: row.disaster_zone_id || row.disasterZoneId || 'LHZ-MZ-01',
+      disasterZoneName: row.disaster_zone_name || row.disasterZoneName || 'Disaster Operational Target',
+      destinationEndpoint: Array.isArray(row.destination_endpoint) ? row.destination_endpoint : [24.257, 92.729],
+      destinationName: row.destination_name || row.destinationName || 'Relief Target',
+      assignedVehicleId: row.assigned_vehicle_id || row.assignedVehicleId,
+      routeDistanceKm: row.route_distance_km ? Number(row.route_distance_km) : undefined,
+      routeDurationMinutes: row.route_duration_minutes ? Number(row.route_duration_minutes) : undefined,
+      routeStatus: row.route_status || row.routeStatus,
+      routeGeometry: Array.isArray(row.route_geometry) ? row.route_geometry : undefined,
+    }));
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching missions:', err);
+    return null;
+  }
+}
+
+export async function upsertCloudMission(mission: ReliefMission): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: mission.id,
+      community_id: mission.communityId,
+      community_name: mission.communityName,
+      recommended_vehicle_type: mission.recommendedVehicleType,
+      cargo_allocations: mission.cargoAllocations,
+      assigned_route_id: mission.assignedRouteId,
+      suggested_detour: mission.suggestedDetour,
+      status: mission.status,
+      urgency: mission.urgency,
+      created_at: mission.createdAt,
+      dispatched_at: mission.dispatchedAt || null,
+      delivered_at: mission.deliveredAt || null,
+      assigned_driver: mission.assignedDriver || null,
+      assigned_officer: mission.assignedOfficer || null,
+      origin_warehouse_id: mission.originWarehouseId,
+      origin_warehouse_name: mission.originWarehouseName,
+      origin_coords: mission.originCoords,
+      disaster_zone_id: mission.disasterZoneId,
+      disaster_zone_name: mission.disasterZoneName,
+      destination_endpoint: mission.destinationEndpoint,
+      destination_name: mission.destinationName,
+      assigned_vehicle_id: mission.assignedVehicleId || null,
+      route_distance_km: mission.routeDistanceKm || null,
+      route_duration_minutes: mission.routeDurationMinutes || null,
+      route_status: mission.routeStatus || null,
+      route_geometry: mission.routeGeometry || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('missions').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert mission error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting mission:', err);
+    return false;
+  }
+}
+
+export function broadcastCloudMissionDispatched(mission: ReliefMission, vehicleId?: string): void {
+  const channel = getRealtimeChannel();
+  if (channel) {
+    channel.send({
+      type: 'broadcast',
+      event: 'MISSION_DISPATCHED',
+      payload: { mission, vehicleId: vehicleId || mission.assignedVehicleId },
+    });
+  }
+}
+
+export function broadcastCloudMissionApproved(missionId: string): void {
+  const channel = getRealtimeChannel();
+  if (channel) {
+    channel.send({
+      type: 'broadcast',
+      event: 'MISSION_APPROVED',
+      payload: { missionId },
+    });
+  }
+}
+
+export function broadcastCloudMissionDelivered(missionId: string, vehicleId?: string, deliveredAt?: string): void {
+  const channel = getRealtimeChannel();
+  if (channel) {
+    channel.send({
+      type: 'broadcast',
+      event: 'MISSION_DELIVERED',
+      payload: { missionId, vehicleId, deliveredAt: deliveredAt || new Date().toISOString() },
+    });
+  }
+}
+

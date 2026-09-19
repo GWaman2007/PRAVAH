@@ -47,6 +47,7 @@ import {
 import {
   isSupabaseConfigured,
   supabase,
+  getRealtimeChannel,
   fetchCloudIncidents,
   upsertCloudIncident,
   voteCloudIncident,
@@ -55,6 +56,11 @@ import {
   upsertCloudDisruption,
   fetchCloudCommunities,
   upsertCloudCommunity,
+  fetchCloudMissions,
+  upsertCloudMission,
+  broadcastCloudMissionDispatched,
+  broadcastCloudMissionApproved,
+  broadcastCloudMissionDelivered,
   broadcastCloudSOS,
   cancelCloudSOS,
 } from '../engine/supabaseClient';
@@ -354,6 +360,51 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [isOnline, offlineQueue]);
 
+  const flushOfflineQueue = useCallback(() => {
+    const queue = getOfflineQueue();
+    const count = queue.length;
+    if (count === 0) return { syncedCount: 0, details: [] };
+    const details = queue.map((item) => `${item.title} (${item.corridorFlair})`);
+
+    // 1. Update incidents state and mark as SYNCED
+    setIncidents((prev) => {
+      const merged = prev.map((p) => {
+        const matched = queue.find((q) => q.id === p.id);
+        return matched ? { ...p, sync_status: 'SYNCED' as const } : p;
+      });
+      queue.forEach((q) => {
+        if (!merged.some((m) => m.id === q.id)) {
+          merged.unshift({ ...q, sync_status: 'SYNCED' as const });
+        }
+      });
+      persistIncidents(merged);
+      return merged;
+    });
+
+    // 2. Synchronize each queued item to Supabase Cloud DB & broadcast
+    queue.forEach((item) => {
+      const syncedItem: Incident = { ...item, sync_status: 'SYNCED' };
+      if (isSupabaseConfigured) {
+        upsertCloudIncident(syncedItem);
+        const matchedCorridor = item.location.corridorId || 'SEG-SIL-KOL';
+        upsertCloudDisruption(matchedCorridor, {
+          status: item.severity === 'Total Blockage' ? ('TOTAL_BLOCKAGE' as const) : ('SINGLE_LANE_PASSABLE' as const),
+          cause: item.incidentType,
+          description: item.title,
+          reportedBy: `${item.author.name} (${item.author.role})`,
+        });
+      }
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('SUBMIT_INCIDENT', syncedItem);
+      }
+    });
+
+    clearOfflineQueue();
+    setOfflineQueue([]);
+    setLastDataSyncTime(Date.now());
+    return { syncedCount: count, details };
+  }, []);
+
   const toggleSimulatedOffline = useCallback(() => {
     setIsSimulatedOffline((prev) => {
       const next = !prev;
@@ -363,34 +414,30 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       } else {
         setLastOfflineTransitionTime(null);
         setLastDataSyncTime(Date.now());
+        // Automatically flush queue when coming back online
+        setTimeout(() => {
+          flushOfflineQueue();
+        }, 150);
       }
       return next;
     });
-  }, []);
+  }, [flushOfflineQueue]);
 
-  const flushOfflineQueue = useCallback(() => {
-    const queue = getOfflineQueue();
-    const count = queue.length;
-    if (count === 0) return { syncedCount: 0, details: [] };
-    const details = queue.map((item) => `${item.title} (${item.corridorFlair})`);
-    setIncidents((prev) => {
-      const synced = queue.map((item) => ({
-        ...item,
-        sync_status: 'SYNCED' as const,
-      }));
-      const merged = [...synced, ...prev.filter((p) => !queue.some((q) => q.id === p.id))];
-      persistIncidents(merged);
-      return merged;
-    });
-    queue.forEach((item) => {
-      if (socketRef.current?.connected) {
-        socketRef.current.emit('SUBMIT_INCIDENT', item);
-      }
-    });
-    clearOfflineQueue();
-    setOfflineQueue([]);
-    return { syncedCount: count, details };
-  }, []);
+  // Auto-flush queue whenever actual browser network comes online
+  useEffect(() => {
+    const handleBrowserOnline = () => {
+      setIsSimulatedOffline(false);
+      localStorage.setItem(STORAGE_KEYS.SIMULATED_OFFLINE, 'false');
+      setLastOfflineTransitionTime(null);
+      setLastDataSyncTime(Date.now());
+      setTimeout(() => {
+        flushOfflineQueue();
+      }, 200);
+    };
+
+    window.addEventListener('online', handleBrowserOnline);
+    return () => window.removeEventListener('online', handleBrowserOnline);
+  }, [flushOfflineQueue]);
 
   // 5. GIS, Weather & Routing
   const [originHub, setOriginHub] = useState<string>('guwahati');
@@ -944,6 +991,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (!isOnline) {
       queueIncidentOffline(newIncident);
       setOfflineQueue((q) => [...q, newIncident]);
+      // Also display immediately in local feed as PENDING sync
+      setIncidents((prev) => {
+        const next = [newIncident, ...prev];
+        persistIncidents(next);
+        return next;
+      });
       return;
     }
 
@@ -1262,15 +1315,50 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       },
       ...prev,
     ]);
+
+    // 5. Update Mission state to DELIVERED
+    let deliveredMission: ReliefMission | undefined;
+    setActiveMissions((prev) => {
+      const next = prev.map((m) => {
+        if (m.communityId === communityId || m.assignedVehicleId === targetVehId) {
+          deliveredMission = {
+            ...m,
+            status: 'DELIVERED' as const,
+            deliveredAt: new Date().toISOString(),
+          };
+          return deliveredMission;
+        }
+        return m;
+      });
+      persistMissions(next);
+      return next;
+    });
+
+    if (isSupabaseConfigured && deliveredMission) {
+      upsertCloudMission(deliveredMission);
+      broadcastCloudMissionDelivered(deliveredMission.id, targetVehId, deliveredMission.deliveredAt);
+    }
   }, []);
 
   // 13. Mission Dispatch & Customization
   const approveMission = useCallback((missionId: string) => {
-    setActiveMissions((prev) =>
-      prev.map((m) =>
-        m.id === missionId ? { ...m, status: 'APPROVED' } : m
-      )
-    );
+    let targetMission: ReliefMission | undefined;
+    setActiveMissions((prev) => {
+      const next = prev.map((m) => {
+        if (m.id === missionId) {
+          targetMission = { ...m, status: 'APPROVED' as const };
+          return targetMission;
+        }
+        return m;
+      });
+      persistMissions(next);
+      return next;
+    });
+
+    if (isSupabaseConfigured && targetMission) {
+      upsertCloudMission(targetMission);
+      broadcastCloudMissionApproved(missionId);
+    }
   }, []);
 
   const dispatchMission = useCallback((missionId: string, vehicleId?: string) => {
@@ -1285,18 +1373,23 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const destName = targetMission?.destinationName || targetMission?.communityName || 'Disaster Operational Target';
 
     // 2. Transition mission to IN_TRANSIT with confirmed vehicle assignment
-    setActiveMissions((prev) =>
-      prev.map((m) =>
-        m.id === missionId
-          ? {
+    let updatedMission: ReliefMission | undefined;
+    setActiveMissions((prev) => {
+      const next = prev.map((m) => {
+        if (m.id === missionId) {
+          updatedMission = {
             ...m,
-            status: 'IN_TRANSIT',
+            status: 'IN_TRANSIT' as const,
             assignedVehicleId: assignedVehId,
             dispatchedAt: new Date().toISOString(),
-          }
-          : m
-      )
-    );
+          };
+          return updatedMission;
+        }
+        return m;
+      });
+      persistMissions(next);
+      return next;
+    });
 
     // 3. Immediately focus and select dispatched mission and vehicle
     setSelectedMissionId(missionId);
@@ -1388,6 +1481,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ...prev,
     ]);
 
+    // 6. Supabase Cloud DB Persistence & Realtime Broadcast
+    if (isSupabaseConfigured && updatedMission) {
+      upsertCloudMission(updatedMission);
+      broadcastCloudMissionDispatched(updatedMission, assignedVehId);
+    }
+
     if (socketRef.current?.connected) {
       socketRef.current.emit('DISPATCH_MISSION', { missionId, vehicleId: assignedVehId });
     }
@@ -1399,9 +1498,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [approveMission, dispatchMission]);
 
   const customizeMission = useCallback((mission: ReliefMission) => {
-    setActiveMissions((prev) =>
-      prev.map((m) => (m.id === mission.id ? mission : m))
-    );
+    setActiveMissions((prev) => {
+      const next = prev.map((m) => (m.id === mission.id ? mission : m));
+      persistMissions(next);
+      return next;
+    });
+    if (isSupabaseConfigured) {
+      upsertCloudMission(mission);
+    }
     approveAndDispatchMission(mission.id);
   }, [approveAndDispatchMission]);
 
@@ -1884,12 +1988,26 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
-    // 2. Realtime Broadcast Channel Listener
-    // Create a dedicated channel for this effect lifecycle to avoid
-    // "tried to join multiple times" errors on React StrictMode / HMR re-mounts
+    fetchCloudMissions().then((cloudMissions) => {
+      if (cloudMissions && cloudMissions.length > 0) {
+        setActiveMissions((prev) => {
+          const cloudMap = new Map(cloudMissions.map((m) => [m.id, m]));
+          const merged = prev.map((m) => cloudMap.get(m.id) || m);
+          cloudMissions.forEach((cm) => {
+            if (!merged.some((m) => m.id === cm.id)) {
+              merged.push(cm);
+            }
+          });
+          persistMissions(merged);
+          return merged;
+        });
+      }
+    });
+
+    // 2. Realtime Broadcast Channel Listener on shared global bus
     let channel: ReturnType<typeof supabase.channel> | null = null;
     try {
-      channel = supabase.channel(`pravah-global-bus-${Date.now()}`, {
+      channel = supabase.channel('pravah-global-bus', {
         config: { broadcast: { ack: true } },
       });
 
@@ -1961,6 +2079,77 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
               persistCommunities(next);
               return next;
             });
+          }
+        })
+        .on('broadcast', { event: 'MISSION_DISPATCHED' }, ({ payload }) => {
+          if (payload?.mission) {
+            const { mission, vehicleId } = payload;
+            setActiveMissions((prev) => {
+              const next = prev.map((m) => (m.id === mission.id ? { ...m, ...mission } : m));
+              if (!next.some((m) => m.id === mission.id)) {
+                next.push(mission);
+              }
+              persistMissions(next);
+              return next;
+            });
+            if (vehicleId) {
+              setVehicles((prev) =>
+                prev.map((v) =>
+                  v.vehicle_id === vehicleId
+                    ? {
+                        ...v,
+                        status: 'ON_ROUTE',
+                        mission_id: mission.id,
+                        assigned_route_id: mission.assignedRouteId,
+                        destination_name: mission.destinationName,
+                      }
+                    : v
+                )
+              );
+            }
+            setAlerts((prev) => [
+              {
+                id: `dispatch-${Date.now()}`,
+                vehicle_id: vehicleId || mission.assignedVehicleId || 'Convoy',
+                vehicle_name: vehicleId || mission.assignedVehicleId || 'Convoy',
+                cargo_type: mission.cargoAllocations?.[0]?.item || 'Relief Consignment',
+                timestamp: new Date().toISOString(),
+                severity: 'INFO',
+                type: 'WATCHDOG_OVERDUE_AMBER',
+                title: `MISSION DISPATCH CONFIRMED: ${mission.id} Active`,
+                message: `Convoy unit ${vehicleId} deployed to ${mission.destinationName}. Live multi-device tracking active.`,
+                coords: mission.originCoords || [24.83, 92.77],
+                acknowledged: false,
+              },
+              ...prev,
+            ]);
+          }
+        })
+        .on('broadcast', { event: 'MISSION_APPROVED' }, ({ payload }) => {
+          if (payload?.missionId) {
+            setActiveMissions((prev) => {
+              const next = prev.map((m) => (m.id === payload.missionId ? { ...m, status: 'APPROVED' as const } : m));
+              persistMissions(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'MISSION_DELIVERED' }, ({ payload }) => {
+          if (payload?.missionId) {
+            setActiveMissions((prev) => {
+              const next = prev.map((m) =>
+                m.id === payload.missionId
+                  ? { ...m, status: 'DELIVERED' as const, deliveredAt: payload.deliveredAt || new Date().toISOString() }
+                  : m
+              );
+              persistMissions(next);
+              return next;
+            });
+            if (payload?.vehicleId) {
+              setVehicles((prev) =>
+                prev.map((v) => (v.vehicle_id === payload.vehicleId ? { ...v, status: 'DELIVERED_COMPLETED' as const, speed_kmh: 0 } : v))
+              );
+            }
           }
         })
         .on('broadcast', { event: 'DRIVER_SOS_SIGNAL' }, ({ payload }) => {
