@@ -117,12 +117,21 @@ export const Header: React.FC = () => {
                 aria-label="Select User Role Simulator"
                 value={activeRole}
                 onChange={(e) => switchRole(e.target.value as UserRole)}
-                className="bg-transparent text-xs font-medium text-text-primary border-none focus:ring-0 cursor-pointer py-0.5 pl-0.5 pr-2 sm:pr-4 truncate max-w-[75px] sm:max-w-none"
+                style={{ colorScheme: theme === 'dark' ? 'dark' : 'light' }}
+                className="bg-transparent text-[10px] sm:text-xs font-medium text-text-primary border-none focus:ring-0 cursor-pointer pl-0.5 pr-3 sm:pr-6 py-0.5 sm:py-1 truncate w-full"
               >
-                <option value="SUPER_ADMIN">Admin (MDoNER)</option>
-                <option value="FLEET_DISPATCHER">Dispatcher (Logistics)</option>
-                <option value="FIELD_OFFICER">Field Officer (MZ-04)</option>
-                <option value="DRIVER">Driver (Medic-01)</option>
+                <option value="SUPER_ADMIN" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
+                  Admin (MDoNER)
+                </option>
+                <option value="FLEET_DISPATCHER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
+                  Dispatcher (Logistics)
+                </option>
+                <option value="FIELD_OFFICER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
+                  Field Officer (MZ-04)
+                </option>
+                <option value="DRIVER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
+                  Driver (Medic-01)
+                </option>
               </select>
             </div>
 

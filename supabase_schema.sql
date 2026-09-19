@@ -299,3 +299,204 @@ ON CONFLICT (id) DO UPDATE SET
   inventories = EXCLUDED.inventories,
   updated_at = NOW();
 
+-- =========================================================================
+-- 7. Missions Table (Preemptive Relief Missions, Approvals & Dispatches)
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.missions (
+  id TEXT PRIMARY KEY,
+  community_id TEXT NOT NULL,
+  community_name TEXT NOT NULL,
+  recommended_vehicle_type TEXT,
+  cargo_allocations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  assigned_route_id TEXT NOT NULL,
+  suggested_detour TEXT,
+  status TEXT NOT NULL DEFAULT 'SUGGESTED',
+  urgency TEXT NOT NULL DEFAULT 'P1_CRITICAL',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  dispatched_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ,
+  assigned_driver TEXT,
+  assigned_officer TEXT,
+  origin_warehouse_id TEXT,
+  origin_warehouse_name TEXT,
+  origin_coords JSONB,
+  disaster_zone_id TEXT,
+  disaster_zone_name TEXT,
+  destination_endpoint JSONB,
+  destination_name TEXT,
+  assigned_vehicle_id TEXT,
+  route_distance_km NUMERIC,
+  route_duration_minutes NUMERIC,
+  route_status TEXT,
+  route_geometry JSONB,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read access to missions" ON public.missions
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow public insert to missions" ON public.missions
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow public update to missions" ON public.missions
+  FOR UPDATE USING (true);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.missions;
+
+-- Seed Initial Missions (Active In-Transit & Suggested Queue)
+INSERT INTO public.missions (
+  id, community_id, community_name, recommended_vehicle_type, cargo_allocations,
+  assigned_route_id, suggested_detour, status, urgency, created_at, dispatched_at,
+  assigned_driver, assigned_officer, origin_warehouse_id, origin_warehouse_name,
+  origin_coords, disaster_zone_id, disaster_zone_name, destination_endpoint,
+  destination_name, assigned_vehicle_id
+)
+VALUES
+(
+  'MISSION-MZ-04',
+  'MZ-KOL-004',
+  'Kolasib East (Mission MZ-04 Target)',
+  'Medic-01 (4x4 Emergency Van)',
+  '[{"item": "IV Fluids (Ringer Lactate)", "quantity": 350, "unit": "Bags"}, {"item": "Polyvalent Snake Antivenom", "quantity": 60, "unit": "Vials"}, {"item": "Emergency Suture & Burn Kits", "quantity": 45, "unit": "Kits"}]'::jsonb,
+  'ROUTE-MZ-04',
+  'NH-306 Bilkhawthlir Escarpment Spur',
+  'IN_TRANSIT',
+  'P1_CRITICAL',
+  NOW() - INTERVAL '60 minutes',
+  NOW() - INTERVAL '35 minutes',
+  'Rajesh Mech (+91 94350-18492)',
+  'Insp. L. Hmar (Mizoram Police)',
+  'silchar',
+  'Silchar Strategic Depot',
+  '[24.8333, 92.7789]'::jsonb,
+  'LHZ-MZ-01',
+  'NH-306 Bilkhawthlir Hill Escarpment',
+  '[24.25708, 92.72921]'::jsonb,
+  'Bilkhawthlir Escarpment Relief Post',
+  'Medic-01'
+),
+(
+  'MISSION-MZ-02',
+  'MZ-KOL-002',
+  'Bilkhawthlir Silt Ground Station',
+  'Cargo-01 (Heavy Cargo Truck)',
+  '[{"item": "Trauma Dressing & Splints", "quantity": 120, "unit": "Sets"}, {"item": "Oral Rehydration Salts", "quantity": 500, "unit": "Packets"}, {"item": "Portable Oxygen Concentrators", "quantity": 4, "unit": "Units"}]'::jsonb,
+  'ROUTE-MZ-02',
+  'NH-306 Silt Diversion',
+  'IN_TRANSIT',
+  'P1_CRITICAL',
+  NOW() - INTERVAL '55 minutes',
+  NOW() - INTERVAL '25 minutes',
+  'Malsawma Lushai (+91 98620-11234)',
+  'Sub-Insp. Z. Ralte',
+  'silchar',
+  'Silchar Strategic Depot',
+  '[24.8333, 92.7789]'::jsonb,
+  'HAZARD-01',
+  'Bilkhawthlir Silt Subsidence Zone',
+  '[24.2571, 92.7314]'::jsonb,
+  'Bilkhawthlir Silt Ground Station',
+  'Cargo-01'
+),
+(
+  'MISSION-AS-03',
+  'AS-HAF-003',
+  'Barail Range Clearance Sector',
+  'Engineer-01 (Engineering Vehicle)',
+  '[{"item": "Hydraulic Cutting Tools", "quantity": 6, "unit": "Kits"}, {"item": "High-Tensile Tow Cables", "quantity": 200, "unit": "Meters"}, {"item": "Fuel Drums (Diesel)", "quantity": 20, "unit": "Barrels"}]'::jsonb,
+  'ROUTE-AS-03',
+  'NH-27 Barail S-Curve',
+  'IN_TRANSIT',
+  'P2_ELEVATED',
+  NOW() - INTERVAL '75 minutes',
+  NOW() - INTERVAL '40 minutes',
+  'Anand Das (+91 94351-77890)',
+  'Maj. S. Saikia (BRO Project Pushpak)',
+  'silchar',
+  'Silchar Strategic Depot',
+  '[24.8333, 92.7789]'::jsonb,
+  'LHZ-AS-01',
+  'Barail Hill Cut Clearance',
+  '[25.1742, 93.0215]'::jsonb,
+  'Haflong Ridge Transit Post',
+  'Engineer-01'
+),
+(
+  'MISSION-SUG-01',
+  'MZ-KOL-004',
+  'Kolasib East (Mission MZ-04 Target)',
+  'Medic-04 (Light Rescue 4x4)',
+  '[{"item": "Water Purification Tablets", "quantity": 5000, "unit": "Tabs"}, {"item": "Emergency Tents & Ground Tarps", "quantity": 30, "unit": "Units"}]'::jsonb,
+  'ROUTE-SUG-01',
+  'NH-306 Upper Vairengte Spur',
+  'SUGGESTED',
+  'P1_CRITICAL',
+  NOW() - INTERVAL '15 minutes',
+  NULL,
+  'Duty Dispatch Driver',
+  'BRO Liaison Officer',
+  'silchar',
+  'Silchar Strategic Depot',
+  '[24.8333, 92.7789]'::jsonb,
+  'DISASTER-01',
+  'Kolasib Sector Outskirts',
+  '[24.2300, 92.6850]'::jsonb,
+  'Kolasib Community Clinic',
+  'Medic-04'
+),
+(
+  'MISSION-SUG-02',
+  'NL-KOH-009',
+  'Kohima South Sector (Phesama)',
+  'Rescue-02 (Heavy Tow & Recovery)',
+  '[{"item": "High-Lift Air Bags (20T)", "quantity": 4, "unit": "Kits"}, {"item": "Portable Generator Sets (5kW)", "quantity": 2, "unit": "Units"}]'::jsonb,
+  'ROUTE-SUG-02',
+  'NH-29 Bypass Ascending Ridge',
+  'SUGGESTED',
+  'P1_CRITICAL',
+  NOW() - INTERVAL '20 minutes',
+  NULL,
+  'Duty Dispatch Driver',
+  'Nagaland Police Liaison',
+  'dimapur',
+  'Dimapur Railhead',
+  '[25.9095, 93.7266]'::jsonb,
+  'DISASTER-02',
+  'Phesama Rockfall Bottleneck',
+  '[25.6450, 94.1150]'::jsonb,
+  'Phesama Forward Field Post',
+  'Rescue-02'
+),
+(
+  'MISSION-SUG-03',
+  'ML-SHL-001',
+  'Shillong Central Hub',
+  'Supply-04 (All-Terrain 10T Consignment)',
+  '[{"item": "High-Energy Nutritional Biscuits", "quantity": 2000, "unit": "kg"}, {"item": "Emergency Solar Lanterns", "quantity": 100, "unit": "Units"}]'::jsonb,
+  'ROUTE-SUG-03',
+  'NH-6 Umkiang Bypass',
+  'SUGGESTED',
+  'P2_ELEVATED',
+  NOW() - INTERVAL '10 minutes',
+  NULL,
+  'Duty Dispatch Driver',
+  'Meghalaya Civil Defence',
+  'guwahati',
+  'Guwahati Regional Hub',
+  '[26.1445, 91.7362]'::jsonb,
+  'DISASTER-03',
+  'Shillong Relief Reserve',
+  '[25.5788, 91.8933]'::jsonb,
+  'Shillong Emergency Store',
+  'Supply-04'
+)
+ON CONFLICT (id) DO UPDATE SET
+  status = EXCLUDED.status,
+  assigned_vehicle_id = EXCLUDED.assigned_vehicle_id,
+  dispatched_at = EXCLUDED.dispatched_at,
+  delivered_at = EXCLUDED.delivered_at,
+  updated_at = NOW();
+
+

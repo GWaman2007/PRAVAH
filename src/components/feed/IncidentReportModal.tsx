@@ -19,6 +19,11 @@ import {
   Radio,
   Volume2,
   AlertTriangle,
+  MapPin,
+  Locate,
+  Crosshair,
+  RefreshCw,
+  CheckCircle2,
 } from 'lucide-react';
 import { compressImageToJpeg, type CompressionResult } from '../../utils/imageCompression';
 
@@ -58,6 +63,55 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [compressionStats, setCompressionStats] = useState<CompressionResult | null>(null);
   const [isCompressing, setIsCompressing] = useState<boolean>(false);
+
+  // GPS Geolocation state
+  const [capturedCoords, setCapturedCoords] = useState<[number, number] | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [isManualCoords, setIsManualCoords] = useState<boolean>(false);
+
+  const handleAcquireGps = () => {
+    setGpsError(null);
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setGpsError('Geolocation is not supported by your browser or device.');
+      return;
+    }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = Number(position.coords.latitude.toFixed(5));
+        const lng = Number(position.coords.longitude.toFixed(5));
+        const acc = Math.round(position.coords.accuracy);
+        setCapturedCoords([lat, lng]);
+        setGpsAccuracy(acc);
+        setIsLocating(false);
+        setGpsError(null);
+        if (!formLocationName.trim()) {
+          setFormLocationName(`GPS Fix [${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E]`);
+        }
+      },
+      (err) => {
+        console.warn('Geolocation capture failed:', err);
+        setIsLocating(false);
+        let msg = 'Failed to acquire satellite location.';
+        if (err.code === 1) {
+          msg = 'GPS permission denied. Please allow location access in your browser settings.';
+        } else if (err.code === 2) {
+          msg = 'GPS signal unavailable. Ensure your device location/GPS is active.';
+        } else if (err.code === 3) {
+          msg = 'GPS acquisition timed out. Try again or enter coordinates manually.';
+        }
+        setGpsError(msg);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 15000,
+      }
+    );
+  };
 
   // Web Speech API state
   const [isListening, setIsListening] = useState<boolean>(false);
@@ -167,6 +221,11 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
       setSpeechError(null);
       setInterimTranscript('');
       setIsListening(false);
+      setCapturedCoords(null);
+      setGpsAccuracy(null);
+      setIsLocating(false);
+      setGpsError(null);
+      setIsManualCoords(false);
       if (initialInputMethod === 'VOICE') {
         setTimeout(() => {
           startListening();
@@ -198,14 +257,17 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
     e.preventDefault();
     if (!formTitle.trim() || !formLocationName.trim()) return;
 
+    const finalLat = capturedCoords ? capturedCoords[0] : defaultCoords[0];
+    const finalLng = capturedCoords ? capturedCoords[1] : defaultCoords[1];
+
     addIncident({
       title: formTitle.trim(),
       corridorFlair: formCorridor,
       incidentType: formType,
       severity: formSeverity,
       location: {
-        lat: defaultCoords[0],
-        lng: defaultCoords[1],
+        lat: finalLat,
+        lng: finalLng,
         placeName: formLocationName.trim(),
         corridorId: defaultCorridorId,
       },
@@ -545,6 +607,107 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
               placeholder="e.g. Near Pagla Pahar waterfall KM-144"
               className="w-full p-2 bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
             />
+          </div>
+
+          {/* GPS Coordinates & Field Geolocation Card */}
+          <div className="p-3 bg-surface-subtle border border-border rounded-sm space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 font-semibold text-text-primary text-[11px]">
+                <MapPin className="w-3.5 h-3.5 text-primary" />
+                <span>Geotag &amp; Device GPS Coordinates</span>
+              </div>
+              {capturedCoords && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                  <span>GPS Fix Captured</span>
+                </span>
+              )}
+            </div>
+
+            {capturedCoords ? (
+              <div className="bg-surface p-2.5 rounded-xs border border-emerald-500/40 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Crosshair className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div>
+                      <span className="font-mono font-bold text-text-primary text-[11px]">
+                        {capturedCoords[0].toFixed(5)}° N, {capturedCoords[1].toFixed(5)}° E
+                      </span>
+                      {gpsAccuracy !== null && (
+                        <span className="ml-2 text-[10px] text-text-tertiary font-mono">
+                          (±{gpsAccuracy}m precision)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAcquireGps}
+                    disabled={isLocating}
+                    className="flex items-center gap-1 text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLocating ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                {isManualCoords && (
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/50 text-xs">
+                    <div>
+                      <label className="text-[10px] text-text-secondary block font-medium">Latitude:</label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={capturedCoords[0]}
+                        onChange={(e) => setCapturedCoords([parseFloat(e.target.value) || 0, capturedCoords[1]])}
+                        className="w-full p-1 bg-surface border border-border rounded-xs text-[11px] font-mono text-text-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-text-secondary block font-medium">Longitude:</label>
+                      <input
+                        type="number"
+                        step="0.00001"
+                        value={capturedCoords[1]}
+                        onChange={(e) => setCapturedCoords([capturedCoords[0], parseFloat(e.target.value) || 0])}
+                        className="w-full p-1 bg-surface border border-border rounded-xs text-[11px] font-mono text-text-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsManualCoords(!isManualCoords)}
+                  className="text-[10px] text-text-secondary hover:text-text-primary transition-colors underline cursor-pointer"
+                >
+                  {isManualCoords ? 'Hide Manual Inputs' : 'Edit Coordinates Manually'}
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-surface p-2.5 rounded-xs border border-border">
+                <div className="text-[11px] text-text-secondary">
+                  <span>No live GPS fix captured. Default: corridor reference centroid.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAcquireGps}
+                  disabled={isLocating}
+                  className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-xs text-xs font-semibold flex items-center justify-center gap-1.5 btn-press cursor-pointer shrink-0 transition-colors"
+                >
+                  <Locate className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin' : ''}`} />
+                  <span>{isLocating ? 'Acquiring GPS Fix...' : 'Acquire Current GPS Location'}</span>
+                </button>
+              </div>
+            )}
+
+            {gpsError && (
+              <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-xs text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+                <span>{gpsError}</span>
+              </div>
+            )}
           </div>
 
           <div className="p-2.5 rounded-sm bg-surface-subtle border border-border flex items-center justify-between text-[11px]">

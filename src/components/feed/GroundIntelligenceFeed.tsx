@@ -317,11 +317,16 @@ export const GroundIntelligenceFeed: React.FC = () => {
                       <h2 className="text-sm font-semibold text-text-primary">
                         {inc.title}
                       </h2>
-                      <div className="flex items-center space-x-3 mt-1 text-xs">
+                      <div className="flex flex-wrap items-center gap-2 mt-1 text-xs">
                         <span className="flex items-center space-x-1 text-text-secondary">
-                          <MapPin className="w-3.5 h-3.5 text-primary" />
+                          <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                           <span>{inc.location.placeName}</span>
                         </span>
+                        {inc.location.lat && inc.location.lng && (
+                          <span className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.2 rounded-xs bg-surface-subtle border border-border text-text-tertiary">
+                            <span>GPS: {inc.location.lat.toFixed(4)}°N, {inc.location.lng.toFixed(4)}°E</span>
+                          </span>
+                        )}
                         <span
                           className={`px-2 py-0.5 text-[10px] font-bold rounded-sm border ${
                             inc.severity === 'Total Blockage'
