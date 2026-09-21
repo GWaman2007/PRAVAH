@@ -1,176 +1,223 @@
-# PRAVAH — Comprehensive Codebase & Architecture Audit Report
-
-**Target**: SIH 2026 Problem Statement ID: 26002 (MDoNER)  
-**Platform**: AI-Based Smart Logistics and Accessibility Intelligence Platform for North Eastern Region (NER)  
-**Evaluator**: Senior Systems Architect, Geospatial AI Engineer & Lead UI/UX Accessibility Specialist  
-**Evaluated Repository**: `pravah-ner-logistics@1.0.0`  
-**Production Build Status**: Verified Clean (`tsc -b && vite build` — 0 errors; `test_all_engines.mjs` — 54/54 Integration Tests Passing, 100%).
+# PRAVAH Platform Audit & Technical Reality Check
+**Analysis of Hardcoded Artifacts vs. Real-World Implementations & Production Roadmap**
 
 ---
 
-## 1. PS & Architecture Alignment Matrix
+## 1. Executive Summary
 
-| PS Requirement (MDoNER PS 26002)                                 | PRAVAH Architectural Specification                                                                                              | Current Prototype Implementation Status | File / Component Reference                                                                                     | Gap Severity |
-| :--------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ | :-------------------------------------- | :------------------------------------------------------------------------------------------------------------- | :----------- |
-| **Real-time Road, Bridge & Transport Accessibility Monitoring**  | Live GIS topological graph with dynamic edge attributes (clearance, gradient, surface, ISRO Bhuvan LHZ)                         | **Implemented**                         | `src/engine/routingEngine.ts`<br/>`src/components/gis/TacticalMapDeck.tsx`<br/>`src/data/routingNetwork.ts`    | **Low**      |
-| **AI/ML Predictive Disruption Engine**                           | Real-time weather ingestion (precipitation 0–65 mm/h) + ISRO LHZ matrix + incident severity speed degradation model             | **Implemented**                         | `src/engine/openMeteoService.ts`<br/>`src/engine/routingEngine.ts`                                             | **Low**      |
-| **Risk-Aware Alternate Routing & Delay Estimation**              | Yen's K-Shortest Path (K=5) with physical vehicle constraint pruning & multi-criteria safety scoring                            | **Implemented**                         | `src/engine/routingEngine.ts:findKShortestPaths`<br/>`src/engine/routingEngine.ts:evaluateAndRankPaths`        | **Low**      |
-| **GPS Telemetry Integration & Dead-Reckoning in Valleys**        | GPS tracking + IMU dead-reckoning polyline extrapolation in cellular blackout shadow zones + Watchdog SLA (>0m Amber, >30m Red) | **Implemented**                         | `src/engine/telemetryEngine.ts`<br/>`src/data/fleetData.ts`                                                    | **Low**      |
-| **Automated P0–P3 Multi-Tier Alert Engine**                      | Geo-fenced breach, blackout transition, stationary in hazard zone, route deviation (>500m), and stockout alerts                 | **Implemented**                         | `src/engine/telemetryEngine.ts`<br/>`src/App.tsx`                                                              | **Low**      |
-| **Field Reporting Module with Geo-Tagging & Verification**       | Citizen crowdsourcing with Reddit-style upvoting + Officer Multiplier (I_officer \* 10) auto-cascading to road network state    | **Partially Implemented**               | `src/components/feed/GroundIntelligenceFeed.tsx`<br/>`src/engine/offlineSync.ts`                               | **Med**      |
-| **Central Command Dashboards: District Index & Green Corridors** | 28-District Accessibility Health Index, Days-of-Supply runway, and BRO deployment queues                                        | **Implemented**                         | `src/components/executive/ExecutiveInfrastructureDeck.tsx`<br/>`src/components/executive/SupplyForecaster.tsx` | **Low**      |
-| **Multilingual Accessibility & Zero-Network Sync**               | 5 NER languages (EN, HI, AS, BN, MN), procedural Web Audio synthesizers, and true offline PWA persistence                       | **Partially Implemented**               | `src/components/broadcast/MultilingualBroadcastCenter.tsx`<br/>`src/engine/offlineSync.ts`                     | **High**     |
-| **Local SLM (Gemma) Structuring Vernacular Voice/Text**          | In-browser / on-device local SLM parser for vernacular audio/voice transcripts into structured incident JSON                    | **Missing**                             | Scaffolded as mock 3s timer in `src/components/feed/GroundIntelligenceFeed.tsx`                                | **High**     |
-
-### Explicit Verification Findings
-
-#### 1. Is the Graph Model Dynamic?
-
-**YES (with a specific architectural nuance)**.
-
-- In `src/store/usePravahStore.tsx`, `candidateRoutes` is reactive: whenever `activeDisruptions`, `rainfallMmHr`, or `selectedVehicle` mutate, `evaluateAndRankPaths` re-runs immediately.
-- In `evaluateSegment` (`src/engine/routingEngine.ts`), a total road blockage dynamically triggers `hardConstraintFailures`, sets `isPassable = false`, and marks the corridor as dashed red (`rank: 99`). A single-lane restriction injects a 1.95x speed penalty.
-- _Architectural Nuance_: In `src/engine/routingEngine.ts:dijkstra`, Dijkstra's initial search uses `segment.distance_km` as its base weight before pruning. Yen's spur paths explore alternate topology, but calculating base edge cost as dynamic impedance during Dijkstra itself would find more resilient bypasses when multiple primary segments are impaired.
-
-#### 2. Is the Community Priority Score Functional or Mock Data?
-
-**GENUINELY FUNCTIONAL & MATHEMATICALLY RIGOROUS**.
-
-- `calculateCompositePriority` (`src/engine/priorityEngine.ts`) implements the exact formula:
-  $$\text{Base Score} = 0.45 \cdot R_{\text{iso}} + 0.35 \cdot S_{\text{def}} + 0.20 \cdot I_{\text{vuln}}$$
-  $$\text{Urgency Boost} = +0.20 \quad \text{if } S_{\text{def}} \ge 0.75 \text{ and } T_{\text{window}} \le 3.0\text{h}$$
-- Continuous inventory depletion runs dynamically against elapsed hours ($\Delta t$):
-  $$S_t = \max(0, S_{\text{last}} - \text{Hourly Burn} \cdot \Delta t)$$
-  with a 1.4x monsoon medical surge multiplier applied to IV fluids and antivenom.
-- **Closed-Loop Ground Truth**: Executing `markMissionDelivered('MZ-KOL-004')` resets $\Delta t = 0$, restocks commodities to 100%, drops $S_{\text{def}} \to 0.0$, and immediately flips Kolasib East from **P1 Critical (0.941) to P4 Nominal (0.280)**.
-
-#### 3. Does Vehicle Suitability Actively Prune Incompatible Vehicles?
-
-**YES**.
-
-- In `evaluateSegment` (`src/engine/routingEngine.ts`), physical hard constraints are strictly enforced:
-  - If `vehicle.weight_tonnes > segment.max_weight_limit` -> Route fails with load limit violation.
-  - If `vehicle.height_m > segment.max_height_limit` -> Route fails with tunnel clearance violation.
-  - If `vehicle.width_m > segment.max_width_limit` -> Route fails with narrow pass violation.
-- When selecting the **Heavy Oxygen Cryo-Tanker (32T)**, routes crossing rural Bailey bridges rated for 18T are marked `isPassable: false`, with failure details attached to `failureBottleneck`.
+| Category | Implementation Status | Technical Details |
+| :--- | :--- | :--- |
+| **Mathematical & Algorithmic Engines** | **100% Real & Custom** | Multi-factor routing with Yen’s K-shortest paths, depletion run-rate countdowns, geospatial calculations (Ray-casting, Haversine, Cross-track), and Bayesian-style trust scoring. |
+| **Live External APIs** | **Real with Graceful Simulation Fallbacks** | Open-Meteo Live Precipitation API, GDACS Global Disaster Alert GeoJSON, OpenFreeMap Vector Basemaps, Web Speech Synthesis & AudioContext siren synthesizers. |
+| **Cloud Persistence & WebSockets** | **Real (Hybrid Fallback)** | Full Supabase PostgreSQL schema with Row-Level Security (RLS) and Realtime Channels, alongside an offline-first browser `localStorage` engine and an Express/Socket.io fallback server. |
+| **Highway Network & Road Geometry** | **Curated Real-World Data** | Real North East India National Highways (NH-29, NH-10, NH-27, NH-306, NH-6, NH-37) with 3.4 MB of genuine OSRM GPS polylines, ISRO Bhuvan LHZ parameters, and realistic physical limits. |
+| **Convoy Tracking & Operations** | **Semi-Simulated Physics Loop** | Interpolation along polylines, dead-zone extrapolation, and watchdog triggers are calculated dynamically. Coordinates are driven by a client-side clock loop rather than hardware GPS OBD-II dongles. |
+| **Executive Governance & BRO Assets** | **Simulated / Pre-Seeded State** | Static district health metrics and BRO quick reaction teams for demonstration scenarios (e.g., Pagla Pahar, Teesta River). |
 
 ---
 
-## 2. Missing Features & Critical Implementation Gaps
+## 2. Platform Architecture Overview
 
-### What is Completely Missing
-
-1. **Local SLM (Gemma) Structuring Vernacular Voice/Text**:
-   - The architecture specifies using Gemma to structure unformatted, dialectal field speech into standardized incident schema. In `GroundIntelligenceFeed.tsx`, selecting "Voice Audio" sets a 3-second `setTimeout` that fills a pre-written English string. There is no Web Speech API transcription or local ONNX/WASM SLM execution.
-2. **Service Worker (`sw.js`) & Web App Manifest**:
-   - Despite being designed as an offline PWA for remote valleys, the repository lacks a `public/manifest.json` and a registered Service Worker. If an officer loses network connection without loading all assets into browser cache first, a page refresh yields the browser offline screen.
-3. **Hardware Geolocation API Integration**:
-   - Telemetry relies on simulated mathematical tick loops (`telemetryEngine.ts`). The field cockpit lacks a toggle for `navigator.geolocation.watchPosition` to bind a live phone's actual GPS coordinates to the mission breadcrumbs.
-4. **Opportunistic Store-and-Forward / BLE Mesh Simulation**:
-   - While peer-to-peer sync is highlighted in the master architecture, no Web Bluetooth API or simulated peer-to-peer convoy gossip protocol is implemented between mobile cockpits.
-
-### What Needs Immediate Refactoring
-
-1. **Disconnected Field Reporting in Mobile Cockpit**:
-   - `MobileMissionCockpit.tsx` contains a standalone `handleOfficerClearanceReport` that opens a bare textarea. It does not reuse the photo upload, voice memo, or corridor selection tools present in `GroundIntelligenceFeed.tsx`, creating fragmented reporting paths for field operators.
-2. **Offline Storage Illusion: LocalStorage vs. IndexedDB**:
-   - `offlineSync.ts` claims `IndexedDB` in comments and drawer titles, but executes synchronous `localStorage.setItem(STORAGE_KEYS.OFFLINE_QUEUE, ...)`. `localStorage` has a hard 5MB ceiling and blocks the main thread. If a field officer attaches two compressed photo proofs (Base64), `localStorage` will throw a `QuotaExceededError`.
-3. **Static Leaflet Dark Mode Filter**:
-   - In `index.css`, dark mode inverts OpenStreetMap raster tiles via CSS filter (`filter: brightness(0.85) invert(0.92)...`). This causes washed-out tile labels, artifacts on mountain contour lines, and distorts the polyline route colors. It should switch to dedicated dark tile endpoints (e.g., CartoDB Dark Matter) when `theme === 'dark'`.
-
-### Edge & Sync Reality Check
-
-- **Data Staleness Indicators**: `design.md` Sections 2 & 11 state: _"PRAVAH must never hide data staleness... every screen shows when that data is from"_. Currently, neither `Header.tsx` nor `TacticalMapDeck.tsx` displays an active staleness counter (_"Updated 12s ago"_ / _"Telemetry cached 4m ago"_).
-- **Offline Queue Visual Confirmation**: While `OfflineQueueDrawer.tsx` displays pending items, submitting a report in `MobileMissionCockpit.tsx` while offline does not trigger an immediate reassuring banner (_"Report saved locally to flash storage — 1 pending sync"_).
+```
+PRAVAH Platform Architecture:
+┌─────────────────────────────────────────────────────────────┐
+│                       UI / PRESENTATION                     │
+│  TacticalMapDeck  |  MissionsDeck  |  CommunitiesDeck  ...  │
+└──────────────┬───────────────────────────────┬──────────────┘
+               ▼                               ▼
+┌──────────────────────────────┐ ┌────────────────────────────┐
+│      REAL ALGORITHMS         │ │     EXTERNAL & CLOUD       │
+│ • Routing & Pruning Engine   │ │ • Open-Meteo REST API      │
+│ • Depletion / Cutoff Math    │ │ • GDACS GeoJSON API        │
+│ • Geospatial Polyline Math   │ │ • Supabase Cloud / RLS     │
+│ • Web Speech & Audio Synth   │ │ • OpenFreeMap Vector Tiles │
+└──────────────┬───────────────┘ └─────────────┬──────────────┘
+               ▼                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     HARDCODED / SEEDED                      │
+│ • Static Communities & Inventories • OSRM Precomputed Polylines │
+│ • Choke Points & LHZ Zones        • Simulated Convoy Positions │
+│ • BRO Asset Deployment Queues     • Preset Translations     │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 3. UI/UX Polish & Modern Accessibility (WCAG 2.1 AA / Field-Grade)
+## 3. Exhaustive Layer-by-Layer Breakdown
 
-### High-Stress Operations & Rugged Field UX
+### Layer 1: Core Mathematical & Algorithmic Engines
 
-- **Touch Target Compliance (WCAG 2.5.5 / GIGW 3.0)**:
-  - The bottom fixed HUD in `MobileMissionCockpit.tsx` correctly implements `.touch-target` (48x48px) for Emergency SOS and Mark Delivered.
-  - _Deficiency_: The top mission convoy switcher strip and simulation controls use tiny 9px text and cramped buttons (28px height), which are difficult to operate with wet fingers or gloves in heavy rain.
-- **Contrast Ratios (WCAG 1.4.3)**:
-  - Brand Primary (`#1B4B73`) on `#FFFFFF` delivers 8.2:1 (exceeds AAA).
-  - Status pairings in `tokens.css` are verified above 4.5:1.
-  - _Deficiency_: In dark mode, `--color-text-tertiary` (`#6E7681`) on `--color-surface` (`#1B1F23`) yields 3.8:1, failing the 4.5:1 threshold for small body text.
+#### A. Multi-Factor Routing & Hard-Constraint Pruning
+* **File:** `src/engine/routingEngine.ts`
+* **What is Real & Implemented:**
+  * **Yen’s K-Shortest Paths Algorithm:** Complete graph search algorithm identifying primary, secondary, and tertiary mountain alternatives.
+  * **Two-Stage Pruning Filter:**
+    * **Stage 1 (Hard Constraints):** Checks vehicle Gross Vehicle Weight (GVW) against bridge ratings, vehicle height against tunnel portals, width against gorge cuts, and active road blockages.
+    * **Stage 2 (Cost Function ML/Scoring):** Calculates risk and travel delay penalty using:
+      $$\text{Risk} = 0.40 \cdot \text{RainfallFactor} + 0.30 \cdot \text{LHZFactor} + 0.30 \cdot \text{IncidentPenalty}$$
+      Adjusted dynamically for gradient slope ($>3\%$) and road surface conditions (unpaved, under construction).
+* **What is Hardcoded:**
+  * Network topology: 8 nodes and 12 highway segments in `src/data/routingNetwork.ts`. Real-world highway paths beyond these predefined corridors are not evaluated dynamically.
 
-### Central GIS Command Dashboard
+#### B. Preemptive Community Depletion & Priority Engine
+* **File:** `src/engine/priorityEngine.ts`
+* **What is Real & Implemented:**
+  * Calculates commodity run-rates:
+    $$\text{HourlyBurn} = \left(\frac{\text{BaselineDailyBurn}}{24.0}\right) \times \phi_{\text{surge}}$$
+    where $\phi_{\text{surge}} = 1.4$ for medical supplies during active monsoon alerts.
+  * Dynamic stock depletion and countdown timer to zero stock ($T_{\text{exhaust}}$).
+  * Calculates Isolation Risk ($R_{\text{iso}}$) factoring single-point-of-failure ingress route counts and Vulnerability Index ($I_{\text{vuln}}$).
+  * Composite ranking algorithm generating Priority Tiers ($P_1, P_2, P_3, P_4$) with full audit trail breakdowns.
+* **What is Hardcoded:**
+  * Initial stock values, standard capacities, and daily consumption burn rates in `src/data/communitiesData.ts` (e.g., Kolasib East, Kohima South). There is no automated integration with state hospital inventory ERPs or NFSA food supply chains.
 
-- **Visual Clutter & Progressive Disclosure**:
-  - The map deck loads the entire 8-state region at once. While visually impressive, opening the Vehicle Inspector, the Segment Modal, and the 1-Click Walkthrough Toolbar simultaneously creates overlapping floating cards that obscure the underlying map canvas on 1366x768 laptops.
-  - It lacks a standard breadcrumb hierarchy: `NER Macro Overview -> State Filter (e.g. Mizoram) -> Corridor / Choke Point Focus`.
-- **Map Readability & Color-Blind Safety**:
-  - Closed routes use a dashed stroke (`dashArray: '8, 8'`), ensuring passability is not conveyed by red/green color alone (compliant with WCAG 1.4.1).
-  - _Deficiency_: Candidate alternative routes (Sky Blue, Indigo, Violet) share similar luminance values. Adding line pattern variants or numerical rank badges on the route polylines is needed for clear differentiation under daylight glare.
-
-### Multilingual & Localization Readiness
-
-- **Font Rendering & Web Safe Fallbacks**:
-  - `index.html` preconnects Google Fonts for _Noto Sans_, _Noto Sans Bengali_, and _Noto Sans Devanagari_.
-  - _Critical Bug_: **Meitei Mayek (Manipuri)** script (`ꯈꯨꯗꯣꯡꯊꯤꯕ`) is used extensively in `translationsData.ts`, but _Noto Sans Meetei Mayek_ is **NOT** included in the Google Fonts link in `index.html`. On Windows systems without local Meitei fonts installed, the text renders as hollow rectangle glyphs ("tofu").
-- **App-Wide Localization Coverage**:
-  - Translation is currently restricted to broadcast SMS/TTS cards in `MultilingualBroadcastCenter.tsx`. The core UI chrome (navigation bar, table column headers, mission cockpit buttons) is 100% hardcoded English.
-
----
-
-## 4. The SIH Winning Formula: Demo Flow & Live Pitch Readiness
-
-### Evaluation of the Golden Demonstration Flow
-
-$$
-\begin{aligned}
-\text{Step 0 (P4 Nominal)} &\longrightarrow \text{Step 1 (Monsoon Surge: 65 mm/h + Landslide Blockage)} \\
-&\longrightarrow \text{Step 2 (P1 Critical + Preemptive Dispatch via Detour)} \\
-&\longrightarrow \text{Step 3 (Cellular Blackout + IMU Dead-Reckoning + Watchdog SLA)} \\
-&\longrightarrow \text{Step 4 (Delivery Verification + Tier Reset to P4 + District Health +35\%)}
-\end{aligned}
-$$
-
-The interactive toolbar in `InteractiveWalkthroughToolbar.tsx` successfully executes this closed-loop cycle. Clicking through Steps 1, 2, and 3 triggers real state updates across the priority engine, the routing engine, and the district health matrix.
-
-### High-Risk Break-Points & Demo Crash Hazards
-
-1. **Leaflet Tile Invalidation on View Navigation**:
-   - Switching from `GIS_COMMAND` to `MOBILE_COCKPIT` and back unmounts and remounts Leaflet DOM nodes. If a judge resizes the window or switches tabs quickly, Leaflet does not automatically calculate tile dimensions, resulting in blank grey tiles until the user pans.
-2. **External TTS Proxy Reliance**:
-   - `audioAlert.ts:playTextToSpeech` attempts to stream audio from an external Google TTS endpoint. Hackathon presentation halls frequently have strict captive portal Wi-Fi or high latency that blocks third-party audio streaming. While procedural sirens work, the voice speech component can freeze if the network times out.
-3. **Role Switching State Mismatch**:
-   - Switching roles to Driver automatically switches the view to `MOBILE_COCKPIT`. However, if the user switches roles using the toolbar pills inside the walkthrough drawer, the underlying view can become desynchronized if not explicitly pinned.
+#### C. Geospatial Math & Dead-Reckoning
+* **File:** `src/engine/gisMath.ts`
+* **What is Real & Implemented:**
+  * **Haversine Distance:** Exact Great-Circle distance in kilometers.
+  * **Point-in-Polygon (Ray-Casting):** Determines whether a convoy is inside cellular blackouts or landslide hazard polygons.
+  * **Cross-Track Error:** Measures perpendicular distance to route polylines to trigger $500\text{ m}$ off-route deviation alerts.
+  * **Bearing & Heading Calculation:** Computes true forward navigation bearings along path segments.
+* **What is Hardcoded:**
+  * Blackout zone and landslide boundary coordinates defined as static polygons in `src/data/fleetData.ts` and `src/data/nerGeoJSON.ts`.
 
 ---
 
-## 5. Prioritized Action Checklist (Sprint Plan)
+### Layer 2: Real External APIs & Cloud Services
 
-### P0 (Must Fix in 24 Hours — Showstoppers for SIH)
+#### A. Weather Intelligence (Open-Meteo & Radar)
+* **File:** `src/engine/openMeteoService.ts`
+* **What is Real & Implemented:**
+  * Direct HTTP batch calls to Open-Meteo Forecast API:
+    `https://api.open-meteo.com/v1/forecast?latitude=...&longitude=...&current=precipitation,rain,temperature_2m,weather_code`
+  * Parses WMO weather interpretation codes into localized mountain conditions (e.g., violent orographic downpours, hill drizzle, mountain fog).
+* **What is Hardcoded / Fallback:**
+  * When offline or on network failure, falls back to `generateSimulatedMonsoonTelemetry()` which simulates historical monsoon rain rates for Cherrapunji, Dima Hasao, and North Sikkim.
 
-- [ ] **Add Noto Sans Meetei Mayek Font to `index.html`**:
-  - Add `&family=Noto+Sans+Meetei+Mayek:wght@400;600;700` to the Google Fonts link to resolve font rendering issues during regional broadcast demos.
-- [ ] **Fix Leaflet Map Resize in `TacticalMapDeck.tsx` & `MobileMissionCockpit.tsx`**:
-  - Add an explicit `map.invalidateSize()` inside a short `setTimeout` (150ms) on component mount and window resize observer to eliminate grey tile loading issues.
-- [ ] **Unify Field Reporting in `MobileMissionCockpit.tsx`**:
-  - Replace the isolated `handleOfficerClearanceReport` with the full incident submission modal, enabling photo evidence and voice reporting directly from the driver HUD.
-- [ ] **Prevent Audio Failure on Offline/Restricted Wi-Fi**:
-  - Update `audioAlert.ts` to check `window.speechSynthesis` first before attempting external HTTP audio streams, ensuring reliable speech synthesis without active internet.
+#### B. Global Disaster Alerts (GDACS)
+* **File:** `src/engine/realtimePolygonService.ts`
+* **What is Real & Implemented:**
+  * Fetches real-time GeoJSON disaster events directly from the UN/EC GDACS API:
+    `https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventtypes=FL,EQ,TC,LS&format=geojson`
+  * Geodesically bounds features within the Northeast India and contiguous Himalayan bounding box ($21.5^\circ\text{N} - 29.5^\circ\text{N},\, 88.0^\circ\text{E} - 97.5^\circ\text{E}$).
+* **What is Hardcoded / Fallback:**
+  * Baseline Landslide Hazard Zones (ISRO Bhuvan LHZ) are imported from static GeoJSON in `src/data/nerGeoJSON.ts`.
 
-### P1 (High Impact — UI/UX Polish & Field-Grade Robustness)
+#### C. Database & Realtime Collaboration (Supabase)
+* **Files:** `src/engine/supabaseClient.ts`, `supabase_schema.sql`
+* **What is Real & Implemented:**
+  * Real Postgres client with Row Level Security (RLS) policies.
+  * Real-time WebSocket broadcasting over `supabase_realtime` pub/sub:
+    * Synchronizes incident reports, upvotes, and verification status across clients.
+    * Real-time driver SOS triggers and dispatcher acknowledgments.
+    * Mission status lifecycle updates (`SUGGESTED` $\to$ `APPROVED` $\to$ `IN_TRANSIT` $\to$ `DELIVERED`).
+* **What is Hardcoded / Fallback:**
+  * When `VITE_SUPABASE_URL` is omitted, automatically falls back to an offline sync engine using browser `localStorage` and initial baseline seed incidents in `src/engine/offlineSync.ts`.
 
-- [ ] **Add Live Data Staleness Indicators**:
-  - In `Header.tsx`, add a live relative timer (_"Telemetry: Live (Updated 4s ago)"_ / _"Offline Cache: 6m ago"_).
-- [ ] **Implement Client-Side Image Compression in `GroundIntelligenceFeed.tsx`**:
-  - Scale photos to a maximum of 800x600 at 0.7 JPEG quality on an off-screen `<canvas>` prior to storing in the offline queue, preventing `localStorage` quota exceptions.
-- [ ] **Add PWA Service Worker & Web Manifest**:
-  - Create `public/manifest.json` and a lightweight Service Worker caching core CSS, JS, and tile assets so the application functions with zero network connectivity.
-- [ ] **Dark Mode CartoDB Tile Layer**:
-  - Replace the CSS invert filter with `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png` when `theme === 'dark'`, delivering clean, high-contrast night navigation.
+#### D. OSRM Road Geometry & Live Routing
+* **Files:** `src/engine/osrmRoutingService.ts`, `src/data/osrmPrecomputedRoutes.ts`
+* **What is Real & Implemented:**
+  * Queries live OSRM public routing servers for road polylines (`https://router.project-osrm.org/route/v1/driving/...`).
+  * In-memory route caching to minimize network usage and avoid rate limits.
+* **What is Hardcoded:**
+  * Pre-seeds 13 complete road-following polylines across Northeast India (totaling 3.4 MB of coordinates) in `osrmPrecomputedRoutes.ts` to guarantee zero latency and offline capability.
 
-### P2 (Differentiators — XAI, Speech AI & Pitch Polish)
+#### E. Speech Synthesis & Emergency Sirens
+* **Files:** `src/utils/audioAlert.ts`, `src/components/broadcast/MultilingualBroadcastCenter.tsx`
+* **What is Real & Implemented:**
+  * **Web Audio API:** Real-time synthesis of emergency siren warbles and data packet chirps using procedural dual-oscillator modulations.
+  * **Web Speech API:** Browser text-to-speech engine with dynamic regional voice selection and phonetic fallback pronunciation.
+* **What is Hardcoded:**
+  * Pre-translated emergency phrases across 5 languages (English, Hindi, Assamese, Bengali, Manipuri Meitei Mayek) in `src/data/translationsData.ts`.
 
-- [ ] **Interactive Route Explainability Comparison**:
-  - In `SegmentModal.tsx` and `CustomizeMissionModal.tsx`, render an explicit side-by-side comparison card: _Why Route B was selected over Route A_.
-- [ ] **Browser Speech Recognition (Web Speech API) for Field Input**:
-  - Connect `webkitSpeechRecognition` to the "Voice Audio" button in the incident modal to transcribe spoken incident reports in real time.
-- [ ] **Progressive Disclosure State Filter in `TacticalMapDeck.tsx`**:
-  - Add quick-jump filter chips for the key demonstration states (**Mizoram NH-306**, **Nagaland NH-29**, **Sikkim NH-10**) to focus the map and filter candidate routes in a single click.
+---
+
+### Layer 3: Vehicle Telemetry & Convoy Tracking
+
+* **Files:** `src/engine/telemetryEngine.ts`, `src/data/fleetData.ts`
+* **Status:** **Simulation Model running on real road polylines.**
+* **What is Real & Implemented:**
+  * Step simulation engine interpolates vehicle location along real road curves at configured speeds.
+  * Calculates speed jitter, route progress percentage, and cross-track deviations.
+  * Dynamic detection of entry/exit from cellular blackout dead zones. When in a dead zone, the system switches to dead-reckoning extrapolation and triggers watchdog timers.
+* **What is Hardcoded:**
+  * The 4 vehicles (`Medic-01`, `Oxy-Tanker-04`, `Ration-Convoy-07`, `Heavy-Fuel-12`) and their cargo capacities, speeds, and routes are pre-seeded constants. There is no physical GPS hardware (AIS 140 / OBD-II) feeding coordinates over MQTT or cellular UDP.
+
+---
+
+### Layer 4: Executive Deck & Infrastructure Management
+
+* **Files:** `src/components/executive/ExecutiveInfrastructureDeck.tsx`, `src/data/executiveData.ts`
+* **Status:** **Demonstration-focused with interactive state.**
+* **What is Implemented:**
+  * Interactive deployment workflow for Border Roads Organisation (BRO) engineering assets (e.g., Bailey bridge kits, heavy rock breakers).
+  * Automated generation of formal emergency situation memos summarizing road severances, cutoff hours, and required sorties.
+* **What is Hardcoded:**
+  * The 5 districts (Tawang, North Sikkim, Kolasib, Dima Hasao, Kohima), their populations, isolation ratings, and historical 5-day consumption depletion curves are hardcoded seed arrays.
+
+---
+
+## 4. Detailed Comparison Matrix
+
+| Subsystem | Feature | Status | Location in Code |
+| :--- | :--- | :--- | :--- |
+| **Routing** | Yen’s K-Shortest Paths | **Real** | `src/engine/routingEngine.ts` |
+| **Routing** | Multi-Factor Cost Scoring | **Real** | `src/engine/routingEngine.ts` |
+| **Routing** | Bridge & Tunnel Constraints | **Real** | `src/engine/routingEngine.ts` |
+| **Routing** | NER Network Topology | **Hardcoded** | `src/data/routingNetwork.ts` |
+| **Depletion** | Hourly Run-Rate & $T_{\text{exhaust}}$ | **Real** | `src/engine/priorityEngine.ts` |
+| **Depletion** | Medical Surge ($\phi_{\text{surge}} = 1.4$) | **Real** | `src/engine/priorityEngine.ts` |
+| **Depletion** | Hospital & Commodity Stock | **Hardcoded** | `src/data/communitiesData.ts` |
+| **Weather** | Open-Meteo REST API | **Real** | `src/engine/openMeteoService.ts` |
+| **Weather** | Simulated Monsoon Downpour | **Fallback** | `src/engine/openMeteoService.ts` |
+| **Hazard GIS** | GDACS Global Disaster Feed | **Real** | `src/engine/realtimePolygonService.ts` |
+| **Hazard GIS** | ISRO Bhuvan LHZ Polygons | **Hardcoded** | `src/data/nerGeoJSON.ts` |
+| **Road Curves** | OSRM Driving Road API | **Real** | `src/engine/osrmRoutingService.ts` |
+| **Road Curves** | Precomputed High-Res Polylines | **Hardcoded Cache** | `src/data/osrmPrecomputedRoutes.ts` |
+| **Telematics** | GIS Interpolation & Heading | **Real** | `src/engine/telemetryEngine.ts` |
+| **Telematics** | Cellular Dead-Zone Detection | **Real** | `src/engine/telemetryEngine.ts` |
+| **Telematics** | Live Vehicle GPS Coordinates | **Simulated** | `src/engine/telemetryEngine.ts` |
+| **Database** | Supabase Postgres & Realtime Bus | **Real** | `src/engine/supabaseClient.ts`, `supabase_schema.sql` |
+| **Database** | Offline-First `localStorage` Sync | **Real** | `src/engine/offlineSync.ts` |
+| **Audio / Alert** | Web Audio API Dual Oscillator | **Real** | `src/utils/audioAlert.ts` |
+| **Audio / Alert** | Multilingual TTS Synthesis | **Real** | `src/utils/audioAlert.ts` |
+| **Audio / Alert** | Incident Warning Translations | **Hardcoded** | `src/data/translationsData.ts` |
+| **Executive** | BRO Asset Dispatch Workflow | **Real** | `src/components/executive/ExecutiveInfrastructureDeck.tsx` |
+| **Executive** | District Days-of-Supply Baseline | **Hardcoded** | `src/data/executiveData.ts` |
+
+---
+
+## 5. Architectural Roadmap for Production Implementation
+
+To transition PRAVAH from a demonstration prototype to a live state-wide operational platform for MDoNER / NDMA:
+
+### 1. Live Telematics via AIS-140 GPS & MQTT
+* **Current:** Convoy positions advance via an in-memory timer interpolation loop.
+* **Production Implementation:**
+  * Deploy an **MQTT / Webhook Broker** (e.g., EMQX or AWS IoT Core).
+  * Ingest real-time NMEA / AIS-140 GPS packets sent from government and commercial fleet telematics tracking units (standard on commercial vehicles in India).
+  * Use the existing dead-reckoning algorithm in `telemetryEngine.ts` as a real-time fallback when vehicles lose cellular connectivity in mountain gorges.
+
+### 2. Live Supply Chain & Healthcare ERP Integration
+* **Current:** Inventories and daily burn rates are static records in `communitiesData.ts`.
+* **Production Implementation:**
+  * Connect to the **Ministry of Health (HMIS / e-Sanjeevani / DVDMS)** inventory database for district civil hospitals to read real stock counts of IV fluids, antivenom, and oxygen cylinders.
+  * Connect to the **NFSA (National Food Security Act) / FCI Godown Portal** to ingest buffer stocks of food grains and diesel reserve levels.
+
+### 3. OpenStreetMap Overpass API for Dynamic Mountain Corridors
+* **Current:** Highway segments are confined to 12 pre-mapped segments.
+* **Production Implementation:**
+  * Integrate an OpenStreetMap Overpass query or self-hosted GraphHopper / OSRM engine loaded with Northeast India PBF road networks.
+  * Dynamically extract road properties (gradient, surface type, lane width, bridge tonnage limits) directly from OSM tags (`maxweight`, `maxheight`, `surface`, `incline`).
+
+### 4. Official Meteorological & Earth Observation Feeds
+* **Current:** Uses Open-Meteo public endpoints and pre-seeded ISRO Bhuvan LHZ polygons.
+* **Production Implementation:**
+  * Ingest live **IMD (India Meteorological Department)** Nowcast radar data feeds and Red/Orange/Yellow district warnings.
+  * Connect to **ISRO Bhuvan Landslide Early Warning System (LEWS)** WMS/WFS geospatial services to stream live slope instability alerts directly into MapLibre.
+
+### 5. Automated AI Translation & Telco Emergency Broadcasts
+* **Current:** Uses preset static translations for sample incidents.
+* **Production Implementation:**
+  * Integrate **Bhashini API** (Government of India’s National Language Translation Mission) for real-time speech and text translation across all Northeast languages (Assamese, Bodo, Manipuri Meitei Mayek, Mizo, Nagamese, Khasi, Garo).
+  * Wire the broadcast dispatch button to the **National Disaster Management Authority (NDMA) Cell Broadcast Emergency Alert System (CAP - Common Alerting Protocol)** to transmit cell-tower broadcast SMS to all mobile devices in affected mountain sectors.
