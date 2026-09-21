@@ -301,10 +301,35 @@ export function persistDisruptions(disruptions: Record<string, any>): void {
 /**
  * Missions Persistence
  */
+export function purgeLegacyMockMissions(): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(STORAGE_KEYS.MISSIONS);
+      if (raw && (raw.includes('"MISSION-') || raw.includes('"MOCK-') || raw.includes('MISSION-MZ-'))) {
+        localStorage.removeItem(STORAGE_KEYS.MISSIONS);
+        console.log('[OfflineSync] Purged legacy hardcoded missions from localStorage.');
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function getPersistedMissions(): any[] | null {
   try {
+    purgeLegacyMockMissions();
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.MISSIONS) : null;
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const cleaned = parsed.filter(
+      (m: any) =>
+        m &&
+        typeof m.id === 'string' &&
+        !m.id.startsWith('MISSION-') &&
+        !m.id.startsWith('MOCK-')
+    );
+    return cleaned.length > 0 ? cleaned : null;
   } catch {
     return null;
   }

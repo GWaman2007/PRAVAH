@@ -1,10 +1,10 @@
 import type { CommunityBase } from '../types';
 
 export const INITIAL_COMMUNITIES: CommunityBase[] = [
-  // 1. Kolasib East - P1 Critical (Mizoram) - Targeted by MISSION-MZ-04
+  // 1. Kolasib East - P1 Critical (Mizoram)
   {
     id: 'MZ-KOL-004',
-    name: 'Kolasib East (Mission MZ-04 Target)',
+    name: 'Kolasib East Community',
     district: 'Kolasib',
     state: 'Mizoram',
     coordinates: [24.2246, 92.6784],

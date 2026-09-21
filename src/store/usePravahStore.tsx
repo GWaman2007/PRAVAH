@@ -23,7 +23,7 @@ import type {
 } from '../types';
 import { NER_SEGMENTS, NER_NODES, VEHICLE_PROFILES } from '../data/routingNetwork';
 import { INITIAL_COMMUNITIES } from '../data/communitiesData';
-import { INITIAL_VEHICLES, FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES, INITIAL_RELIEF_MISSIONS } from '../data/fleetData';
+import { INITIAL_VEHICLES, FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES } from '../data/fleetData';
 import { INITIAL_DISTRICTS_HEALTH, INITIAL_BRO_BOTTLENECKS } from '../data/executiveData';
 import { SUPPORTED_LANGUAGES, PRESET_TRANSLATIONS, PHONETIC_READINGS, generateBroadcastForIncident } from '../data/translationsData';
 import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngine';
@@ -183,7 +183,7 @@ interface PravahStoreContextType {
   setCustomizingMission: (mission: ReliefMission | null) => void;
   approveMission: (missionId: string) => void;
   dispatchMission: (missionId: string, vehicleId?: string) => void;
-  approveAndDispatchMission: (missionId: string) => void;
+  approveAndDispatchMission: (missionId: string, vehicleId?: string) => void;
   customizeMission: (mission: ReliefMission) => void;
   reportMissionDeliveryByField: (missionId: string) => void;
   adminCloseoutMission: (missionId: string) => void;
@@ -600,16 +600,33 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 6b. Preemptive Relief Missions (0 Ongoing initial state; dynamic suggestions from community deficits)
   const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(() => {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('pravah_relief_missions');
+        if (
+          stored &&
+          (stored.includes('"MISSION-') ||
+            stored.includes('"MOCK-') ||
+            stored.includes('MISSION-MZ-'))
+        ) {
+          localStorage.removeItem('pravah_relief_missions');
+        }
+      } catch {
+        // ignore
+      }
+    }
     const persisted = typeof window !== 'undefined' ? getPersistedMissions() : null;
     if (persisted && persisted.length > 0) {
       // Filter out stale mock in-transit missions so ongoing starts with real user-approved missions
       const cleaned = persisted.filter(
         (pm: ReliefMission) =>
-          pm.status === 'APPROVED' ||
-          pm.status === 'IN_TRANSIT' ||
-          pm.status === 'PENDING_ADMIN_CLOSEOUT' ||
-          pm.status === 'SUGGESTED' ||
-          pm.status === 'DELIVERED'
+          !pm.id.startsWith('MISSION-') &&
+          !pm.id.startsWith('MOCK-') &&
+          (pm.status === 'APPROVED' ||
+            pm.status === 'IN_TRANSIT' ||
+            pm.status === 'PENDING_ADMIN_CLOSEOUT' ||
+            pm.status === 'SUGGESTED' ||
+            pm.status === 'DELIVERED')
       );
       if (cleaned.length > 0) {
         return cleaned;
@@ -1549,9 +1566,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, []);
 
-  const approveAndDispatchMission = useCallback((missionId: string) => {
+  const approveAndDispatchMission = useCallback((missionId: string, vehicleId?: string) => {
     approveMission(missionId);
-    dispatchMission(missionId);
+    dispatchMission(missionId, vehicleId);
   }, [approveMission, dispatchMission]);
 
   const customizeMission = useCallback((mission: ReliefMission) => {
@@ -1752,7 +1769,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
       return [
         {
-          id: 'MISSION-MZ-04',
+          id: `SUGG-MZKOL004-DEMO`,
           communityId: 'MZ-KOL-004',
           communityName: 'Kolasib District HQ & PHC',
           recommendedVehicleType: '4x4 Tata Xenon High-Clearance Medic Carrier',
@@ -1829,7 +1846,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const runDemoStep2 = useCallback(() => {
-    approveAndDispatchMission('MISSION-MZ-04');
+    const kolasibMission =
+      activeMissionsRef.current.find((m) => m.communityId === 'MZ-KOL-004') ||
+      activeMissionsRef.current[0];
+    if (kolasibMission) {
+      approveAndDispatchMission(kolasibMission.id, 'Medic-01');
+    }
     setSelectedVehicleId('Medic-01');
     setVehicles((prev) =>
       prev.map((v) =>
@@ -1883,7 +1905,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       },
     });
     setVehicles(INITIAL_VEHICLES);
-    setActiveMissions(INITIAL_RELIEF_MISSIONS);
+    const freshDynamicSuggestions = generateDynamicMissionSuggestions(INITIAL_COMMUNITIES, INITIAL_VEHICLES, []);
+    setActiveMissions(freshDynamicSuggestions);
+    persistMissions(freshDynamicSuggestions);
     setPendingSOSAlert(null);
     setRainfallMmHr(24);
     setIsMonsoonDownpourSimulated(false);
@@ -2191,17 +2215,22 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     fetchCloudMissions().then((cloudMissions) => {
       if (cloudMissions && cloudMissions.length > 0) {
-        setActiveMissions((prev) => {
-          const cloudMap = new Map(cloudMissions.map((m) => [m.id, m]));
-          const merged = prev.map((m) => cloudMap.get(m.id) || m);
-          cloudMissions.forEach((cm) => {
-            if (!merged.some((m) => m.id === cm.id)) {
-              merged.push(cm);
-            }
+        const cleanCloud = cloudMissions.filter(
+          (m) => m && typeof m.id === 'string' && !m.id.startsWith('MISSION-') && !m.id.startsWith('MOCK-')
+        );
+        if (cleanCloud.length > 0) {
+          setActiveMissions((prev) => {
+            const cloudMap = new Map(cleanCloud.map((m) => [m.id, m]));
+            const merged = prev.map((m) => cloudMap.get(m.id) || m);
+            cleanCloud.forEach((cm) => {
+              if (!merged.some((m) => m.id === cm.id)) {
+                merged.push(cm);
+              }
+            });
+            persistMissions(merged);
+            return merged;
           });
-          persistMissions(merged);
-          return merged;
-        });
+        }
       }
     });
 

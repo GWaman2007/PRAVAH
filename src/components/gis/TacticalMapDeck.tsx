@@ -2363,7 +2363,7 @@ export const TacticalMapDeck: React.FC = () => {
         <div className="w-full lg:w-80 h-auto lg:h-full z-20 shrink-0">
           <MissionDetailsPanel
             mission={activeMission}
-            vehicle={vehicles.find((v) => v.mission_id === activeMission.id || (activeMission.id === 'MISSION-MZ-04' && v.vehicle_id === 'Medic-01')) || null}
+            vehicle={vehicles.find((v) => v.mission_id === activeMission.id || (activeMission.assignedVehicleId && v.vehicle_id === activeMission.assignedVehicleId)) || null}
             routeDef={FLEET_ROUTES[activeMission.assignedRouteId] || null}
             disruptions={activeDisruptions}
             onClose={() => setIsMissionDetailsOpen(false)}
