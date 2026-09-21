@@ -24,9 +24,11 @@ export interface HazardZoneInfo {
   zone_id?: string;
   id?: string;
   name: string;
+  source?: string;
   hazard_type?: string;
   corridor?: string;
   state?: string;
+  district?: string;
   districts?: string[] | string;
   severity?: string;
   hazard_score?: number;
@@ -35,7 +37,9 @@ export interface HazardZoneInfo {
   trigger_mechanism?: string;
   bhuvan_code?: string;
   advisory?: string;
+  url?: string;
   fillColor?: string;
+  updatedAt?: string;
 }
 
 interface DisasterPolygonModalProps {
@@ -152,7 +156,7 @@ export const DisasterPolygonModal: React.FC<DisasterPolygonModalProps> = ({
                   {t('bhuvanCode')}
                 </span>
                 <span className="font-mono font-semibold text-slate-200">
-                  {hazardZone.bhuvan_code || 'ISRO-BHUVAN-LHZ-NER'}
+                  {hazardZone.bhuvan_code || hazardZone.zone_id || 'ISRO-BHUVAN-LHZ-NER'}
                 </span>
               </div>
 
@@ -164,6 +168,35 @@ export const DisasterPolygonModal: React.FC<DisasterPolygonModalProps> = ({
                   {hazardZone.slope_gradient || '35° - 55° (Steep Silt Face)'}
                 </span>
               </div>
+            </div>
+
+            {/* Live API Feed Provenance */}
+            <div className="p-2.5 rounded bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-2">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">
+                  Authoritative Feed Source
+                </span>
+                <span className="font-mono text-xs font-semibold text-sky-400">
+                  {hazardZone.source === 'GDACS_API'
+                    ? 'GDACS Real-Time API (United Nations / EC)'
+                    : hazardZone.source === 'OVERPASS_API'
+                    ? 'OpenStreetMap Live Boundary API'
+                    : hazardZone.source === 'SUPABASE_CLOUD'
+                    ? 'Supabase Cloud Synced Zone'
+                    : 'ISRO NRSC National LHZ Baseline'}
+                </span>
+              </div>
+              {hazardZone.url && (
+                <a
+                  href={hazardZone.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-700/60 font-medium text-[11px] flex items-center gap-1.5 transition shrink-0"
+                >
+                  <span>Official Alert</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
             </div>
 
             {/* Geological Formation / Lithology */}

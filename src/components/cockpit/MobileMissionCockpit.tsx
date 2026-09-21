@@ -75,6 +75,7 @@ export const MobileMissionCockpit: React.FC = () => {
     incidents,
     setActiveView,
     setSelectedMissionId,
+    hazardPolygons,
   } = usePravahStore();
 
   // Active mission vehicle: selected vehicle or default to first
@@ -212,10 +213,10 @@ export const MobileMissionCockpit: React.FC = () => {
         console.warn('Error loading custom icons into Cockpit Map:', err);
       }
 
-      // 1. DISASTERS & HAZARDS (ISRO Bhuvan LHZ)
+      // 1. DISASTERS & HAZARDS (Realtime API Hazard Polygons + ISRO LHZ Baseline)
       map.addSource('disasters', {
         type: 'geojson',
-        data: createDisastersGeoJSON(HAZARD_ZONES),
+        data: createDisastersGeoJSON(hazardPolygons),
       });
 
       map.addLayer({

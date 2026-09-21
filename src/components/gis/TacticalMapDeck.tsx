@@ -110,6 +110,8 @@ export const TacticalMapDeck: React.FC = () => {
     selectedCommunityId,
     setSelectedCommunityId,
     incidents,
+    hazardPolygons,
+    refreshHazardPolygons,
   } = usePravahStore();
 
   const { t } = useTranslation();
@@ -127,6 +129,8 @@ export const TacticalMapDeck: React.FC = () => {
   communitiesRef.current = communities;
   const selectedCommunityIdRef = useRef(selectedCommunityId);
   selectedCommunityIdRef.current = selectedCommunityId;
+  const hazardPolygonsRef = useRef(hazardPolygons);
+  hazardPolygonsRef.current = hazardPolygons;
 
   // Zoom map to community polygon or coordinates
   const zoomToCommunity = useCallback((communityId: string, mapInstance?: maplibregl.Map | null) => {
@@ -359,11 +363,11 @@ export const TacticalMapDeck: React.FC = () => {
       }
 
       // -------------------------------------------------------------
-      // 1. DISASTERS & GEOLOGICAL HAZARDS (ISRO Bhuvan LHZ & High-Risk Sectors)
+      // 1. DISASTERS & GEOLOGICAL HAZARDS (Realtime API Hazard Polygons + ISRO LHZ Baseline)
       // -------------------------------------------------------------
       map.addSource('disasters', {
         type: 'geojson',
-        data: createDisastersGeoJSON(HAZARD_ZONES),
+        data: createDisastersGeoJSON(hazardPolygons),
       });
 
       map.addLayer({
@@ -1116,6 +1120,15 @@ export const TacticalMapDeck: React.FC = () => {
               ? 'bg-red-500/20 text-red-400 border-red-500/50'
               : 'bg-orange-500/20 text-orange-400 border-orange-500/50';
 
+          const sourceLabel =
+            p.source === 'GDACS_API'
+              ? 'GDACS Live Alert (UN/EC)'
+              : p.source === 'OVERPASS_API'
+              ? 'OSM Live Boundary API'
+              : p.source === 'SUPABASE_CLOUD'
+              ? 'Supabase Cloud Synced'
+              : 'ISRO Bhuvan LHZ Baseline';
+
           setHoveredPolygon({
             x: e.point.x,
             y: e.point.y,
@@ -1124,9 +1137,9 @@ export const TacticalMapDeck: React.FC = () => {
             badge: `${sev.toUpperCase()}${p.hazard_score ? ` (${p.hazard_score}/10)` : ''}`,
             badgeColor,
             items: [
+              { label: 'Data Source', value: sourceLabel },
               { label: 'Hazard Type', value: p.hazard_type || 'Landslide Hazard Zone' },
-              { label: 'ISRO Code', value: p.bhuvan_code || 'ISRO-BHUVAN-LHZ' },
-              { label: 'Slope', value: p.slope_gradient || '35° - 55°' },
+              { label: 'Threat Score', value: p.hazard_score ? `${p.hazard_score}/10` : '8.5/10' },
               { label: 'Advisory', value: (p.advisory || '').slice(0, 48) + '...' },
             ],
             prompt: t('clickToInspectHazard'),
@@ -1262,10 +1275,10 @@ export const TacticalMapDeck: React.FC = () => {
       groundIntelSource.setData(createGroundIntelIncidentsGeoJSON(incidents));
     }
 
-    // Update disasters & hazard zones
+    // Update disasters & hazard zones (Real-Time API Polygons)
     const disasterSource = map.getSource('disasters') as maplibregl.GeoJSONSource;
     if (disasterSource) {
-      disasterSource.setData(createDisastersGeoJSON(HAZARD_ZONES));
+      disasterSource.setData(createDisastersGeoJSON(hazardPolygons));
     }
 
     // Update communities (database-backed boundary polygons and points)
@@ -1287,6 +1300,7 @@ export const TacticalMapDeck: React.FC = () => {
     communities,
     selectedCommunityId,
     incidents,
+    hazardPolygons,
   ]);
 
   // 5. Update Layer Visibility from activeLayers filters

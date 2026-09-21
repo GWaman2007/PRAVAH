@@ -6,6 +6,7 @@ import type {
   CommunityWithCalculation,
   RouteDefinition,
   HazardZone,
+  RealtimeHazardPolygon,
   Incident,
 } from '../types';
 import { NER_NODES } from '../data/routingNetwork';
@@ -368,14 +369,17 @@ export function createRoadStatusGeoJSON(
 }
 
 /**
- * 7. Disasters GeoJSON (ISRO Bhuvan LHZ & Geological Disaster Hazard Polygons)
+ * 7. Disasters GeoJSON (Realtime API Hazard Polygons + ISRO Bhuvan LHZ Baseline)
  */
 export function createDisastersGeoJSON(
-  hazardZones: HazardZone[] = []
+  hazardZones: (HazardZone | RealtimeHazardPolygon)[] = []
 ): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   const features: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
 
-  if (LANDSLIDE_HAZARD_GEOJSON && Array.isArray(LANDSLIDE_HAZARD_GEOJSON.features)) {
+  const hasRealtimePolygons = hazardZones.some((hz: any) => hz && Array.isArray(hz.coordinates));
+
+  // If no realtime polygons passed, fall back to baseline static features
+  if (!hasRealtimePolygons && LANDSLIDE_HAZARD_GEOJSON && Array.isArray(LANDSLIDE_HAZARD_GEOJSON.features)) {
     LANDSLIDE_HAZARD_GEOJSON.features.forEach((feat: any) => {
       if (feat.geometry?.type === 'Polygon') {
         const sev = feat.properties?.severity || 'High';
@@ -388,6 +392,7 @@ export function createDisastersGeoJSON(
           geometry: feat.geometry,
           properties: {
             ...feat.properties,
+            source: 'ISRO_LHZ_BASELINE',
             hazard_type: feat.properties?.hazard_type || 'Landslide Hazard Zone',
             fillColor: color,
             fillOpacity: 0.28,
@@ -398,8 +403,42 @@ export function createDisastersGeoJSON(
     });
   }
 
-  hazardZones.forEach((hz) => {
-    if (hz.polygon && hz.polygon.length >= 3) {
+  // Iterate over passed hazard zones (either RealtimeHazardPolygon or legacy HazardZone)
+  hazardZones.forEach((hz: any) => {
+    // A: RealtimeHazardPolygon (from live GDACS API, OSM Overpass/Nominatim, or ISRO baseline)
+    if (hz.coordinates && Array.isArray(hz.coordinates) && hz.coordinates.length > 0) {
+      const sev = hz.severity || 'High';
+      let color = '#EA580C';
+      if (sev === 'Very High' || sev === 'Critical') color = '#DC2626';
+      else if (sev === 'Moderate') color = '#D97706';
+
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: hz.coordinates,
+        },
+        properties: {
+          zone_id: hz.id,
+          id: hz.id,
+          name: hz.name,
+          source: hz.source || 'LIVE_API',
+          hazard_type: hz.hazardType || 'Geological Hazard Zone',
+          severity: sev,
+          hazard_score: hz.hazardScore ?? 8.0,
+          advisory: hz.advisory || 'Monitored via real-time satellite disaster API',
+          url: hz.url || '',
+          state: hz.state || '',
+          district: hz.district || '',
+          updatedAt: hz.updatedAt || '',
+          fillColor: color,
+          fillOpacity: 0.32,
+          outlineColor: color,
+        },
+      });
+    }
+    // B: Legacy HazardZone with [lat, lng][] polygon
+    else if (hz.polygon && Array.isArray(hz.polygon) && hz.polygon.length >= 3) {
       features.push({
         type: 'Feature',
         geometry: {
@@ -408,7 +447,9 @@ export function createDisastersGeoJSON(
         },
         properties: {
           zone_id: hz.id,
+          id: hz.id,
           name: hz.name,
+          source: 'ISRO_LHZ_BASELINE',
           hazard_type: hz.hazardType || 'Geological Hazard Zone',
           severity: 'Critical',
           fillColor: '#DC2626',
