@@ -607,7 +607,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           stored &&
           (stored.includes('"MISSION-') ||
             stored.includes('"MOCK-') ||
-            stored.includes('MISSION-MZ-'))
+            stored.includes('MISSION-MZ-') ||
+            stored.includes('ROUTE-MZ-02') ||
+            stored.includes('ROUTE-MZ-04'))
         ) {
           localStorage.removeItem('pravah_relief_missions');
         }
@@ -629,7 +631,38 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             pm.status === 'DELIVERED')
       );
       if (cleaned.length > 0) {
-        return cleaned;
+        // Sanitize any route references
+        const sanitized = cleaned.map((pm: ReliefMission) => {
+          if (pm.communityId === 'MZ-KOL-004' && (pm.assignedRouteId === 'ROUTE-MZ-04' || pm.assignedRouteId === 'ROUTE-MZ-02')) {
+            const r = FLEET_ROUTES['ROUTE-SUG-01'];
+            return {
+              ...pm,
+              assignedRouteId: 'ROUTE-SUG-01',
+              suggestedDetour: 'NH-306 Safe Mountain Bypass (via Vairengte Spur)',
+              routeGeometry: r?.coordinates || pm.routeGeometry,
+              routeDistanceKm: r?.distanceKm || pm.routeDistanceKm,
+              routeDurationMinutes: r?.expectedDurationMinutes || pm.routeDurationMinutes,
+              destinationEndpoint: r?.coordinates ? r.coordinates[r.coordinates.length - 1] : pm.destinationEndpoint,
+            };
+          }
+          if (pm.communityId === 'SK-MAN-002' && pm.assignedRouteId === 'ROUTE-MZ-02') {
+            const r = FLEET_ROUTES['ROUTE-SK-02'];
+            return {
+              ...pm,
+              assignedRouteId: 'ROUTE-SK-02',
+              originWarehouseId: 'gangtok',
+              originWarehouseName: 'Gangtok STNM Hub',
+              originCoords: [27.33139, 88.61381] as [number, number],
+              suggestedDetour: 'NH-10 Teesta Mountain Corridor (Low Gear Transit)',
+              routeGeometry: r?.coordinates || pm.routeGeometry,
+              routeDistanceKm: r?.distanceKm || pm.routeDistanceKm,
+              routeDurationMinutes: r?.expectedDurationMinutes || pm.routeDurationMinutes,
+              destinationEndpoint: r?.coordinates ? r.coordinates[r.coordinates.length - 1] : pm.destinationEndpoint,
+            };
+          }
+          return pm;
+        });
+        return sanitized;
       }
     }
     // Generate realistic dynamic suggestions from community depletion metrics
@@ -1762,9 +1795,24 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     );
 
     setActiveMissions((prev) => {
+      const kolasibRoute = FLEET_ROUTES['ROUTE-SUG-01'];
+      const kolasibTerminus = kolasibRoute.coordinates[kolasibRoute.coordinates.length - 1];
+
       if (prev.some((m) => m.communityId === 'MZ-KOL-004')) {
         return prev.map((m) =>
-          m.communityId === 'MZ-KOL-004' ? { ...m, status: 'SUGGESTED', urgency: 'P1_CRITICAL' } : m
+          m.communityId === 'MZ-KOL-004'
+            ? {
+                ...m,
+                status: 'SUGGESTED',
+                urgency: 'P1_CRITICAL',
+                assignedRouteId: 'ROUTE-SUG-01',
+                suggestedDetour: 'NH-306 Safe Mountain Bypass (via Vairengte Spur)',
+                routeGeometry: kolasibRoute.coordinates,
+                routeDistanceKm: kolasibRoute.distanceKm,
+                routeDurationMinutes: kolasibRoute.expectedDurationMinutes,
+                destinationEndpoint: kolasibTerminus,
+              }
+            : m
         );
       }
       return [
@@ -1779,8 +1827,8 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             { item: 'Fortified High-Energy Biscuits & Grain', quantity: 800, unit: 'kg' },
             { item: 'Generator Diesel (Emergency)', quantity: 400, unit: 'Litres' },
           ],
-          assignedRouteId: 'ROUTE-MZ-04',
-          suggestedDetour: 'NH-306 Bilkhawthlir Escarpment alternate spur (via Bairabi Pass)',
+          assignedRouteId: 'ROUTE-SUG-01',
+          suggestedDetour: 'NH-306 Safe Mountain Bypass (via Vairengte Spur)',
           status: 'SUGGESTED',
           urgency: 'P1_CRITICAL',
           createdAt: new Date().toISOString(),
@@ -1791,13 +1839,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           originCoords: [24.8333, 92.7789],
           disasterZoneId: 'LHZ-MZ-01',
           disasterZoneName: 'NH-306 Bilkhawthlir Hill Escarpment',
-          destinationEndpoint: [24.2650, 92.7300],
+          destinationEndpoint: kolasibTerminus,
           destinationName: 'Kolasib District HQ & PHC',
           assignedVehicleId: 'Medic-01',
-          routeDistanceKm: 68,
-          routeDurationMinutes: 110,
-          routeStatus: 'COMPUTED',
-          routeGeometry: FLEET_ROUTES['ROUTE-MZ-04'].coordinates,
+          routeDistanceKm: kolasibRoute.distanceKm,
+          routeDurationMinutes: kolasibRoute.expectedDurationMinutes,
+          routeStatus: 'OPTIMAL',
+          routeGeometry: kolasibRoute.coordinates,
         },
         ...prev,
       ];

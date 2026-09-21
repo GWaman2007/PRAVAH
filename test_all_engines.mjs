@@ -9,6 +9,8 @@ import { INITIAL_COMMUNITIES } from './src/data/communitiesData.ts';
 import { FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES, INITIAL_VEHICLES } from './src/data/fleetData.ts';
 import { generateDynamicMissionSuggestions, isMissionOngoing, isMissionSuggested, isMissionDelivered } from './src/engine/missionEngine.ts';
 import { getBaselineLHZPolygons } from './src/engine/realtimePolygonService.ts';
+import { validateAndResolveMissionRoute } from './src/engine/mapGeoJSONAdapters.ts';
+import { haversineDistanceKm } from './src/engine/gisMath.ts';
 
 console.log('====================================================');
 console.log('🧪 RUNNING COMPREHENSIVE PRAVAH INTEGRATION TESTS');
@@ -286,6 +288,38 @@ console.log('\n--- TEST SUITE 7: Dynamic Missions & Closed-Loop Lifecycle ---');
   const missionClosedOut = { ...missionPendingCloseout, status: 'DELIVERED' };
   assert(isMissionOngoing(missionClosedOut) === false, 'Admin closeout removes mission from Ongoing list (status DELIVERED)');
   assert(isMissionDelivered(missionClosedOut) === true, 'Mission is marked as DELIVERED in missionEngine helper');
+
+  // 6. Regional Route Precision & Cross-Region Glitch Prevention
+  const kolasibSugg = suggestions.find((s) => s.communityId === 'MZ-KOL-004');
+  assert(kolasibSugg !== undefined, 'Kolasib East suggestion generated');
+  assert(kolasibSugg.assignedRouteId === 'ROUTE-SUG-01', `Kolasib assigned genuine Kolasib road ROUTE-SUG-01 (got ${kolasibSugg.assignedRouteId})`);
+  const kolasibResolved = validateAndResolveMissionRoute(kolasibSugg, FLEET_ROUTES);
+  assert(kolasibResolved && kolasibResolved.length > 100, `Kolasib resolved route has ${kolasibResolved?.length} road coordinates`);
+  const kolasibTerminusDist = haversineDistanceKm(kolasibSugg.destinationEndpoint, kolasibResolved[kolasibResolved.length - 1]);
+  assert(kolasibTerminusDist <= 0.5, `Kolasib terminus matches destination within 0.5 km (got ${kolasibTerminusDist.toFixed(2)} km)`);
+
+  const sikkimSugg = suggestions.find((s) => s.communityId === 'SK-MAN-002');
+  assert(sikkimSugg !== undefined, 'Teesta Canyon Sikkim suggestion generated');
+  assert(sikkimSugg.assignedRouteId === 'ROUTE-SK-02', `Teesta Canyon assigned Sikkim mountain route ROUTE-SK-02 (got ${sikkimSugg.assignedRouteId})`);
+  assert(sikkimSugg.originWarehouseId === 'gangtok', `Teesta Canyon origin warehouse is Gangtok (got ${sikkimSugg.originWarehouseId})`);
+  const sikkimResolved = validateAndResolveMissionRoute(sikkimSugg, FLEET_ROUTES);
+  assert(sikkimResolved && sikkimResolved.length > 100, `Sikkim resolved route has ${sikkimResolved?.length} road coordinates`);
+  const sikkimTerminusDist = haversineDistanceKm(sikkimSugg.destinationEndpoint, sikkimResolved[sikkimResolved.length - 1]);
+  assert(sikkimTerminusDist <= 0.5, `Sikkim terminus matches destination within 0.5 km (got ${sikkimTerminusDist.toFixed(2)} km)`);
+
+  // 7. Verify cross-regional laser line defense:
+  // If an erroneous mission has Sikkim destination with Mizoram route ROUTE-MZ-02,
+  // validateAndResolveMissionRoute must re-resolve to the correct Sikkim route and never draw a 600km chord across Bangladesh
+  const corruptedMission = {
+    ...sikkimSugg,
+    assignedRouteId: 'ROUTE-MZ-02',
+    routeGeometry: FLEET_ROUTES['ROUTE-MZ-02'].coordinates,
+  };
+  const defendedCoords = validateAndResolveMissionRoute(corruptedMission, FLEET_ROUTES);
+  assert(defendedCoords !== null, 'Defended against corrupted cross-region mission');
+  const defendedStart = defendedCoords[0];
+  const distFromGangtok = haversineDistanceKm([27.33139, 88.61381], defendedStart);
+  assert(distFromGangtok < 20.0, `Corrupted cross-region route corrected to Sikkim origin (distance: ${distFromGangtok.toFixed(1)} km, not in Mizoram 600km away)`);
 }
 
 // ----------------------------------------------------

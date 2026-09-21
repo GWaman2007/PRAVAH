@@ -13,25 +13,25 @@ import type {
 import { calculateCompositePriority, COMMODITY_CONFIG } from './priorityEngine';
 import { FLEET_ROUTES } from '../data/fleetData';
 
-interface DepotDefinition {
+export interface DepotDefinition {
   id: string;
   name: string;
   coords: [number, number];
   primaryRouteId: string;
 }
 
-const STRATEGIC_DEPOTS: Record<string, DepotDefinition> = {
+export const STRATEGIC_DEPOTS: Record<string, DepotDefinition> = {
   silchar: {
     id: 'silchar',
     name: 'Silchar Strategic Depot',
     coords: [24.8333, 92.7789],
-    primaryRouteId: 'ROUTE-MZ-04',
+    primaryRouteId: 'ROUTE-SUG-01',
   },
   dimapur: {
     id: 'dimapur',
     name: 'Dimapur Railhead Depot',
     coords: [25.9064, 93.7275],
-    primaryRouteId: 'ROUTE-NL-01',
+    primaryRouteId: 'ROUTE-SUG-02',
   },
   guwahati: {
     id: 'guwahati',
@@ -41,9 +41,65 @@ const STRATEGIC_DEPOTS: Record<string, DepotDefinition> = {
   },
   gangtok: {
     id: 'gangtok',
-    name: 'Siliguri-Gangtok Forward Base',
-    coords: [26.7271, 88.4329],
-    primaryRouteId: 'ROUTE-MZ-02',
+    name: 'Gangtok STNM Hub',
+    coords: [27.33139, 88.61381],
+    primaryRouteId: 'ROUTE-SK-02',
+  },
+};
+
+/**
+ * Authoritative Community -> Regional Route & Depot Mapping.
+ * Strictly guarantees that every community is supplied along an authentic road route
+ * that terminates directly at or within walking proximity of the target community.
+ * Eliminates cross-regional mismatches (e.g. Mizoram routes assigned to Sikkim).
+ */
+export const COMMUNITY_ROUTING_PROFILES: Record<string, {
+  depotId: string;
+  depotName: string;
+  depotCoords: [number, number];
+  routeId: string;
+  detour: string;
+  preferredVehicleId: string;
+}> = {
+  'MZ-KOL-004': {
+    depotId: 'silchar',
+    depotName: 'Silchar Strategic Depot',
+    depotCoords: [24.8333, 92.7789],
+    routeId: 'ROUTE-SUG-01', // Silchar -> Kolasib Forward Camp (NH-306)
+    detour: 'NH-306 Safe Mountain Bypass (via Vairengte Spur)',
+    preferredVehicleId: 'Medic-01',
+  },
+  'NL-KOH-009': {
+    depotId: 'dimapur',
+    depotName: 'Dimapur Railhead Depot',
+    depotCoords: [25.9064, 93.7275],
+    routeId: 'ROUTE-SUG-02', // Dimapur -> Kohima South Ridge Node (NH-29 Bypass)
+    detour: 'NH-29 Pagla Pahar High Ridge Detour',
+    preferredVehicleId: 'Ration-Convoy-07',
+  },
+  'SK-MAN-002': {
+    depotId: 'gangtok',
+    depotName: 'Gangtok STNM Hub',
+    depotCoords: [27.33139, 88.61381],
+    routeId: 'ROUTE-SK-02', // Gangtok -> Singtam -> 29th Mile Teesta Canyon (NH-10)
+    detour: 'NH-10 Teesta Mountain Corridor (Low Gear Transit)',
+    preferredVehicleId: 'Oxy-Tanker-04',
+  },
+  'AS-DH-011': {
+    depotId: 'silchar',
+    depotName: 'Silchar Strategic Depot',
+    depotCoords: [24.8333, 92.7789],
+    routeId: 'ROUTE-AS-03', // Silchar -> Harangajao -> Barail Clearance Sector (NH-27)
+    detour: 'NH-27 Barail Mountain Axis',
+    preferredVehicleId: 'Engineer-01',
+  },
+  'AR-TAW-001': {
+    depotId: 'guwahati',
+    depotName: 'Guwahati Regional Hub',
+    depotCoords: [26.1445, 91.7362],
+    routeId: 'ROUTE-AS-01', // Guwahati -> Nagaon -> Jatinga Pass Logistics Depot (NH-27)
+    detour: 'NH-13 Sela Pass Axis',
+    preferredVehicleId: 'Supply-01',
   },
 };
 
@@ -160,19 +216,35 @@ export function generateDynamicMissionSuggestions(
 
     if (cargoAllocations.length === 0) continue;
 
-    // Resolve nearest depot and route
-    const nearestDepot = resolveNearestDepot(community.coordinates);
+    // Resolve authoritative route & depot: use dedicated community profile if available
+    const profile = COMMUNITY_ROUTING_PROFILES[community.id];
+    const nearestDepot = profile
+      ? {
+          id: profile.depotId,
+          name: profile.depotName,
+          coords: profile.depotCoords,
+          primaryRouteId: profile.routeId,
+        }
+      : resolveNearestDepot(community.coordinates);
+
+    const assignedRouteId = profile?.routeId || nearestDepot.primaryRouteId;
     const assignedRoute =
-      FLEET_ROUTES[nearestDepot.primaryRouteId] ||
-      FLEET_ROUTES['ROUTE-MZ-04'] ||
+      FLEET_ROUTES[assignedRouteId] ||
+      FLEET_ROUTES['ROUTE-SUG-01'] ||
       Object.values(FLEET_ROUTES)[0];
 
     // Recommend best matching vehicle from available fleet
-    let recommendedVehicle = availableVehicles.find((v) =>
-      isPrimarilyMedical
-        ? v.vehicle_id.toLowerCase().includes('medic') || v.cargo_type.toLowerCase().includes('medic')
-        : v.vehicle_id.toLowerCase().includes('cargo') || v.cargo_type.toLowerCase().includes('cargo')
-    );
+    let recommendedVehicle = profile?.preferredVehicleId
+      ? availableVehicles.find((v) => v.vehicle_id === profile.preferredVehicleId)
+      : undefined;
+
+    if (!recommendedVehicle) {
+      recommendedVehicle = availableVehicles.find((v) =>
+        isPrimarilyMedical
+          ? v.vehicle_id.toLowerCase().includes('medic') || v.cargo_type.toLowerCase().includes('medic')
+          : v.vehicle_id.toLowerCase().includes('cargo') || v.cargo_type.toLowerCase().includes('cargo')
+      );
+    }
 
     if (!recommendedVehicle && availableVehicles.length > 0) {
       recommendedVehicle = availableVehicles[0];
@@ -186,6 +258,12 @@ export function generateDynamicMissionSuggestions(
 
     const missionId = `SUGG-${community.id.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`;
 
+    // Ensure destination endpoint is snapped to the true road terminus of the route
+    const roadTerminus =
+      assignedRoute.coordinates && assignedRoute.coordinates.length > 0
+        ? assignedRoute.coordinates[assignedRoute.coordinates.length - 1]
+        : community.coordinates;
+
     const newSuggestion: ReliefMission = {
       id: missionId,
       communityId: community.id,
@@ -193,7 +271,7 @@ export function generateDynamicMissionSuggestions(
       recommendedVehicleType: recVehicleLabel,
       cargoAllocations,
       assignedRouteId: assignedRoute.id,
-      suggestedDetour: `${community.primaryCorridor || 'Lifeline Corridor'} Direct Dispatch`,
+      suggestedDetour: profile?.detour || `${community.primaryCorridor || 'Lifeline Corridor'} Direct Dispatch`,
       status: 'SUGGESTED',
       urgency: calculation.priorityTier === 'P1' ? 'P1_CRITICAL' : 'P2_ELEVATED',
       createdAt: new Date().toISOString(),
@@ -202,7 +280,7 @@ export function generateDynamicMissionSuggestions(
       originCoords: nearestDepot.coords,
       disasterZoneId: `HZ-${community.id}`,
       disasterZoneName: `${community.name} Threat Corridor`,
-      destinationEndpoint: community.coordinates,
+      destinationEndpoint: roadTerminus,
       destinationName: `${community.name} Community Depot`,
       assignedVehicleId: recommendedVehicle?.vehicle_id,
       routeGeometry: assignedRoute.coordinates,

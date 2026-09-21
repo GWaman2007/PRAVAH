@@ -13,6 +13,7 @@ import { NER_NODES } from '../data/routingNetwork';
 import { DESTINATION_PIN_DATA_URL } from '../assets/destinationPinBase64';
 import { FLEET_ROUTES } from '../data/fleetData';
 import { haversineDistanceKm } from './gisMath';
+import { COMMUNITY_ROUTING_PROFILES } from './missionEngine';
 
 /**
  * Transforms [lat, lng] to RFC 7946 GeoJSON [lng, lat]
@@ -35,46 +36,77 @@ export function toGeoJSONLineString(coords: [number, number][]): [number, number
  * Validates and resolves the authoritative road route for a mission.
  * Ensures that:
  * 1. The route starts near the mission origin.
- * 2. The route terminates EXACTLY on the destination endpoint marker.
- * 3. Detects and trims any route overshoots or U-turn loops past the endpoint.
+ * 2. Any geographic mismatch between route terminus and destination endpoint is detected and corrected.
+ * 3. Never forces artificial straight-line chords (>300m) across mountain ranges or international borders.
+ * 4. Only gently snaps the final terminus point if within 300 meters of the destination depot.
  */
 export function validateAndResolveMissionRoute(
   mission: ReliefMission,
-  fleetRoutes: Record<string, RouteDefinition>
+  fleetRoutes: Record<string, RouteDefinition> = FLEET_ROUTES
 ): [number, number][] | null {
-  const fleetRouteCoords = fleetRoutes[mission.assignedRouteId]?.coordinates;
+  if (!mission) return null;
+
+  const routes = fleetRoutes && Object.keys(fleetRoutes).length > 0 ? fleetRoutes : FLEET_ROUTES;
+  let routeDef = routes[mission.assignedRouteId];
+
+  const dest = mission.destinationEndpoint;
+
+  const isGeographicallyMismatched = (coords: [number, number][] | undefined): boolean => {
+    if (!coords || coords.length < 2 || !dest || !Number.isFinite(dest[0]) || !Number.isFinite(dest[1])) return false;
+    const terminus = coords[coords.length - 1];
+    // If distance between route terminus and destination is > 35km, this is a regional mismatch!
+    return haversineDistanceKm(dest, terminus) > 35.0;
+  };
+
+  // If assigned route does not exist or points to an entirely different region (e.g. Mizoram route on Sikkim mission)
+  if (!routeDef || isGeographicallyMismatched(routeDef.coordinates)) {
+    // 1. Try matching by community routing profile
+    if (mission.communityId && COMMUNITY_ROUTING_PROFILES[mission.communityId]) {
+      const profile = COMMUNITY_ROUTING_PROFILES[mission.communityId];
+      if (routes[profile.routeId]) {
+        routeDef = routes[profile.routeId];
+      }
+    }
+
+    // 2. If still mismatched, search fleetRoutes for the route whose terminus is nearest to dest
+    if (!routeDef || isGeographicallyMismatched(routeDef.coordinates)) {
+      if (dest && Number.isFinite(dest[0]) && Number.isFinite(dest[1])) {
+        let bestDist = Infinity;
+        let bestRoute: RouteDefinition | null = null;
+        Object.values(routes).forEach((r) => {
+          if (!r.coordinates || r.coordinates.length < 2) return;
+          const terminus = r.coordinates[r.coordinates.length - 1];
+          const d = haversineDistanceKm(dest, terminus);
+          if (d < bestDist) {
+            bestDist = d;
+            bestRoute = r;
+          }
+        });
+        if (bestRoute && bestDist <= 35.0) {
+          routeDef = bestRoute;
+        }
+      }
+    }
+  }
+
+  const fleetRouteCoords = routeDef?.coordinates;
   const missionCoords = mission.routeGeometry;
 
   // Use authoritative verified route from fleetRoutes
   let rawCoords = fleetRouteCoords && fleetRouteCoords.length >= 2 ? fleetRouteCoords : missionCoords;
   if (!rawCoords || rawCoords.length < 2) return null;
 
-  const dest = mission.destinationEndpoint;
+  // Terminus alignment:
+  // ONLY snap the final coordinate if it is within 300 meters of dest (e.g. depot yard / parking apron).
+  // CRITICAL: NEVER replace or append when distance > 300m — this prevents artificial straight lines
+  // cutting across mountain ranges, river valleys, or international borders.
   if (dest && dest.length === 2 && Number.isFinite(dest[0]) && Number.isFinite(dest[1])) {
-    // Check if route reaches destinationEndpoint earlier and then loops/overshoots past it
-    let firstArrivalIdx = -1;
-    for (let i = Math.floor(rawCoords.length * 0.6); i < rawCoords.length; i++) {
-      const d = haversineDistanceKm(dest, rawCoords[i]);
-      if (d <= 0.15) { // within 150 meters
-        firstArrivalIdx = i;
-        break;
-      }
-    }
+    const lastPoint = rawCoords[rawCoords.length - 1];
+    const distToDest = haversineDistanceKm(dest, lastPoint);
 
-    if (firstArrivalIdx !== -1 && firstArrivalIdx < rawCoords.length - 1) {
-      let maxOvershootKm = 0;
-      for (let j = firstArrivalIdx + 1; j < rawCoords.length; j++) {
-        const d = haversineDistanceKm(dest, rawCoords[j]);
-        if (d > maxOvershootKm) maxOvershootKm = d;
-      }
-      if (maxOvershootKm > 0.3) {
-        rawCoords = rawCoords.slice(0, firstArrivalIdx + 1);
-      }
+    if (distToDest <= 0.3) {
+      rawCoords = [...rawCoords.slice(0, rawCoords.length - 1), [dest[0], dest[1]]];
     }
-
-    // Force the final point of rawCoords to match the destination endpoint EXACTLY
-    const lastIdx = rawCoords.length - 1;
-    rawCoords = [...rawCoords.slice(0, lastIdx), [dest[0], dest[1]]];
   }
 
   return rawCoords;
