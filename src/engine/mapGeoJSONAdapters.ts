@@ -10,7 +10,6 @@ import type {
   Incident,
 } from '../types';
 import { NER_NODES } from '../data/routingNetwork';
-import { LANDSLIDE_HAZARD_GEOJSON } from '../data/nerGeoJSON';
 import { DESTINATION_PIN_DATA_URL } from '../assets/destinationPinBase64';
 import { FLEET_ROUTES } from '../data/fleetData';
 import { haversineDistanceKm } from './gisMath';
@@ -369,39 +368,12 @@ export function createRoadStatusGeoJSON(
 }
 
 /**
- * 7. Disasters GeoJSON (Realtime API Hazard Polygons + ISRO Bhuvan LHZ Baseline)
+ * 7. Disasters GeoJSON (Real-time API Hazard Polygons from GDACS & Cloud)
  */
 export function createDisastersGeoJSON(
   hazardZones: (HazardZone | RealtimeHazardPolygon)[] = []
 ): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   const features: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
-
-  const hasRealtimePolygons = hazardZones.some((hz: any) => hz && Array.isArray(hz.coordinates));
-
-  // If no realtime polygons passed, fall back to baseline static features
-  if (!hasRealtimePolygons && LANDSLIDE_HAZARD_GEOJSON && Array.isArray(LANDSLIDE_HAZARD_GEOJSON.features)) {
-    LANDSLIDE_HAZARD_GEOJSON.features.forEach((feat: any) => {
-      if (feat.geometry?.type === 'Polygon') {
-        const sev = feat.properties?.severity || 'High';
-        let color = '#EA580C'; // Default High: Orange
-        if (sev === 'Very High' || sev === 'Critical') color = '#DC2626'; // Red
-        else if (sev === 'Moderate') color = '#D97706'; // Amber
-
-        features.push({
-          type: 'Feature',
-          geometry: feat.geometry,
-          properties: {
-            ...feat.properties,
-            source: 'ISRO_LHZ_BASELINE',
-            hazard_type: feat.properties?.hazard_type || 'Landslide Hazard Zone',
-            fillColor: color,
-            fillOpacity: 0.28,
-            outlineColor: color,
-          },
-        });
-      }
-    });
-  }
 
   // Iterate over passed hazard zones (either RealtimeHazardPolygon or legacy HazardZone)
   hazardZones.forEach((hz: any) => {

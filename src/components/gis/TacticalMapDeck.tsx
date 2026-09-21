@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { usePravahStore } from '../../store/usePravahStore';
-import { FLEET_ROUTES, HAZARD_ZONES } from '../../data/fleetData';
+import { FLEET_ROUTES } from '../../data/fleetData';
 import { NER_NODES, VEHICLE_PROFILES, NER_SEGMENTS } from '../../data/routingNetwork';
 import { NER_CHOKE_POINTS } from '../../data/nerGeoJSON';
 import {

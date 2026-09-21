@@ -30,7 +30,7 @@ import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngin
 import { calculateCompositePriority } from '../engine/priorityEngine';
 import { stepVehicleSimulation, initRouteDistances } from '../engine/telemetryEngine';
 import { generateDynamicMissionSuggestions, isMissionOngoing } from '../engine/missionEngine';
-import { getAuthoritativeHazardPolygons, getBaselineLHZPolygons } from '../engine/realtimePolygonService';
+import { getAuthoritativeHazardPolygons } from '../engine/realtimePolygonService';
 import {
   getOfflineQueue,
   queueIncidentOffline,
@@ -642,7 +642,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const activeMissionsRef = useRef<ReliefMission[]>(activeMissions);
 
   // 6c. Real-Time Hazard Polygons (APIs & Supabase Cloud)
-  const [hazardPolygons, setHazardPolygons] = useState<RealtimeHazardPolygon[]>(() => getBaselineLHZPolygons());
+  const [hazardPolygons, setHazardPolygons] = useState<RealtimeHazardPolygon[]>([]);
 
   const refreshHazardPolygons = useCallback(async () => {
     try {

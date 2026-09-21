@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -27,7 +27,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { playAckChime, playEmergencyAlertSound } from '../../utils/audioAlert';
-import { FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES } from '../../data/fleetData';
+import { FLEET_ROUTES, BLACKOUT_ZONES } from '../../data/fleetData';
 import { NER_SEGMENTS } from '../../data/routingNetwork';
 import { IncidentReportModal } from '../feed/IncidentReportModal';
 import { DataStalenessChip } from '../layout/DataStalenessChip';
@@ -74,19 +74,70 @@ export const MobileMissionCockpit: React.FC = () => {
     activeDisruptions,
     incidents,
     setActiveView,
+    selectedMissionId,
     setSelectedMissionId,
     hazardPolygons,
   } = usePravahStore();
 
-  // Active mission vehicle: selected vehicle or default to first
-  const activeVehicle =
-    vehicles.find((v) => v.vehicle_id === (selectedVehicleId || 'Medic-01')) || vehicles[0];
+  // 1. Ongoing / Dispatched Missions strictly: IN_TRANSIT, PENDING_ADMIN_CLOSEOUT, or APPROVED
+  const ongoingMissions = useMemo(() => {
+    return activeMissions.filter(
+      (m) => m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT' || m.status === 'APPROVED'
+    );
+  }, [activeMissions]);
 
-  const targetCommunity =
-    communities.find((c) => c.id === activeVehicle.destination_community_id) || communities[0];
+  // 2. Active mission resolution:
+  // Match selectedMissionId first, then selectedVehicleId, otherwise default to first ongoing mission
+  const activeMission = useMemo(() => {
+    if (selectedMissionId) {
+      const match = ongoingMissions.find((m) => m.id === selectedMissionId);
+      if (match) return match;
+    }
+    if (selectedVehicleId) {
+      const match = ongoingMissions.find((m) => m.assignedVehicleId === selectedVehicleId);
+      if (match) return match;
+    }
+    return ongoingMissions[0] || null;
+  }, [ongoingMissions, selectedMissionId, selectedVehicleId]);
 
-  const assignedRoute =
-    FLEET_ROUTES[activeVehicle.assigned_route_id] || FLEET_ROUTES['ROUTE-MZ-04'];
+  // 3. Active mission vehicle:
+  // If activeMission is defined, locate its assigned vehicle or synthesize telemetry
+  const activeVehicle = useMemo(() => {
+    if (activeMission?.assignedVehicleId) {
+      const matched = vehicles.find((v) => v.vehicle_id === activeMission.assignedVehicleId);
+      if (matched) {
+        return {
+          ...matched,
+          mission_id: activeMission.id,
+          destination_community_id: activeMission.communityId || matched.destination_community_id,
+          destination_name: activeMission.destinationName || activeMission.communityName || matched.destination_name,
+        };
+      }
+    }
+    if (selectedVehicleId) {
+      const matched = vehicles.find((v) => v.vehicle_id === selectedVehicleId);
+      if (matched) return matched;
+    }
+    return vehicles[0];
+  }, [activeMission, selectedVehicleId, vehicles]);
+
+  // 4. Dispatched vehicles visible on the cockpit map (only active convoy units, never idle unassigned fleet)
+  const visibleVehicles = useMemo(() => {
+    if (ongoingMissions.length === 0) return [activeVehicle];
+    const assignedIds = new Set(ongoingMissions.map((m) => m.assignedVehicleId).filter(Boolean));
+    const activeUnits = vehicles.filter((v) => assignedIds.has(v.vehicle_id) || v.mission_id === activeMission?.id);
+    return activeUnits.length > 0 ? activeUnits : [activeVehicle];
+  }, [ongoingMissions, vehicles, activeVehicle, activeMission?.id]);
+
+  const targetCommunity = useMemo(() => {
+    const destId = activeMission?.communityId || activeVehicle.destination_community_id;
+    return communities.find((c) => c.id === destId) || communities[0];
+  }, [activeMission, activeVehicle.destination_community_id, communities]);
+
+  const assignedRoute = useMemo(() => {
+    const routeId = activeMission?.assignedRouteId || activeVehicle.assigned_route_id;
+    return FLEET_ROUTES[routeId] || FLEET_ROUTES['ROUTE-MZ-04'];
+  }, [activeMission, activeVehicle.assigned_route_id]);
 
   const [clearanceModalOpen, setClearanceModalOpen] = useState(false);
   const [isSOSConfirmOpen, setIsSOSConfirmOpen] = useState(false);
@@ -100,41 +151,47 @@ export const MobileMissionCockpit: React.FC = () => {
   const followConvoyRef = useRef<boolean>(followConvoy);
   followConvoyRef.current = followConvoy;
 
-  const activeMission = activeMissions.find(
-    (m) => m.assignedVehicleId === activeVehicle.vehicle_id || m.id === activeVehicle.mission_id
-  );
   const isPendingCloseout = activeMission?.status === 'PENDING_ADMIN_CLOSEOUT';
   const isDelivered = activeVehicle.status === 'DELIVERED_COMPLETED' || activeMission?.status === 'DELIVERED';
   const isDeadZone = activeVehicle.status === 'DEAD_ZONE_EXTRAPOLATING';
   const isSOS = activeVehicle.status === 'SOS_ALERT' || activeVehicle.is_sos_manual;
   const isHalted = activeVehicle.is_stopped_manual;
 
-  // Maneuver banner details based on active convoy
-  const getManeuverDetails = (vehId: string) => {
-    switch (vehId) {
-      case 'Oxy-Tanker-04':
-        return {
-          corridor: 'In 800m • NH-10 Teesta Mountain Corridor',
-          turn: 'Maintain Low Gear • Approaching 29th Mile Blackout',
-          eta: '1h 15m',
-        };
-      case 'Ration-Convoy-07':
-        return {
-          corridor: 'In 500m • NH-29 Pagla Pahar High Ridge',
-          turn: 'Bear Left onto Pagla Pahar High Ridge Detour',
-          eta: '55m',
-        };
-      case 'Medic-01':
-      default:
-        return {
-          corridor: 'In 350m • NH-306 Safe Mountain Bypass',
-          turn: 'Turn Right onto Bilkhawthlir Escarpment Detour',
-          eta: '42m',
-        };
-    }
-  };
+  // Maneuver banner details dynamically derived from active mission route & progress
+  const currentManeuver = useMemo(() => {
+    if (activeMission) {
+      const dest = activeMission.destinationName || activeMission.communityName || targetCommunity.name || 'Operational Sector';
+      const detour = activeMission.suggestedDetour;
+      const progress = activeVehicle.route_progress_pct || 0;
+      const baseDuration = activeMission.routeDurationMinutes || assignedRoute.expectedDurationMinutes || 60;
+      const remainingMinutes = Math.max(3, Math.round(baseDuration * (1 - progress / 100)));
+      const etaStr = remainingMinutes >= 60
+        ? `${Math.floor(remainingMinutes / 60)}h ${remainingMinutes % 60}m`
+        : `${remainingMinutes}m`;
 
-  const currentManeuver = getManeuverDetails(activeVehicle.vehicle_id);
+      const corridor = detour
+        ? `Detour Enforced • ${detour}`
+        : assignedRoute.name
+          ? `In 400m • ${assignedRoute.name}`
+          : `In 400m • Mountain Relief Corridor`;
+
+      const turn = detour
+        ? `Proceed via ${detour} to ${dest}`
+        : `Continue on Route to ${dest} • Maintain Safe Convoy Distance`;
+
+      return {
+        corridor,
+        turn,
+        eta: etaStr,
+      };
+    }
+
+    return {
+      corridor: 'Convoy Standby • Base Depot',
+      turn: 'Awaiting Commander Dispatch Clearance',
+      eta: '--',
+    };
+  }, [activeMission, activeVehicle.route_progress_pct, assignedRoute.expectedDurationMinutes, assignedRoute.name, targetCommunity.name]);
 
   // Active blackout zone
   const getActiveBlackoutZone = useCallback(() => {
@@ -549,7 +606,7 @@ export const MobileMissionCockpit: React.FC = () => {
       // 10. VEHICLES (Individual Native Symbols)
       map.addSource('vehicles', {
         type: 'geojson',
-        data: createVehiclesGeoJSON(vehicles, activeVehicle.vehicle_id),
+        data: createVehiclesGeoJSON(visibleVehicles, activeVehicle.vehicle_id),
       });
 
       map.addLayer({
@@ -615,12 +672,12 @@ export const MobileMissionCockpit: React.FC = () => {
 
     const vehSource = map.getSource('vehicles') as maplibregl.GeoJSONSource;
     if (vehSource) {
-      vehSource.setData(createVehiclesGeoJSON(vehicles, activeVehicle.vehicle_id));
+      vehSource.setData(createVehiclesGeoJSON(visibleVehicles, activeVehicle.vehicle_id));
     }
 
     const sosSource = map.getSource('vehicle-sos') as maplibregl.GeoJSONSource;
     if (sosSource) {
-      sosSource.setData(createVehicleSOSGeoJSON(vehicles));
+      sosSource.setData(createVehicleSOSGeoJSON(visibleVehicles));
     }
 
     // Smoothly pan to follow the convoy in real-time
@@ -630,7 +687,7 @@ export const MobileMissionCockpit: React.FC = () => {
         duration: 500,
       });
     }
-  }, [vehicles, activeVehicle.vehicle_id, activeVehicle.current_coords]);
+  }, [visibleVehicles, activeVehicle.vehicle_id, activeVehicle.current_coords]);
 
   // 3. Switch Route, Destination, and Blackout when activeVehicle changes
   useEffect(() => {
@@ -724,50 +781,137 @@ export const MobileMissionCockpit: React.FC = () => {
 
   return (
     <div className="max-w-md mx-auto px-3 py-4 space-y-3 pb-44 select-none text-xs text-text-primary">
-      {/* 0. Multi-Mission Convoy Selector Strip */}
-      <div className="bg-surface border border-border p-2 rounded-md shadow-xs space-y-1.5">
-        <div className="flex items-center justify-between text-[11px] text-text-secondary px-0.5">
-          <span className="font-semibold text-text-primary flex items-center gap-1">
-            <Truck className="w-3.5 h-3.5 text-primary" />
-            <span>{t('assignedMissionConvoy')}</span>
-          </span>
-          <span className="font-mono text-[10px] text-text-secondary">
-            {vehicles.length} Active Missions (Field Testing)
-          </span>
+      {/* 0. Multi-Mission Convoy Selector Strip - STRICTLY displays only approved & dispatched missions */}
+      {ongoingMissions.length === 0 ? (
+        <div className="bg-surface border border-border p-3 rounded-md shadow-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-sm bg-surface-subtle border border-border flex items-center justify-center shrink-0">
+              <Truck className="w-4 h-4 text-text-secondary" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-semibold text-xs text-text-primary">Convoy Standby • No Dispatched Missions</div>
+              <div className="text-[11px] text-text-secondary truncate">
+                Awaiting Commander dispatch clearance in Missions Coordinator.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveView('MISSIONS')}
+            className="text-[10px] font-semibold text-primary px-2.5 py-1.5 rounded-sm bg-primary-tint border border-primary/30 shrink-0 hover:bg-primary/20 transition-all cursor-pointer"
+          >
+            Missions
+          </button>
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {vehicles.map((veh) => {
-            const isSelected = veh.vehicle_id === activeVehicle.vehicle_id;
-            const hasSOS = veh.status === 'SOS_ALERT' || veh.is_sos_manual;
-            const isDead = veh.status === 'DEAD_ZONE_EXTRAPOLATING';
-            return (
-              <button
-                key={veh.vehicle_id}
-                onClick={() => setSelectedVehicleId(veh.vehicle_id)}
-                className={`p-2 rounded-sm text-left border transition-all btn-press cursor-pointer flex flex-col justify-between ${
-                  isSelected
-                    ? 'bg-primary-tint border-primary text-primary shadow-xs ring-1 ring-primary/40'
-                    : 'bg-surface-subtle hover:bg-surface border-border text-text-secondary'
-                }`}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <span className="font-mono font-bold text-[11px] truncate">{veh.vehicle_id}</span>
-                  {hasSOS ? (
-                    <span className="w-2 h-2 rounded-full bg-status-blocked-solid animate-ping" />
-                  ) : isDead ? (
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                  ) : (
-                    <span className="w-1.5 h-1.5 rounded-full bg-status-open-solid" />
-                  )}
+      ) : ongoingMissions.length === 1 ? (
+        <div className="bg-surface border border-border p-2.5 rounded-md shadow-xs space-y-2">
+          <div className="flex items-center justify-between text-[11px] px-0.5">
+            <span className="font-semibold text-text-primary flex items-center gap-1.5">
+              <Truck className="w-3.5 h-3.5 text-primary" />
+              <span>{t('assignedMissionConvoy')}</span>
+            </span>
+            <span className="font-mono text-[10px] px-2 py-0.5 rounded-xs bg-status-open-tint text-status-open-text font-bold border border-status-open-solid/30 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-status-open-solid animate-ping" />
+              1 Dispatched Mission Active
+            </span>
+          </div>
+
+          <div className="bg-primary-tint/30 border border-primary/30 rounded-sm p-2.5 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-mono font-bold text-xs text-primary">
+                  {ongoingMissions[0].assignedVehicleId || activeVehicle.vehicle_id}
+                </span>
+                <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-xs bg-surface border border-border text-text-secondary font-medium">
+                  Msn: {ongoingMissions[0].id}
+                </span>
+                {isSOS ? (
+                  <span className="px-1.5 py-0.2 rounded-xs bg-status-blocked-solid text-white text-[9px] font-bold animate-pulse">
+                    SOS
+                  </span>
+                ) : isDeadZone ? (
+                  <span className="px-1.5 py-0.2 rounded-xs bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[9px] font-bold">
+                    DEAD-ZONE
+                  </span>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-status-open-solid inline-block" />
+                )}
+              </div>
+              <div className="text-[11px] text-text-primary font-medium truncate mt-1">
+                Dest: <strong>{ongoingMissions[0].destinationName || ongoingMissions[0].communityName}</strong>
+              </div>
+              <div className="text-[10px] text-text-secondary truncate mt-0.5">
+                Cargo: {ongoingMissions[0].cargoAllocations?.map((c) => `${c.quantity}${c.unit} ${c.item}`).join(', ') || 'Relief Consignment'}
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xs ${
+                ongoingMissions[0].status === 'PENDING_ADMIN_CLOSEOUT'
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-status-open-solid text-white'
+              }`}>
+                {ongoingMissions[0].status === 'PENDING_ADMIN_CLOSEOUT' ? 'PENDING CLOSEOUT' : 'EN ROUTE'}
+              </span>
+              {ongoingMissions[0].assignedDriver && (
+                <div className="text-[9px] text-text-secondary mt-1">
+                  Driver: {ongoingMissions[0].assignedDriver}
                 </div>
-                <div className="text-[9px] truncate font-medium mt-0.5 opacity-90">
-                  Msn: {veh.mission_id}
-                </div>
-              </button>
-            );
-          })}
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-surface border border-border p-2 rounded-md shadow-xs space-y-1.5">
+          <div className="flex items-center justify-between text-[11px] text-text-secondary px-0.5">
+            <span className="font-semibold text-text-primary flex items-center gap-1">
+              <Truck className="w-3.5 h-3.5 text-primary" />
+              <span>{t('assignedMissionConvoy')}</span>
+            </span>
+            <span className="font-mono text-[10px] text-primary font-semibold">
+              {ongoingMissions.length} Active Dispatched Missions
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {ongoingMissions.map((msn) => {
+              const vehId = msn.assignedVehicleId || 'Medic-01';
+              const isSelected = vehId === activeVehicle.vehicle_id || msn.id === activeMission?.id;
+              const veh = vehicles.find((v) => v.vehicle_id === vehId);
+              const hasSOS = veh?.status === 'SOS_ALERT' || veh?.is_sos_manual;
+              const isDead = veh?.status === 'DEAD_ZONE_EXTRAPOLATING';
+              return (
+                <button
+                  key={msn.id}
+                  onClick={() => {
+                    if (msn.assignedVehicleId) setSelectedVehicleId(msn.assignedVehicleId);
+                    setSelectedMissionId(msn.id);
+                  }}
+                  className={`p-2 rounded-sm text-left border transition-all btn-press cursor-pointer flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-primary-tint border-primary text-primary shadow-xs ring-1 ring-primary/40'
+                      : 'bg-surface-subtle hover:bg-surface border-border text-text-secondary'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="font-mono font-bold text-[11px] truncate">{vehId}</span>
+                    {hasSOS ? (
+                      <span className="w-2 h-2 rounded-full bg-status-blocked-solid animate-ping" />
+                    ) : isDead ? (
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-status-open-solid" />
+                    )}
+                  </div>
+                  <div className="text-[9px] truncate font-medium mt-0.5">
+                    Msn: <span className="font-bold">{msn.id}</span>
+                  </div>
+                  <div className="text-[9px] truncate text-text-secondary mt-0.5">
+                    Dest: {msn.destinationName || msn.communityName}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* In-Cabin Emergency Distress Beacon Active Banner */}
       {isSOS && (
@@ -828,13 +972,15 @@ export const MobileMissionCockpit: React.FC = () => {
           <span className="w-2 h-2 rounded-full bg-status-open-solid animate-ping shrink-0" />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-xs text-text-primary truncate">Mission {activeVehicle.mission_id}</span>
+              <span className="font-bold text-xs text-text-primary truncate">
+                Mission {activeMission ? activeMission.id : activeVehicle.mission_id || 'Standby'}
+              </span>
               <span className="font-mono text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded-xs bg-primary-tint text-primary font-bold shrink-0">
                 {activeVehicle.vehicle_id}
               </span>
             </div>
             <p className="text-[10px] text-text-secondary truncate max-w-[120px] xs:max-w-[160px] sm:max-w-none">
-              Dest: <strong>{targetCommunity.name}</strong>
+              Dest: <strong>{activeMission?.destinationName || activeMission?.communityName || targetCommunity.name}</strong>
             </p>
           </div>
         </div>

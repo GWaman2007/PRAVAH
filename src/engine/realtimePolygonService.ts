@@ -212,7 +212,7 @@ export function getBaselineLHZPolygons(): RealtimeHazardPolygon[] {
 }
 
 /**
- * Combined Aggregator: Combines API real-time polygons with authoritative baseline
+ * Combined Aggregator: Exclusively fetches and caches real-time hazard polygons from live disaster APIs
  */
 let cachedPolygons: RealtimeHazardPolygon[] | null = null;
 let lastFetchTimestamp = 0;
@@ -224,22 +224,15 @@ export async function getAuthoritativeHazardPolygons(): Promise<RealtimeHazardPo
     return cachedPolygons;
   }
 
-  // Baseline from ISRO NRSC LHZ
-  const baseline = getBaselineLHZPolygons();
-
-  // Try real-time API fetch
+  // Fetch live disaster polygons strictly from real-time open APIs (GDACS, OSM)
   try {
     const liveGDACS = await fetchGDACSEventPolygons();
-    const mergedMap = new Map<string, RealtimeHazardPolygon>();
-
-    baseline.forEach((p) => mergedMap.set(p.id, p));
-    liveGDACS.forEach((p) => mergedMap.set(p.id, p));
-
-    cachedPolygons = Array.from(mergedMap.values());
+    cachedPolygons = liveGDACS;
     lastFetchTimestamp = now;
     return cachedPolygons;
   } catch {
-    cachedPolygons = baseline;
-    return baseline;
+    cachedPolygons = [];
+    return [];
   }
 }
+

@@ -204,32 +204,7 @@ export const BLACKOUT_ZONES: BlackoutZone[] = [
   },
 ];
 
-export const HAZARD_ZONES: HazardZone[] = [
-  {
-    id: 'HAZARD-01',
-    name: 'Bilkhawthlir Silt Subsidence Zone',
-    hazardType: 'Active Slope Creep & Rockfall',
-    polygon: [
-      [24.3000, 92.7200],
-      [24.3000, 92.7500],
-      [24.2700, 92.7500],
-      [24.2700, 92.7200],
-      [24.3000, 92.7200],
-    ],
-  },
-  {
-    id: 'HAZARD-02',
-    name: 'Dzüdza River Bridge Failure Sector',
-    hazardType: 'Flash Mudflow & Bridge Load Stress',
-    polygon: [
-      [25.7600, 93.9600],
-      [25.7600, 94.0000],
-      [25.7300, 94.0000],
-      [25.7300, 93.9600],
-      [25.7600, 93.9600],
-    ],
-  },
-];
+export const HAZARD_ZONES: HazardZone[] = [];
 
 export const INITIAL_RELIEF_MISSIONS: ReliefMission[] = [];
 
