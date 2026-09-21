@@ -37,7 +37,7 @@ const AppContent: React.FC = () => {
   ) || null;
 
   return (
-    <div className={`min-h-screen bg-page-bg flex flex-col ${activeView === 'GIS_COMMAND' ? 'pb-16 lg:pb-0' : 'pb-28 sm:pb-24'}`}>
+    <div className={`${activeView === 'GIS_COMMAND' ? 'h-screen h-[100dvh] overflow-hidden' : 'min-h-screen pb-28 sm:pb-24'} bg-page-bg flex flex-col`}>
       {/* Global Header */}
       <Header />
 

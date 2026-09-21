@@ -1409,7 +1409,7 @@ export const TacticalMapDeck: React.FC = () => {
   const selectedRoute = candidateRoutes[selectedRouteIndex] || candidateRoutes[0];
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-112px)] sm:h-[calc(100vh-105px)] overflow-hidden bg-page-bg relative">
+    <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden bg-page-bg relative">
       {/* Mobile Switcher Tab Bar (< lg) */}
       <div className="lg:hidden flex items-center bg-surface border-b border-border p-1.5 shrink-0 z-20">
         <button
