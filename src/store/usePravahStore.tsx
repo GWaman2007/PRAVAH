@@ -19,6 +19,7 @@ import type {
   LanguageId,
   SegmentIncident,
   ReliefMission,
+  RealtimeHazardPolygon,
 } from '../types';
 import { NER_SEGMENTS, NER_NODES, VEHICLE_PROFILES } from '../data/routingNetwork';
 import { INITIAL_COMMUNITIES } from '../data/communitiesData';
@@ -28,6 +29,8 @@ import { SUPPORTED_LANGUAGES, PRESET_TRANSLATIONS, PHONETIC_READINGS, generateBr
 import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngine';
 import { calculateCompositePriority } from '../engine/priorityEngine';
 import { stepVehicleSimulation, initRouteDistances } from '../engine/telemetryEngine';
+import { generateDynamicMissionSuggestions, isMissionOngoing } from '../engine/missionEngine';
+import { getAuthoritativeHazardPolygons, getBaselineLHZPolygons } from '../engine/realtimePolygonService';
 import {
   getOfflineQueue,
   queueIncidentOffline,
@@ -61,6 +64,10 @@ import {
   broadcastCloudMissionDispatched,
   broadcastCloudMissionApproved,
   broadcastCloudMissionDelivered,
+  broadcastCloudMissionPendingCloseout,
+  broadcastCloudMissionClosedOut,
+  fetchCloudHazardZones,
+  upsertCloudHazardZone,
   broadcastCloudSOS,
   cancelCloudSOS,
 } from '../engine/supabaseClient';
@@ -178,6 +185,12 @@ interface PravahStoreContextType {
   dispatchMission: (missionId: string, vehicleId?: string) => void;
   approveAndDispatchMission: (missionId: string) => void;
   customizeMission: (mission: ReliefMission) => void;
+  reportMissionDeliveryByField: (missionId: string) => void;
+  adminCloseoutMission: (missionId: string) => void;
+
+  // Real-Time Hazard Polygons (APIs & Cloud)
+  hazardPolygons: RealtimeHazardPolygon[];
+  refreshHazardPolygons: () => Promise<void>;
 
   // Driver SOS Distress Signal Intercept
   pendingSOSAlert: AlertEvent | null;
@@ -557,8 +570,16 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [originHub, destinationHub, selectedVehicle, rainfallMmHr, activeDisruptions]);
 
   // 6. Telemetry & Watchdog
-  const [vehicles, setVehicles] = useState<VehicleTelemetry[]>(INITIAL_VEHICLES);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>('Medic-01');
+  const [vehicles, setVehicles] = useState<VehicleTelemetry[]>(() =>
+    INITIAL_VEHICLES.map((v) => ({
+      ...v,
+      status: 'AVAILABLE' as const,
+      speed_kmh: 0,
+      mission_id: '',
+      route_progress_pct: 0,
+    }))
+  );
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<AlertEvent[]>([
     {
       id: 'init-alert-01',
@@ -577,68 +598,60 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [isSimulationRunning, setIsSimulationRunning] = useState<boolean>(true);
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
 
-  // 6b. Preemptive Relief Missions (10 Ongoing + 3 Suggested)
+  // 6b. Preemptive Relief Missions (0 Ongoing initial state; dynamic suggestions from community deficits)
   const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(() => {
     const persisted = typeof window !== 'undefined' ? getPersistedMissions() : null;
     if (persisted && persisted.length > 0) {
-      // Synchronize with authoritative FLEET_ROUTES so stale localStorage geometry is refreshed
-      return persisted.map((pm: ReliefMission) => {
-        const init = INITIAL_RELIEF_MISSIONS.find((im) => im.id === pm.id);
-        const fleetRoute = FLEET_ROUTES[pm.assignedRouteId];
-        if (init && fleetRoute) {
-          const routeCoords = fleetRoute.coordinates;
-          const endCoord =
-            routeCoords && routeCoords.length > 0
-              ? routeCoords[routeCoords.length - 1]
-              : init.destinationEndpoint;
-          return {
-            ...pm,
-            destinationEndpoint: endCoord,
-            destinationName: init.destinationName || pm.destinationName,
-            originCoords: init.originCoords,
-            originWarehouseId: init.originWarehouseId,
-            originWarehouseName: init.originWarehouseName,
-            routeDistanceKm: fleetRoute.distanceKm,
-            routeDurationMinutes: fleetRoute.expectedDurationMinutes,
-            routeGeometry: fleetRoute.coordinates,
-          };
-        }
-        return pm;
-      });
+      // Filter out stale mock in-transit missions so ongoing starts with real user-approved missions
+      const cleaned = persisted.filter(
+        (pm: ReliefMission) =>
+          pm.status === 'APPROVED' ||
+          pm.status === 'IN_TRANSIT' ||
+          pm.status === 'PENDING_ADMIN_CLOSEOUT' ||
+          pm.status === 'SUGGESTED' ||
+          pm.status === 'DELIVERED'
+      );
+      if (cleaned.length > 0) {
+        return cleaned;
+      }
     }
-    return INITIAL_RELIEF_MISSIONS;
+    // Generate realistic dynamic suggestions from community depletion metrics
+    return generateDynamicMissionSuggestions(INITIAL_COMMUNITIES, INITIAL_VEHICLES, []);
   });
-  const [selectedMissionId, setSelectedMissionId] = useState<string | null>('MISSION-MZ-04');
+  const [selectedMissionId, setSelectedMissionId] = useState<string | null>(() => {
+    const first = activeMissions.find((m) => m.status === 'SUGGESTED' || m.status === 'IN_TRANSIT');
+    return first?.id || null;
+  });
   const activeMissionsRef = useRef<ReliefMission[]>(activeMissions);
 
-  // Synchronize any in-memory or persisted missions with authoritative route terminus
-  useEffect(() => {
-    setActiveMissions((prev) =>
-      prev.map((pm) => {
-        const init = INITIAL_RELIEF_MISSIONS.find((im) => im.id === pm.id);
-        const fleetRoute = FLEET_ROUTES[pm.assignedRouteId];
-        if (init && fleetRoute) {
-          const routeCoords = fleetRoute.coordinates;
-          const endCoord =
-            routeCoords && routeCoords.length > 0
-              ? routeCoords[routeCoords.length - 1]
-              : init.destinationEndpoint;
-          return {
-            ...pm,
-            destinationEndpoint: endCoord,
-            destinationName: init.destinationName || pm.destinationName,
-            originCoords: init.originCoords,
-            originWarehouseId: init.originWarehouseId,
-            originWarehouseName: init.originWarehouseName,
-            routeDistanceKm: fleetRoute.distanceKm,
-            routeDurationMinutes: fleetRoute.expectedDurationMinutes,
-            routeGeometry: fleetRoute.coordinates,
-          };
+  // 6c. Real-Time Hazard Polygons (APIs & Supabase Cloud)
+  const [hazardPolygons, setHazardPolygons] = useState<RealtimeHazardPolygon[]>(() => getBaselineLHZPolygons());
+
+  const refreshHazardPolygons = useCallback(async () => {
+    try {
+      const polygons = await getAuthoritativeHazardPolygons();
+      if (polygons && polygons.length > 0) {
+        setHazardPolygons(polygons);
+      }
+      if (isSupabaseConfigured) {
+        const cloudZones = await fetchCloudHazardZones();
+        if (cloudZones && cloudZones.length > 0) {
+          setHazardPolygons((prev) => {
+            const merged = new Map(prev.map((p) => [p.id, p]));
+            cloudZones.forEach((cz) => merged.set(cz.id, cz));
+            return Array.from(merged.values());
+          });
         }
-        return pm;
-      })
-    );
+      }
+    } catch (err) {
+      console.warn('[PRAVAH] Failed to refresh hazard polygons:', err);
+    }
   }, []);
+
+  useEffect(() => {
+    refreshHazardPolygons();
+  }, [refreshHazardPolygons]);
+
 
   useEffect(() => {
     activeMissionsRef.current = activeMissions;
@@ -729,6 +742,20 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           const assignedMission = activeMissionsRef.current.find(
             (m) => m.assignedVehicleId === v.vehicle_id || m.id === v.mission_id
           );
+
+          // If vehicle is available, delivered-idle, or has no active ongoing mission, keep stationary
+          if (
+            v.status === 'AVAILABLE' ||
+            v.status === 'DELIVERED_IDLE' ||
+            v.status === 'DELIVERED_COMPLETED' ||
+            !assignedMission ||
+            !isMissionOngoing(assignedMission)
+          ) {
+            return {
+              ...v,
+              speed_kmh: 0,
+            };
+          }
 
           let route = FLEET_ROUTES[v.assigned_route_id] || FLEET_ROUTES['ROUTE-MZ-04'];
           if (assignedMission && assignedMission.routeGeometry && assignedMission.routeGeometry.length >= 2) {
@@ -1539,6 +1566,150 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     approveAndDispatchMission(mission.id);
   }, [approveAndDispatchMission]);
 
+  // Field Officer / Driver: Report Delivery Finished (moves to PENDING_ADMIN_CLOSEOUT)
+  const reportMissionDeliveryByField = useCallback((missionId: string) => {
+    let targetMission: ReliefMission | undefined;
+    let targetVehId: string | undefined;
+
+    setActiveMissions((prev) => {
+      const next = prev.map((m) => {
+        if (m.id === missionId) {
+          targetMission = {
+            ...m,
+            status: 'PENDING_ADMIN_CLOSEOUT' as const,
+            deliveredAt: new Date().toISOString(),
+          };
+          targetVehId = m.assignedVehicleId;
+          return targetMission;
+        }
+        return m;
+      });
+      persistMissions(next);
+      return next;
+    });
+
+    if (targetVehId) {
+      setVehicles((prev) =>
+        prev.map((v) =>
+          v.vehicle_id === targetVehId
+            ? { ...v, status: 'DELIVERED_IDLE' as const, speed_kmh: 0, route_progress_pct: 100 }
+            : v
+        )
+      );
+    }
+
+    const officerName = activeRoleRef.current === 'FIELD_OFFICER' ? 'Inspector L. Hmar (Field Officer)' : 'Convoy Lead Driver';
+    const alertId = `closeout-pending-${Date.now()}`;
+    const newAlert: AlertEvent = {
+      id: alertId,
+      vehicle_id: targetVehId || 'Convoy',
+      vehicle_name: targetVehId || 'Convoy Unit',
+      cargo_type: targetMission?.cargoAllocations?.[0]?.item || 'Relief Consignment',
+      timestamp: new Date().toISOString(),
+      severity: 'HIGH RISK',
+      type: 'DELIVERY_PENDING_CLOSEOUT',
+      title: 'FIELD DELIVERY COMPLETED — PENDING ADMIN SIGN-OFF',
+      message: `${officerName} reported relief delivery finished for mission ${missionId} at ${targetMission?.destinationName || 'destination'}. Awaiting Central Command Admin review and sign-off.`,
+      coords: targetMission?.destinationEndpoint || [24.22, 92.67],
+      acknowledged: false,
+    };
+    setAlerts((prev) => [newAlert, ...prev]);
+
+    if (isSupabaseConfigured && targetMission) {
+      upsertCloudMission(targetMission);
+      broadcastCloudMissionPendingCloseout(missionId, targetVehId, officerName);
+    }
+  }, []);
+
+  // Central Super Admin: Review & Closeout Mission
+  const adminCloseoutMission = useCallback((missionId: string) => {
+    let closedMission: ReliefMission | undefined;
+    let commId: string | undefined;
+    let vehId: string | undefined;
+
+    setActiveMissions((prev) => {
+      const next = prev.map((m) => {
+        if (m.id === missionId) {
+          closedMission = {
+            ...m,
+            status: 'DELIVERED' as const,
+            deliveredAt: m.deliveredAt || new Date().toISOString(),
+          };
+          commId = m.communityId;
+          vehId = m.assignedVehicleId;
+          return closedMission;
+        }
+        return m;
+      });
+      persistMissions(next);
+      return next;
+    });
+
+    // Replenish Community inventories to 100% capacity and reset priority tier
+    if (commId) {
+      setRawCommunities((prev) => {
+        const next = prev.map((c) => {
+          if (c.id === commId) {
+            const replenished: CommunityBase = {
+              ...c,
+              elapsedTimeHours: 0,
+              cutoffTimeHours: Math.max(c.cutoffTimeHours, 72.0),
+              isMonsoonAlertActive: false,
+              hasActiveIndent: false,
+              inventories: {
+                IV_FLUIDS: { lastStock: 400, baselineDailyBurn: c.inventories.IV_FLUIDS?.baselineDailyBurn || 40, standardCapacity: c.inventories.IV_FLUIDS?.standardCapacity || 400 },
+                ANTIVENOM: { lastStock: 120, baselineDailyBurn: c.inventories.ANTIVENOM?.baselineDailyBurn || 12, standardCapacity: c.inventories.ANTIVENOM?.standardCapacity || 120 },
+                GRAIN_RICE: { lastStock: 1500, baselineDailyBurn: c.inventories.GRAIN_RICE?.baselineDailyBurn || 120, standardCapacity: c.inventories.GRAIN_RICE?.standardCapacity || 1500 },
+                DIESEL: { lastStock: 800, baselineDailyBurn: c.inventories.DIESEL?.baselineDailyBurn || 60, standardCapacity: c.inventories.DIESEL?.standardCapacity || 800 },
+              },
+            };
+            if (isSupabaseConfigured) {
+              upsertCloudCommunity(replenished);
+            }
+            return replenished;
+          }
+          return c;
+        });
+        persistCommunities(next);
+        return next;
+      });
+    }
+
+    // Release Vehicle back to AVAILABLE
+    if (vehId) {
+      setVehicles((prev) =>
+        prev.map((v) =>
+          v.vehicle_id === vehId
+            ? { ...v, status: 'AVAILABLE' as const, speed_kmh: 0, mission_id: '', route_progress_pct: 0 }
+            : v
+        )
+      );
+    }
+
+    // Push Success Alert
+    setAlerts((prev) => [
+      {
+        id: `closeout-done-${Date.now()}`,
+        vehicle_id: vehId || 'Fleet Unit',
+        vehicle_name: vehId || 'Fleet Unit',
+        cargo_type: 'Relief Inventory Signed Off',
+        timestamp: new Date().toISOString(),
+        severity: 'INFO',
+        type: 'DELIVERY_COMPLETED',
+        title: 'MISSION CLOSED OUT & STOCKS RESTORED',
+        message: `Admin signed off mission ${missionId}. Community inventory restored to 100% capacity (Priority P4 Nominal). Vehicle ${vehId || 'unit'} released to AVAILABLE.`,
+        coords: closedMission?.destinationEndpoint || [24.22, 92.67],
+        acknowledged: false,
+      },
+      ...prev,
+    ]);
+
+    if (isSupabaseConfigured && closedMission) {
+      upsertCloudMission(closedMission);
+      broadcastCloudMissionClosedOut(missionId, commId || '', vehId);
+    }
+  }, []);
+
   // 14. Interactive 1-Click Walkthrough Demo Actions
   const runDemoStep1 = useCallback(() => {
     setRainfallMmHr(65);
@@ -2203,6 +2374,90 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             setPendingSOSAlert((curr) => (curr?.vehicle_id === payload.vehicleId ? null : curr));
           }
         })
+        .on('broadcast', { event: 'MISSION_PENDING_CLOSEOUT' }, ({ payload }: any) => {
+          if (payload?.missionId) {
+            setActiveMissions((prev) => {
+              const next = prev.map((m) =>
+                m.id === payload.missionId ? { ...m, status: 'PENDING_ADMIN_CLOSEOUT' as const } : m
+              );
+              persistMissions(next);
+              return next;
+            });
+            if (payload?.vehicleId) {
+              setVehicles((prev) =>
+                prev.map((v) =>
+                  v.vehicle_id === payload.vehicleId
+                    ? { ...v, status: 'DELIVERED_IDLE' as const, speed_kmh: 0, route_progress_pct: 100 }
+                    : v
+                )
+              );
+            }
+            setAlerts((prev) => [
+              {
+                id: `pending-closeout-sync-${Date.now()}`,
+                vehicle_id: payload.vehicleId || 'Convoy',
+                vehicle_name: payload.vehicleId || 'Convoy',
+                cargo_type: 'Relief Handover',
+                timestamp: new Date().toISOString(),
+                severity: 'HIGH RISK',
+                type: 'DELIVERY_PENDING_CLOSEOUT',
+                title: 'FIELD DELIVERY COMPLETED — PENDING ADMIN SIGN-OFF',
+                message: `${payload.reportedBy || 'Field Officer'} reported relief delivery finished for mission ${payload.missionId}. Awaiting Admin sign-off.`,
+                coords: [24.22, 92.67],
+                acknowledged: false,
+              },
+              ...prev,
+            ]);
+          }
+        })
+        .on('broadcast', { event: 'MISSION_CLOSED_OUT' }, ({ payload }: any) => {
+          if (payload?.missionId) {
+            setActiveMissions((prev) => {
+              const next = prev.map((m) =>
+                m.id === payload.missionId ? { ...m, status: 'DELIVERED' as const } : m
+              );
+              persistMissions(next);
+              return next;
+            });
+            if (payload?.vehicleId) {
+              setVehicles((prev) =>
+                prev.map((v) =>
+                  v.vehicle_id === payload.vehicleId
+                    ? { ...v, status: 'AVAILABLE' as const, speed_kmh: 0, mission_id: '', route_progress_pct: 0 }
+                    : v
+                )
+              );
+            }
+            if (payload?.communityId) {
+              setRawCommunities((prev) =>
+                prev.map((c) =>
+                  c.id === payload.communityId
+                    ? {
+                        ...c,
+                        elapsedTimeHours: 0,
+                        inventories: {
+                          IV_FLUIDS: { lastStock: 400, baselineDailyBurn: c.inventories.IV_FLUIDS?.baselineDailyBurn || 40, standardCapacity: c.inventories.IV_FLUIDS?.standardCapacity || 400 },
+                          ANTIVENOM: { lastStock: 120, baselineDailyBurn: c.inventories.ANTIVENOM?.baselineDailyBurn || 12, standardCapacity: c.inventories.ANTIVENOM?.standardCapacity || 120 },
+                          GRAIN_RICE: { lastStock: 1500, baselineDailyBurn: c.inventories.GRAIN_RICE?.baselineDailyBurn || 120, standardCapacity: c.inventories.GRAIN_RICE?.standardCapacity || 1500 },
+                          DIESEL: { lastStock: 800, baselineDailyBurn: c.inventories.DIESEL?.baselineDailyBurn || 60, standardCapacity: c.inventories.DIESEL?.standardCapacity || 800 },
+                        },
+                      }
+                    : c
+                )
+              );
+            }
+          }
+        })
+        .on('broadcast', { event: 'HAZARD_ZONE_UPDATED' }, ({ payload }: any) => {
+          if (payload?.zone) {
+            setHazardPolygons((prev) => {
+              const exists = prev.some((z) => z.id === payload.zone.id);
+              return exists
+                ? prev.map((z) => (z.id === payload.zone.id ? payload.zone : z))
+                : [payload.zone, ...prev];
+            });
+          }
+        })
         .subscribe();
     } catch (err) {
       console.warn('[PRAVAH] Supabase Realtime channel setup error:', err);
@@ -2295,6 +2550,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     dispatchMission,
     approveAndDispatchMission,
     customizeMission,
+    reportMissionDeliveryByField,
+    adminCloseoutMission,
+    hazardPolygons,
+    refreshHazardPolygons,
     pendingSOSAlert,
     setPendingSOSAlert,
     runDemoStep1,

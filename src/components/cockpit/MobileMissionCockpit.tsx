@@ -44,6 +44,8 @@ export const MobileMissionCockpit: React.FC = () => {
     cancelVehicleSOS,
     toggleVehicleHalt,
     markMissionDelivered,
+    reportMissionDeliveryByField,
+    activeMissions,
     addIncident,
     simulationSpeed,
     setSimulationSpeed,
@@ -74,7 +76,11 @@ export const MobileMissionCockpit: React.FC = () => {
   const destMarkerRef = useRef<L.Marker | null>(null);
   const blackoutPolygonRef = useRef<L.Polygon | null>(null);
 
-  const isDelivered = activeVehicle.status === 'DELIVERED_COMPLETED';
+  const activeMission = activeMissions.find(
+    (m) => m.assignedVehicleId === activeVehicle.vehicle_id || m.id === activeVehicle.mission_id
+  );
+  const isPendingCloseout = activeMission?.status === 'PENDING_ADMIN_CLOSEOUT';
+  const isDelivered = activeVehicle.status === 'DELIVERED_COMPLETED' || activeMission?.status === 'DELIVERED';
   const isDeadZone = activeVehicle.status === 'DEAD_ZONE_EXTRAPOLATING';
   const isSOS = activeVehicle.status === 'SOS_ALERT' || activeVehicle.is_sos_manual;
   const isHalted = activeVehicle.is_stopped_manual;
@@ -622,18 +628,28 @@ export const MobileMissionCockpit: React.FC = () => {
           <button
             onClick={() => {
               playAckChime();
-              markMissionDelivered(targetCommunity.id, activeVehicle.vehicle_id);
+              if (activeMission) {
+                reportMissionDeliveryByField(activeMission.id);
+              } else {
+                markMissionDelivered(targetCommunity.id, activeVehicle.vehicle_id);
+              }
             }}
-            disabled={isDelivered}
+            disabled={isDelivered || isPendingCloseout}
             className={`touch-target p-2 rounded-md font-semibold text-xs flex flex-col items-center justify-center space-y-1 btn-press shadow-xs cursor-pointer ${
               isDelivered
                 ? 'bg-status-open-tint text-status-open-text border border-status-open-solid'
+                : isPendingCloseout
+                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/50'
                 : 'bg-status-open-solid hover:bg-status-open-text text-white animate-pulse'
             }`}
           >
             <CheckCircle2 className="w-5 h-5" />
             <span className="text-[11px] text-center leading-tight">
-              {isDelivered ? t('restockComplete') : t('confirmDelivery')}
+              {isDelivered
+                ? t('restockComplete')
+                : isPendingCloseout
+                ? 'Delivery Reported • Pending Admin'
+                : t('confirmDelivery')}
             </span>
           </button>
         </div>

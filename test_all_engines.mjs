@@ -7,6 +7,8 @@ import { resolveTtsParameters } from './src/utils/audioAlert.ts';
 import { NER_SEGMENTS, VEHICLE_PROFILES } from './src/data/routingNetwork.ts';
 import { INITIAL_COMMUNITIES } from './src/data/communitiesData.ts';
 import { FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES, INITIAL_VEHICLES } from './src/data/fleetData.ts';
+import { generateDynamicMissionSuggestions, isMissionOngoing, isMissionSuggested, isMissionDelivered } from './src/engine/missionEngine.ts';
+import { getBaselineLHZPolygons } from './src/engine/realtimePolygonService.ts';
 
 console.log('====================================================');
 console.log('🧪 RUNNING COMPREHENSIVE PRAVAH INTEGRATION TESTS');
@@ -254,6 +256,49 @@ console.log('\n--- TEST SUITE 6: RBAC Navigation & Multi-Mission Fleet ---');
   assert(canAuthorizeQRT('FLEET_DISPATCHER') === true, 'Fleet Dispatcher is authorized to intercept SOS and dispatch QRT');
   assert(canAuthorizeQRT('DRIVER') === false, 'Driver is blocked from receiving QRT executive intercept modal');
   assert(canAuthorizeQRT('FIELD_OFFICER') === false, 'Field Officer is blocked from receiving QRT executive intercept modal');
+}
+
+// ----------------------------------------------------
+// TEST 7: DYNAMIC RELIEF MISSION GENERATION & LIFECYCLE
+// ----------------------------------------------------
+console.log('\n--- TEST SUITE 7: Dynamic Missions & Closed-Loop Lifecycle ---');
+{
+  // 1. Dynamic Mission Suggestions from Community Depletion
+  const suggestions = generateDynamicMissionSuggestions(INITIAL_COMMUNITIES, INITIAL_VEHICLES, []);
+  assert(suggestions.length > 0, `Dynamic mission generator created ${suggestions.length} relief suggestions`);
+  assert(suggestions.every((s) => s.status === 'SUGGESTED'), 'All dynamic suggestions strictly have status SUGGESTED');
+  assert(suggestions.every((s) => s.cargoAllocations.length > 0), 'All suggestions contain itemized cargo manifests');
+  assert(suggestions.every((s) => s.originWarehouseName && s.destinationName), 'All suggestions have origin and destination depots assigned');
+
+  // 2. Initial Ongoing Missions = 0 check
+  const initialOngoing = suggestions.filter((s) => isMissionOngoing(s));
+  assert(initialOngoing.length === 0, `Initial state has 0 Ongoing missions (got ${initialOngoing.length})`);
+
+  // 3. Mission Approval & Dispatch Transition
+  const missionToDispatch = { ...suggestions[0], status: 'IN_TRANSIT', assignedVehicleId: 'Medic-01' };
+  assert(isMissionOngoing(missionToDispatch) === true, 'Dispatched mission transitions to Ongoing (IN_TRANSIT)');
+
+  // 4. Field Officer / Driver Delivery Reporting
+  const missionPendingCloseout = { ...missionToDispatch, status: 'PENDING_ADMIN_CLOSEOUT' };
+  assert(isMissionOngoing(missionPendingCloseout) === true, 'Field finished mission remains in Ongoing as PENDING_ADMIN_CLOSEOUT');
+
+  // 5. Admin Sign-Off & Closeout
+  const missionClosedOut = { ...missionPendingCloseout, status: 'DELIVERED' };
+  assert(isMissionOngoing(missionClosedOut) === false, 'Admin closeout removes mission from Ongoing list (status DELIVERED)');
+  assert(isMissionDelivered(missionClosedOut) === true, 'Mission is marked as DELIVERED in missionEngine helper');
+}
+
+// ----------------------------------------------------
+// TEST 8: REAL-TIME API HAZARD POLYGONS
+// ----------------------------------------------------
+console.log('\n--- TEST SUITE 8: Real-Time API Hazard Polygons ---');
+{
+  const polygons = getBaselineLHZPolygons();
+  assert(polygons.length >= 3, `Authoritative hazard polygon service loaded ${polygons.length} polygon features`);
+  assert(polygons.every((p) => p.coordinates && p.coordinates.length > 0), 'Every hazard polygon contains valid GeoJSON coordinate rings');
+  assert(polygons.every((p) => p.hazardScore >= 0 && p.hazardScore <= 10), 'Every hazard polygon has calibrated hazard score [0-10]');
+  assert(polygons.every((p) => typeof p.name === 'string' && p.name.length > 0), 'Every hazard polygon has an identified corridor name');
+  assert(polygons.every((p) => p.source === 'ISRO_LHZ_BASELINE'), 'Baseline hazard zones cite authoritative ISRO NRSC source');
 }
 
 console.log('\n====================================================');

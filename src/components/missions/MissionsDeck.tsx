@@ -18,11 +18,14 @@ import {
 
 export const MissionsDeck: React.FC = () => {
   const {
+    activeRole,
     activeMissions,
     vehicles,
     candidateRoutes,
     approveAndDispatchMission,
     customizeMission,
+    reportMissionDeliveryByField,
+    adminCloseoutMission,
     setSelectedMissionId,
     setSelectedVehicleId,
     setActiveView,
@@ -39,9 +42,9 @@ export const MissionsDeck: React.FC = () => {
     [activeMissions]
   );
 
-  // Ongoing / In-Transit missions appear below Suggested
+  // Ongoing missions strictly display missions currently in progress or awaiting admin closeout
   const ongoingMissions = useMemo(
-    () => activeMissions.filter((m) => m.status !== 'SUGGESTED'),
+    () => activeMissions.filter((m) => m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT'),
     [activeMissions]
   );
 
@@ -257,13 +260,15 @@ export const MissionsDeck: React.FC = () => {
                 (v) => v.mission_id === mission.id || v.vehicle_id === mission.assignedVehicleId
               );
 
-              const isDelivered = mission.status === 'DELIVERED';
-              const progressPct = veh?.route_progress_pct ?? (isDelivered ? 100 : 45);
+              const isPendingCloseout = mission.status === 'PENDING_ADMIN_CLOSEOUT';
+              const progressPct = isPendingCloseout ? 100 : (veh?.route_progress_pct ?? 45);
 
               return (
                 <div
                   key={mission.id}
-                  className="bg-surface border border-border rounded-md p-4 shadow-xs space-y-3 text-xs flex flex-col justify-between"
+                  className={`bg-surface border rounded-md p-4 shadow-xs space-y-3 text-xs flex flex-col justify-between transition-colors ${
+                    isPendingCloseout ? 'border-amber-500/50 bg-amber-500/[0.02]' : 'border-border'
+                  }`}
                 >
                   <div className="space-y-2.5">
                     {/* Header */}
@@ -284,14 +289,27 @@ export const MissionsDeck: React.FC = () => {
 
                       <span
                         className={`px-2 py-0.5 rounded-xs font-mono font-bold text-[9px] border ${
-                          isDelivered
-                            ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+                          isPendingCloseout
+                            ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50 animate-pulse'
                             : 'bg-primary-tint text-primary border-primary/30'
                         }`}
                       >
-                        {mission.status}
+                        {isPendingCloseout ? 'PENDING ADMIN CLOSEOUT' : mission.status}
                       </span>
                     </div>
+
+                    {/* Notice for Pending Closeout */}
+                    {isPendingCloseout && (
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xs p-2 text-[11px] text-amber-700 dark:text-amber-300 space-y-1">
+                        <div className="font-bold flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Field Delivery Reported by Crew</span>
+                        </div>
+                        <p className="text-[10px] text-text-secondary">
+                          Driver &amp; Field Officer have confirmed handover. Admin sign-off required to finalize stocks and remove from ongoing convoys.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Telemetry Progress Bar */}
                     <div className="space-y-1">
@@ -302,7 +320,7 @@ export const MissionsDeck: React.FC = () => {
                       <div className="w-full bg-border rounded-full h-1.5 overflow-hidden">
                         <div
                           className={`h-full transition-all duration-500 rounded-full ${
-                            isDelivered ? 'bg-status-open-solid' : 'bg-primary'
+                            isPendingCloseout ? 'bg-emerald-500' : 'bg-primary'
                           }`}
                           style={{ width: `${progressPct}%` }}
                         />
@@ -328,11 +346,11 @@ export const MissionsDeck: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-text-secondary">{t('telemetrySpeed')}:</span>
                         <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {veh?.current_speed_kmh ?? 42} km/h
+                          {isPendingCloseout ? 0 : (veh?.current_speed_kmh ?? 42)} km/h
                         </span>
                       </div>
 
-                      {veh?.is_watchdog_amber && (
+                      {veh?.is_watchdog_amber && !isPendingCloseout && (
                         <div className="mt-1 pt-1 border-t border-border/60 text-[10px] text-amber-500 font-semibold flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           <span>Watchdog SLA Amber Alert (+5m overdue)</span>
@@ -342,27 +360,36 @@ export const MissionsDeck: React.FC = () => {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-border">
-                    <button
-                      onClick={() => handleTrackOnMap(mission)}
-                      className="flex-1 py-1.5 px-2 bg-primary-tint hover:bg-primary/20 text-primary border border-primary/30 rounded-sm font-semibold text-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer transition-colors"
-                    >
-                      <MapPin className="w-3.5 h-3.5" />
-                      <span>{t('trackOnGis')}</span>
-                    </button>
-
-                    {!isDelivered && (
+                  <div className="flex flex-col gap-2 pt-2 border-t border-border">
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={() => {
-                          if (mission.communityId) {
-                            markMissionDelivered(mission.communityId, mission.assignedVehicleId);
-                          }
-                        }}
-                        className="py-1.5 px-2 bg-surface-subtle hover:bg-surface border border-border text-text-secondary hover:text-text-primary rounded-sm font-semibold text-xs flex items-center justify-center gap-1 btn-press cursor-pointer transition-colors"
-                        title="Sign off delivery confirmation"
+                        onClick={() => handleTrackOnMap(mission)}
+                        className="flex-1 py-1.5 px-2 bg-primary-tint hover:bg-primary/20 text-primary border border-primary/30 rounded-sm font-semibold text-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer transition-colors"
                       >
-                        <PackageCheck className="w-3.5 h-3.5" />
-                        <span>{t('signOff')}</span>
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span>{t('trackOnGis')}</span>
+                      </button>
+
+                      {!isPendingCloseout && (
+                        <button
+                          onClick={() => reportMissionDeliveryByField(mission.id)}
+                          className="flex-1 py-1.5 px-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/40 rounded-sm font-semibold text-xs flex items-center justify-center gap-1 btn-press cursor-pointer transition-colors"
+                          title="Report delivery finished by field crew"
+                        >
+                          <PackageCheck className="w-3.5 h-3.5" />
+                          <span>Report Finished</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Admin Closeout Action */}
+                    {isPendingCloseout && (
+                      <button
+                        onClick={() => adminCloseoutMission(mission.id)}
+                        className="w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-sm font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Sign Off &amp; Remove from Ongoing</span>
                       </button>
                     )}
                   </div>

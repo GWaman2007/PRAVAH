@@ -2192,6 +2192,27 @@ export const UI_STRINGS: Record<string, Record<LanguageId, string>> = {
     hi: 'क्षेत्र पृथक्करण स्थिति',
     mn: 'ꯃꯐꯝ ꯊꯤꯡꯕꯒꯤ ꯐꯤꯚꯝ',
   },
+  reportDeliveryFinished: {
+    en: 'Report Delivery Finished',
+    as: 'বিতৰণ সমাপ্তি জনাওক',
+    bn: 'ডেলিভারি সমাপ্তি রিপোর্ট করুন',
+    hi: 'डिलीवरी पूर्ण रिपोर्ट करें',
+    mn: 'ꯄꯣꯠ ꯌꯧꯔꯦ ꯔꯤꯄꯣꯔ꯭ꯠ ꯇꯧꯔꯛꯎ',
+  },
+  signOffCloseout: {
+    en: 'Sign Off & Remove from Ongoing',
+    as: 'চহী কৰক আৰু চলিত তালিকাৰ পৰা আঁতৰাওক',
+    bn: 'সাইন অফ করুন এবং চলমান তালিকা থেকে সরান',
+    hi: 'हस्ताक्षर करें और चालू से हटाएं',
+    mn: 'ꯈꯨꯠꯌꯦꯛ ꯇꯧꯔꯒꯥ ꯆꯠꯊꯣꯛꯂꯤꯕꯥ ꯂꯤꯁ꯭ꯇꯇꯒꯤ ꯂꯧꯊꯣꯛꯎ',
+  },
+  awaitingAdminSignOff: {
+    en: 'Awaiting Admin Sign-Off',
+    as: 'প্ৰশাসনৰ চহীৰ অপেক্ষাত',
+    bn: 'অ্যাডমিনের সাইন-অফের অপেক্ষায়',
+    hi: 'व्यवस्थापक हस्ताक्षर की प्रतीक्षा है',
+    mn: 'ꯑꯦꯗꯃꯤꯅꯒꯤ ꯈꯨꯠꯌꯦꯛ ꯉꯥꯏꯔꯤ',
+  },
 };
 
 /**

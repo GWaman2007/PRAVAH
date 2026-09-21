@@ -246,11 +246,13 @@ export interface CandidateRoute {
 // 5. GPS Telemetry & Watchdog Engine (Module 4)
 // ==========================================
 export type VehicleStatus =
+  | 'AVAILABLE'
   | 'ON_ROUTE'
   | 'DEAD_ZONE_EXTRAPOLATING'
   | 'DEVIATED'
   | 'CRITICAL_STATIONARY'
   | 'SOS_ALERT'
+  | 'DELIVERED_IDLE'
   | 'DELIVERED_COMPLETED';
 
 export interface Breadcrumb {
@@ -356,6 +358,7 @@ export interface AlertEvent {
     | 'ROUTE_DEVIATION'
     | 'STATIONARY_HAZARD'
     | 'SOS_TRIGGERED'
+    | 'DELIVERY_PENDING_CLOSEOUT'
     | 'DELIVERY_COMPLETED';
   title: string;
   message: string;
@@ -494,7 +497,7 @@ export interface ReliefMission {
   cargoAllocations: { item: string; quantity: number; unit: string }[];
   assignedRouteId: string;
   suggestedDetour: string;
-  status: 'SUGGESTED' | 'APPROVED' | 'IN_TRANSIT' | 'DELIVERED';
+  status: 'SUGGESTED' | 'APPROVED' | 'IN_TRANSIT' | 'PENDING_ADMIN_CLOSEOUT' | 'DELIVERED';
   urgency: 'P1_CRITICAL' | 'P2_ELEVATED';
   createdAt: string;
   dispatchedAt?: string;
@@ -569,4 +572,23 @@ export interface BROBottleneck {
   estimatedClearanceHours: number;
   reportedTime: string;
   lastUpdated: string;
+}
+
+// ==========================================
+// 10. Real-Time API Polygons & Supabase Hazard Zones
+// ==========================================
+export interface RealtimeHazardPolygon {
+  id: string;
+  name: string;
+  source: 'GDACS_API' | 'OVERPASS_API' | 'OPEN_METEO_API' | 'SUPABASE_CLOUD' | 'ISRO_LHZ_BASELINE';
+  hazardType: 'LANDSLIDE' | 'FLOOD' | 'CYCLONE' | 'SEVERE_RAINFALL' | 'SECTOR_BOUNDARY';
+  severity: 'Very High' | 'High' | 'Moderate' | 'Low';
+  hazardScore: number;
+  advisory: string;
+  state?: string;
+  district?: string;
+  coordinates: [number, number][][]; // GeoJSON Polygon coordinate rings [lng, lat]
+  updatedAt: string;
+  externalEventId?: string;
+  url?: string;
 }

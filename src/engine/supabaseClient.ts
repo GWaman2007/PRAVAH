@@ -1,5 +1,5 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission } from '../types';
+import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission, RealtimeHazardPolygon } from '../types';
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const supabasePublishableKey = (
@@ -515,4 +515,96 @@ export function broadcastCloudMissionDelivered(missionId: string, vehicleId?: st
     });
   }
 }
+
+export function broadcastCloudMissionPendingCloseout(missionId: string, vehicleId?: string, reportedBy?: string): void {
+  const channel = getRealtimeChannel();
+  if (channel) {
+    channel.send({
+      type: 'broadcast',
+      event: 'MISSION_PENDING_CLOSEOUT',
+      payload: { missionId, vehicleId, reportedBy, reportedAt: new Date().toISOString() },
+    });
+  }
+}
+
+export function broadcastCloudMissionClosedOut(missionId: string, communityId: string, vehicleId?: string): void {
+  const channel = getRealtimeChannel();
+  if (channel) {
+    channel.send({
+      type: 'broadcast',
+      event: 'MISSION_CLOSED_OUT',
+      payload: { missionId, communityId, vehicleId, closedAt: new Date().toISOString() },
+    });
+  }
+}
+
+/**
+ * Cloud Hazard Zones API
+ */
+export async function fetchCloudHazardZones(): Promise<RealtimeHazardPolygon[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from('hazard_zones').select('*');
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch hazard zones:', error.message);
+      return null;
+    }
+    if (!data || data.length === 0) return null;
+    return data.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      source: row.source || 'SUPABASE_CLOUD',
+      hazardType: row.hazard_type || row.hazardType || 'LANDSLIDE',
+      severity: row.severity || 'High',
+      hazardScore: Number(row.hazard_score ?? row.hazardScore ?? 8.0),
+      advisory: row.advisory || '',
+      state: row.state,
+      district: row.district,
+      coordinates: Array.isArray(row.coordinates) ? row.coordinates : [],
+      updatedAt: row.updated_at || new Date().toISOString(),
+      url: row.url,
+    }));
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching hazard zones:', err);
+    return null;
+  }
+}
+
+export async function upsertCloudHazardZone(zone: RealtimeHazardPolygon): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: zone.id,
+      name: zone.name,
+      source: zone.source,
+      hazard_type: zone.hazardType,
+      severity: zone.severity,
+      hazard_score: zone.hazardScore,
+      advisory: zone.advisory,
+      state: zone.state,
+      district: zone.district,
+      coordinates: zone.coordinates,
+      updated_at: new Date().toISOString(),
+      url: zone.url,
+    };
+    const { error } = await supabase.from('hazard_zones').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert hazard zone error:', error.message);
+      return false;
+    }
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'HAZARD_ZONE_UPDATED',
+        payload: { zone },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting hazard zone:', err);
+    return false;
+  }
+}
+
 

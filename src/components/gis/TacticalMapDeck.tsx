@@ -104,6 +104,8 @@ export const TacticalMapDeck: React.FC = () => {
     setSelectedMissionId,
     approveMission,
     dispatchMission,
+    reportMissionDeliveryByField,
+    adminCloseoutMission,
     communities,
     selectedCommunityId,
     setSelectedCommunityId,
@@ -230,7 +232,7 @@ export const TacticalMapDeck: React.FC = () => {
 
   // Computed: Ongoing vs Suggested Missions
   const ongoingMissions = useMemo(() => {
-    return activeMissions.filter((m) => m.status === 'IN_TRANSIT');
+    return activeMissions.filter((m) => m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT');
   }, [activeMissions]);
 
   const suggestedMissions = useMemo(() => {
@@ -1612,8 +1614,18 @@ export const TacticalMapDeck: React.FC = () => {
                             </span>
                           </div>
 
-                          <span className="px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] bg-status-open-tint text-status-open-text border border-status-open-solid/40 shrink-0">
-                            {veh?.speed_kmh ? `${veh.speed_kmh} km/h` : 'IN_TRANSIT'}
+                          <span
+                            className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 ${
+                              m.status === 'PENDING_ADMIN_CLOSEOUT'
+                                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50 animate-pulse'
+                                : 'bg-status-open-tint text-status-open-text border-status-open-solid/40'
+                            }`}
+                          >
+                            {m.status === 'PENDING_ADMIN_CLOSEOUT'
+                              ? 'AWAITING SIGN-OFF'
+                              : veh?.speed_kmh
+                              ? `${veh.speed_kmh} km/h`
+                              : 'IN_TRANSIT'}
                           </span>
                         </div>
 
@@ -1627,7 +1639,7 @@ export const TacticalMapDeck: React.FC = () => {
                           <div>
                             <span>{t('progress')}:</span>{' '}
                             <strong className="text-status-open-text font-mono">
-                              {veh?.route_progress_pct ?? 45}%
+                              {m.status === 'PENDING_ADMIN_CLOSEOUT' ? '100' : (veh?.route_progress_pct ?? 45)}%
                             </strong>
                           </div>
                           <div>
@@ -1637,18 +1649,43 @@ export const TacticalMapDeck: React.FC = () => {
                           <div>
                             <span>{t('eta')}:</span>{' '}
                             <strong className="text-text-primary font-mono">
-                              {m.routeDurationMinutes || 90} min
+                              {m.status === 'PENDING_ADMIN_CLOSEOUT' ? 'Arrived' : `${m.routeDurationMinutes || 90} min`}
                             </strong>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px]">
-                          <span className="text-text-secondary flex items-center gap-1">
-                            <Route className="w-3 h-3 text-sky-500" />
-                            <span>{t('roadRouteActive')}</span>
-                          </span>
-                          <span className="text-primary font-bold">{t('focusRoute')}</span>
-                        </div>
+                        {/* Action buttons for Ongoing / Closeout */}
+                        {m.status === 'PENDING_ADMIN_CLOSEOUT' ? (
+                          <div className="pt-1 border-t border-border/40 space-y-1">
+                            <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                              Delivery reported by crew • Awaiting Admin Sign-Off
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                adminCloseoutMission(m.id);
+                              }}
+                              className="w-full py-1 px-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xs text-[10px] flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Sign Off &amp; Remove from Ongoing</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px]">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                reportMissionDeliveryByField(m.id);
+                              }}
+                              className="px-2 py-0.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-xs font-semibold text-[10px] flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Report Finished</span>
+                            </button>
+                            <span className="text-primary font-bold">{t('focusRoute')}</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })
