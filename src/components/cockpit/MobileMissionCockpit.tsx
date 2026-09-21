@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import * as maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   Navigation,
   AlertTriangle,
@@ -20,13 +20,32 @@ import {
   Send,
   X,
   Truck,
+  LocateFixed,
+  Maximize2,
+  Minimize2,
+  Compass,
+  Layers,
 } from 'lucide-react';
 import { playAckChime, playEmergencyAlertSound } from '../../utils/audioAlert';
-import { FLEET_ROUTES, BLACKOUT_ZONES } from '../../data/fleetData';
+import { FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES } from '../../data/fleetData';
+import { NER_SEGMENTS } from '../../data/routingNetwork';
 import { IncidentReportModal } from '../feed/IncidentReportModal';
 import { DataStalenessChip } from '../layout/DataStalenessChip';
 import { useTranslation } from '../../data/uiTranslations';
 import type { CorridorFlair } from '../../types';
+import {
+  registerMapIcons,
+  toGeoJSONCoords,
+  toGeoJSONLineString,
+  createVehiclesGeoJSON,
+  createVehicleSOSGeoJSON,
+  createDisastersGeoJSON,
+  createCommunitiesGeoJSON,
+  createCommunityBoundariesGeoJSON,
+  createWarehousesGeoJSON,
+  createRoadBreakdownsGeoJSON,
+  createGroundIntelIncidentsGeoJSON,
+} from '../../engine/mapGeoJSONAdapters';
 
 export const MobileMissionCockpit: React.FC = () => {
   const { t } = useTranslation();
@@ -52,6 +71,11 @@ export const MobileMissionCockpit: React.FC = () => {
     isSimulationRunning,
     toggleSimulation,
     theme,
+    activeDisruptions,
+    incidents,
+    activeMissions,
+    setActiveView,
+    setSelectedMissionId,
   } = usePravahStore();
 
   // Active mission vehicle: selected vehicle or default to first
@@ -67,14 +91,14 @@ export const MobileMissionCockpit: React.FC = () => {
   const [clearanceModalOpen, setClearanceModalOpen] = useState(false);
   const [isSOSConfirmOpen, setIsSOSConfirmOpen] = useState(false);
   const [roadblockAheadSimulated, setRoadblockAheadSimulated] = useState(false);
+  const [followConvoy, setFollowConvoy] = useState(true);
+  const [isMapExpanded, setIsMapExpanded] = useState(false);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const baseTileLayerRef = useRef<L.TileLayer | null>(null);
-  const vehicleMarkerRef = useRef<L.Marker | null>(null);
-  const routePolylineRef = useRef<L.Polyline | null>(null);
-  const destMarkerRef = useRef<L.Marker | null>(null);
-  const blackoutPolygonRef = useRef<L.Polygon | null>(null);
+  const mapInstanceRef = useRef<maplibregl.Map | null>(null);
+  const isMapLoadedRef = useRef<boolean>(false);
+  const followConvoyRef = useRef<boolean>(followConvoy);
+  followConvoyRef.current = followConvoy;
 
   const activeMission = activeMissions.find(
     (m) => m.assignedVehicleId === activeVehicle.vehicle_id || m.id === activeVehicle.mission_id
@@ -112,195 +136,583 @@ export const MobileMissionCockpit: React.FC = () => {
 
   const currentManeuver = getManeuverDetails(activeVehicle.vehicle_id);
 
-  // Initialize Leaflet Map
+  // Active blackout zone
+  const getActiveBlackoutZone = useCallback(() => {
+    return (
+      BLACKOUT_ZONES.find((z) =>
+        activeVehicle.assigned_route_id.includes('SK')
+          ? z.id === 'ZONE-BO-02'
+          : activeVehicle.assigned_route_id.includes('NL')
+          ? z.id === 'ZONE-BO-03'
+          : z.id === 'ZONE-BO-01'
+      ) || BLACKOUT_ZONES[0]
+    );
+  }, [activeVehicle.assigned_route_id]);
+
+  // Recenter map on the convoy
+  const handleRecenter = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    map.flyTo({
+      center: toGeoJSONCoords(activeVehicle.current_coords),
+      zoom: 12,
+      essential: true,
+    });
+    setFollowConvoy(true);
+  }, [activeVehicle.current_coords]);
+
+  // 1. Initialize MapLibre GL Map (Synced with Main Tactical GIS Map)
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    const map = L.map(mapContainerRef.current, {
-      center: activeVehicle.current_coords,
-      zoom: 11,
-      zoomControl: false,
-      attributionControl: false,
+    if (typeof window !== 'undefined') {
+      try {
+        maplibregl.setWorkerUrl('/assets/maplibre-gl-worker.mjs');
+      } catch {
+        // non-fatal
+      }
+    }
+
+    const initialCenter = toGeoJSONCoords(activeVehicle.current_coords);
+
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container: mapContainerRef.current,
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        center: initialCenter,
+        zoom: 11.5,
+        minZoom: 5,
+        maxZoom: 18,
+        attributionControl: false,
+      });
+    } catch (err) {
+      console.warn('[PRAVAH] Cockpit MapLibre GL init error:', err);
+      return;
+    }
+
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
+
+    map.on('styleimagemissing', (e: any) => {
+      const id = e.id;
+      if (!map.hasImage(id)) {
+        const width = 1;
+        const height = 1;
+        const emptyData = new Uint8Array(4);
+        map.addImage(id, { width, height, data: emptyData });
+      }
     });
 
-    const baseTileUrl =
-      theme === 'dark'
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    map.on('load', async () => {
+      isMapLoadedRef.current = true;
+      map.resize();
 
-    const tileLayer = L.tileLayer(baseTileUrl, {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxZoom: 18,
-      minZoom: 4,
-      subdomains: 'abcd',
-      crossOrigin: true,
-    }).addTo(map);
-    tileLayer.bringToBack();
-    baseTileLayerRef.current = tileLayer;
+      try {
+        await registerMapIcons(map);
+      } catch (err) {
+        console.warn('Error loading custom icons into Cockpit Map:', err);
+      }
 
-    // Initial Route Polyline
-    routePolylineRef.current = L.polyline(assignedRoute.coordinates, {
-      color: '#12B76A',
-      weight: 5,
-      opacity: 0.85,
-    }).addTo(map);
+      // 1. DISASTERS & HAZARDS (ISRO Bhuvan LHZ)
+      map.addSource('disasters', {
+        type: 'geojson',
+        data: createDisastersGeoJSON(HAZARD_ZONES),
+      });
 
-    // Initial Blackout Zone Polygon
-    const blackoutZone =
-      BLACKOUT_ZONES.find((z) =>
-        activeVehicle.assigned_route_id.includes('SK')
-          ? z.id === 'ZONE-BO-02'
-          : activeVehicle.assigned_route_id.includes('NL')
-          ? z.id === 'ZONE-BO-03'
-          : z.id === 'ZONE-BO-01'
-      ) || BLACKOUT_ZONES[0];
+      map.addLayer({
+        id: 'disasters-fill',
+        type: 'fill',
+        source: 'disasters',
+        paint: {
+          'fill-color': ['get', 'fillColor'],
+          'fill-opacity': 0.22,
+        },
+      });
 
-    blackoutPolygonRef.current = L.polygon(blackoutZone.polygon, {
-      color: '#B54708',
-      fillColor: '#FFFAEB',
-      fillOpacity: 0.35,
-      weight: 2,
-      dashArray: '4, 4',
-    })
-      .addTo(map)
-      .bindPopup(`${blackoutZone.name} (Expected transit: ${blackoutZone.expectedTransitMinutes}m)`);
+      map.addLayer({
+        id: 'disasters-line',
+        type: 'line',
+        source: 'disasters',
+        paint: {
+          'line-color': ['get', 'outlineColor'],
+          'line-width': 1.8,
+          'line-dasharray': [3, 2],
+        },
+      });
 
-    // Destination Pin
-    const destCoords = assignedRoute.coordinates[assignedRoute.coordinates.length - 1];
-    const destIcon = L.divIcon({
-      html: `<div style="background-color:#1B4B73;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;font-size:10px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);text-align:center;white-space:nowrap;">🏥 ${targetCommunity.name.split(' ')[0]}</div>`,
-      className: 'custom-hospital-icon',
-      iconSize: [80, 24],
-      iconAnchor: [40, 12],
+      map.addLayer({
+        id: 'disasters-symbol',
+        type: 'symbol',
+        source: 'disasters',
+        layout: {
+          'text-field': ['concat', '⚠️ ', ['get', 'name']],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9,
+          'text-anchor': 'center',
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#FEF08A',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 2.0,
+        },
+      });
+
+      // 2. COMMUNITY BOUNDARIES
+      map.addSource('community-boundaries', {
+        type: 'geojson',
+        data: createCommunityBoundariesGeoJSON(communities, activeVehicle.destination_community_id),
+      });
+
+      map.addLayer({
+        id: 'community-boundaries-fill',
+        type: 'fill',
+        source: 'community-boundaries',
+        paint: {
+          'fill-color': ['get', 'color'],
+          'fill-opacity': 0.2,
+        },
+      });
+
+      map.addLayer({
+        id: 'community-boundaries-line',
+        type: 'line',
+        source: 'community-boundaries',
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': 1.6,
+          'line-dasharray': [2, 1],
+        },
+      });
+
+      // 3. WAREHOUSES & LOGISTICS HUBS
+      map.addSource('warehouses', {
+        type: 'geojson',
+        data: createWarehousesGeoJSON(),
+      });
+
+      map.addLayer({
+        id: 'warehouses-icon',
+        type: 'symbol',
+        source: 'warehouses',
+        layout: {
+          'icon-image': 'icon-warehouse',
+          'icon-size': 0.75,
+          'icon-allow-overlap': true,
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9.5,
+          'text-offset': [0, 1.3],
+          'text-anchor': 'top',
+        },
+        paint: {
+          'text-color': '#E2E8F0',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      // 4. ACTIVE CONVOY MISSION ROUTE CORRIDOR
+      map.addSource('active-route', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: toGeoJSONLineString(assignedRoute.coordinates),
+          },
+          properties: {},
+        },
+      });
+
+      map.addLayer({
+        id: 'active-route-glow',
+        type: 'line',
+        source: 'active-route',
+        paint: {
+          'line-color': '#2563EB',
+          'line-width': 9,
+          'line-opacity': 0.35,
+        },
+      });
+
+      map.addLayer({
+        id: 'active-route-casing',
+        type: 'line',
+        source: 'active-route',
+        paint: {
+          'line-color': '#0F172A',
+          'line-width': 6,
+          'line-opacity': 0.8,
+        },
+      });
+
+      map.addLayer({
+        id: 'active-route-line',
+        type: 'line',
+        source: 'active-route',
+        paint: {
+          'line-color': '#2563EB',
+          'line-width': 4.2,
+          'line-opacity': 1.0,
+        },
+      });
+
+      // 5. MISSION DESTINATION TERMINUS ENDPOINT
+      const destCoords = assignedRoute.coordinates[assignedRoute.coordinates.length - 1];
+      map.addSource('destination-endpoint', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: toGeoJSONCoords(destCoords),
+          },
+          properties: {
+            destination_name: targetCommunity.name,
+          },
+        },
+      });
+
+      map.addLayer({
+        id: 'dest-core',
+        type: 'circle',
+        source: 'destination-endpoint',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#DC2626',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      map.addLayer({
+        id: 'dest-symbol',
+        type: 'symbol',
+        source: 'destination-endpoint',
+        layout: {
+          'icon-image': 'icon-destination-endpoint',
+          'icon-size': 0.95,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'text-field': ['concat', '🚩 TARGET: ', ['get', 'destination_name']],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 10.5,
+          'text-offset': [0, 0.8],
+          'text-anchor': 'top',
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#FBBF24',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 2.5,
+        },
+      });
+
+      // 6. BLACKOUT ZONE POLYGON
+      const blackoutZone = getActiveBlackoutZone();
+      map.addSource('blackout-zone', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [blackoutZone.polygon.map((c) => [c[1], c[0]])],
+          },
+          properties: {
+            name: blackoutZone.name,
+          },
+        },
+      });
+
+      map.addLayer({
+        id: 'blackout-fill',
+        type: 'fill',
+        source: 'blackout-zone',
+        paint: {
+          'fill-color': '#B54708',
+          'fill-opacity': 0.18,
+        },
+      });
+
+      map.addLayer({
+        id: 'blackout-line',
+        type: 'line',
+        source: 'blackout-zone',
+        paint: {
+          'line-color': '#EA580C',
+          'line-width': 1.8,
+          'line-dasharray': [3, 2],
+        },
+      });
+
+      // 7. ROAD BREAKDOWNS & HAZARD CHOKE POINTS
+      map.addSource('road-breakdowns', {
+        type: 'geojson',
+        data: createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS, incidents, activeMissions),
+      });
+
+      map.addLayer({
+        id: 'road-breakdowns-pulse',
+        type: 'circle',
+        source: 'road-breakdowns',
+        paint: {
+          'circle-radius': 11,
+          'circle-color': '#DC2626',
+          'circle-opacity': 0.35,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#EF4444',
+        },
+      });
+
+      map.addLayer({
+        id: 'road-breakdowns-point',
+        type: 'circle',
+        source: 'road-breakdowns',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#DC2626',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      // 8. GROUND INTEL INCIDENTS
+      map.addSource('ground-intel-incidents', {
+        type: 'geojson',
+        data: createGroundIntelIncidentsGeoJSON(incidents),
+      });
+
+      map.addLayer({
+        id: 'ground-intel-pulse',
+        type: 'circle',
+        source: 'ground-intel-incidents',
+        paint: {
+          'circle-radius': 12,
+          'circle-color': ['get', 'color'],
+          'circle-opacity': 0.35,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': ['get', 'color'],
+        },
+      });
+
+      map.addLayer({
+        id: 'ground-intel-core',
+        type: 'circle',
+        source: 'ground-intel-incidents',
+        paint: {
+          'circle-radius': 5.5,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-width': 1.8,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      map.addLayer({
+        id: 'ground-intel-symbol',
+        type: 'symbol',
+        source: 'ground-intel-incidents',
+        layout: {
+          'text-field': ['concat', '⚠️ ', ['get', 'incidentType']],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#FCA5A5',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 2.0,
+        },
+      });
+
+      // 9. VEHICLE SOS ANIMATED HALO
+      map.addSource('vehicle-sos', {
+        type: 'geojson',
+        data: createVehicleSOSGeoJSON(vehicles),
+      });
+
+      map.addLayer({
+        id: 'vehicle-sos-pulse',
+        type: 'circle',
+        source: 'vehicle-sos',
+        paint: {
+          'circle-radius': 22,
+          'circle-color': '#DC2626',
+          'circle-opacity': 0.45,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#EF4444',
+        },
+      });
+
+      // 10. VEHICLES (Individual Native Symbols)
+      map.addSource('vehicles', {
+        type: 'geojson',
+        data: createVehiclesGeoJSON(vehicles, activeVehicle.vehicle_id),
+      });
+
+      map.addLayer({
+        id: 'vehicles-selected-ring',
+        type: 'circle',
+        source: 'vehicles',
+        filter: ['==', ['get', 'isSelected'], true],
+        paint: {
+          'circle-radius': 22,
+          'circle-color': 'rgba(56, 189, 248, 0.25)',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#38BDF8',
+        },
+      });
+
+      map.addLayer({
+        id: 'vehicles-symbol',
+        type: 'symbol',
+        source: 'vehicles',
+        layout: {
+          'icon-image': ['get', 'icon'],
+          'icon-size': 0.9,
+          'icon-rotate': ['get', 'heading_deg'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'text-field': ['get', 'vehicle_id'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9.5,
+          'text-offset': [0, 1.3],
+          'text-anchor': 'top',
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': ['case', ['get', 'isSelected'], '#FBBF24', '#FFFFFF'],
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 2,
+        },
+      });
     });
-    destMarkerRef.current = L.marker(destCoords, { icon: destIcon }).addTo(map);
-
-    // Vehicle Marker with Heading
-    const truckIcon = L.divIcon({
-      html: `
-        <div style="background:#1B4B73; border:2.5px solid white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(0,0,0,0.4);">
-          <div style="transform: rotate(${activeVehicle.heading_deg}deg); transition: transform 0.3s ease; display:flex; align-items:center; justify-content:center;">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="#FFFFFF">
-              <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
-            </svg>
-          </div>
-        </div>
-      `,
-      className: 'custom-truck-icon',
-      iconSize: [32, 32],
-      iconAnchor: [16, 16],
-    });
-    vehicleMarkerRef.current = L.marker(activeVehicle.current_coords, { icon: truckIcon }).addTo(map);
 
     mapInstanceRef.current = map;
 
-    // Trigger size recalculation after layout settles
-    const initialResizeTimer = setTimeout(() => {
-      map.invalidateSize();
-    }, 150);
-
-    // Attach ResizeObserver to keep tiles rendered during tab toggling
-    const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize();
+    // Attach ResizeObserver to keep vector canvas rendered cleanly
+    const ro = new ResizeObserver(() => {
+      map.resize();
     });
     if (mapContainerRef.current) {
-      resizeObserver.observe(mapContainerRef.current);
+      ro.observe(mapContainerRef.current);
     }
 
     return () => {
-      clearTimeout(initialResizeTimer);
-      resizeObserver.disconnect();
+      ro.disconnect();
       map.remove();
       mapInstanceRef.current = null;
-      baseTileLayerRef.current = null;
+      isMapLoadedRef.current = false;
     };
   }, []);
 
-  // Dynamic Dark Mode Tile Layer Swap - Clean flush of stale raster tiles
+  // 2. Dynamically Update Vehicles and Follow Convoy
   useEffect(() => {
-    if (mapInstanceRef.current) {
-      if (baseTileLayerRef.current) {
-        mapInstanceRef.current.removeLayer(baseTileLayerRef.current);
-      }
-      const tileUrl =
-        theme === 'dark'
-          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-          : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    const map = mapInstanceRef.current;
+    if (!map || !isMapLoadedRef.current) return;
 
-      const newTileLayer = L.tileLayer(tileUrl, {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-        maxZoom: 18,
-        minZoom: 4,
-        subdomains: 'abcd',
-        crossOrigin: true,
-      }).addTo(mapInstanceRef.current);
-      newTileLayer.bringToBack();
-      baseTileLayerRef.current = newTileLayer;
-
-      setTimeout(() => {
-        mapInstanceRef.current?.invalidateSize();
-      }, 150);
-    }
-  }, [theme]);
-
-  // Switch route and destination markers when activeVehicle changes
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-
-    // Update route polyline
-    if (routePolylineRef.current) {
-      routePolylineRef.current.setLatLngs(assignedRoute.coordinates);
+    const vehSource = map.getSource('vehicles') as maplibregl.GeoJSONSource;
+    if (vehSource) {
+      vehSource.setData(createVehiclesGeoJSON(vehicles, activeVehicle.vehicle_id));
     }
 
-    // Update destination marker
+    const sosSource = map.getSource('vehicle-sos') as maplibregl.GeoJSONSource;
+    if (sosSource) {
+      sosSource.setData(createVehicleSOSGeoJSON(vehicles));
+    }
+
+    // Smoothly pan to follow the convoy in real-time
+    if (followConvoyRef.current && activeVehicle.current_coords) {
+      map.easeTo({
+        center: toGeoJSONCoords(activeVehicle.current_coords),
+        duration: 500,
+      });
+    }
+  }, [vehicles, activeVehicle.vehicle_id, activeVehicle.current_coords]);
+
+  // 3. Switch Route, Destination, and Blackout when activeVehicle changes
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapLoadedRef.current) return;
+
+    // Update Route Line
+    const routeSource = map.getSource('active-route') as maplibregl.GeoJSONSource;
+    if (routeSource) {
+      routeSource.setData({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: toGeoJSONLineString(assignedRoute.coordinates),
+        },
+        properties: {},
+      });
+    }
+
+    // Update Destination Endpoint
     const destCoords = assignedRoute.coordinates[assignedRoute.coordinates.length - 1];
-    if (destMarkerRef.current) {
-      destMarkerRef.current.setLatLng(destCoords);
-      destMarkerRef.current.setIcon(
-        L.divIcon({
-          html: `<div style="background-color:#1B4B73;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;font-size:10px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);text-align:center;white-space:nowrap;">🏥 ${targetCommunity.name.split(' ')[0]}</div>`,
-          className: 'custom-hospital-icon',
-          iconSize: [80, 24],
-          iconAnchor: [40, 12],
-        })
-      );
+    const destSource = map.getSource('destination-endpoint') as maplibregl.GeoJSONSource;
+    if (destSource) {
+      destSource.setData({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: toGeoJSONCoords(destCoords),
+        },
+        properties: {
+          destination_name: targetCommunity.name,
+        },
+      });
     }
 
-    // Update blackout polygon
-    const blackoutZone =
-      BLACKOUT_ZONES.find((z) =>
-        activeVehicle.assigned_route_id.includes('SK')
-          ? z.id === 'ZONE-BO-02'
-          : activeVehicle.assigned_route_id.includes('NL')
-          ? z.id === 'ZONE-BO-03'
-          : z.id === 'ZONE-BO-01'
-      ) || BLACKOUT_ZONES[0];
-
-    if (blackoutPolygonRef.current) {
-      blackoutPolygonRef.current.setLatLngs(blackoutZone.polygon);
-      blackoutPolygonRef.current.setPopupContent(
-        `${blackoutZone.name} (Expected transit: ${blackoutZone.expectedTransitMinutes}m)`
-      );
+    // Update Blackout Zone
+    const blackoutZone = getActiveBlackoutZone();
+    const blackoutSource = map.getSource('blackout-zone') as maplibregl.GeoJSONSource;
+    if (blackoutSource) {
+      blackoutSource.setData({
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [blackoutZone.polygon.map((c) => [c[1], c[0]])],
+        },
+        properties: {
+          name: blackoutZone.name,
+        },
+      });
     }
 
-    // Re-center map
-    mapInstanceRef.current.setView(activeVehicle.current_coords, 11, { animate: true });
-  }, [activeVehicle.vehicle_id, activeVehicle.assigned_route_id, targetCommunity.name]);
+    // Fly to new convoy coordinates
+    map.flyTo({
+      center: toGeoJSONCoords(activeVehicle.current_coords),
+      zoom: 11.5,
+      duration: 800,
+    });
+  }, [activeVehicle.vehicle_id, activeVehicle.assigned_route_id, targetCommunity.name, getActiveBlackoutZone]);
 
-  // Update vehicle marker & re-center map on coordinates update
+  // 4. Sync Road Breakdowns and Ground Intel Incidents
   useEffect(() => {
-    if (!mapInstanceRef.current || !vehicleMarkerRef.current) return;
-    vehicleMarkerRef.current.setLatLng(activeVehicle.current_coords);
+    const map = mapInstanceRef.current;
+    if (!map || !isMapLoadedRef.current) return;
 
-    // Update marker heading rotation
-    const el = vehicleMarkerRef.current.getElement();
-    if (el) {
-      const inner = el.querySelector('svg')?.parentElement;
-      if (inner) inner.style.transform = `rotate(${activeVehicle.heading_deg}deg)`;
+    const breakdownSource = map.getSource('road-breakdowns') as maplibregl.GeoJSONSource;
+    if (breakdownSource) {
+      breakdownSource.setData(createRoadBreakdownsGeoJSON(activeDisruptions, NER_SEGMENTS, incidents, activeMissions));
     }
 
-    mapInstanceRef.current.panTo(activeVehicle.current_coords, { animate: true, duration: 0.8 });
-  }, [activeVehicle.current_coords, activeVehicle.heading_deg]);
+    const intelSource = map.getSource('ground-intel-incidents') as maplibregl.GeoJSONSource;
+    if (intelSource) {
+      intelSource.setData(createGroundIntelIncidentsGeoJSON(incidents));
+    }
+  }, [activeDisruptions, incidents, activeMissions]);
+
+  // 5. Handle Map Size on Expansion Toggle
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      mapInstanceRef.current?.resize();
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [isMapExpanded]);
 
   const defaultCorridorFlair: CorridorFlair = activeVehicle.assigned_route_id.includes('SK')
     ? 'r/NH-10-Sikkim'
@@ -320,7 +732,7 @@ export const MobileMissionCockpit: React.FC = () => {
             <span>{t('assignedMissionConvoy')}</span>
           </span>
           <span className="font-mono text-[10px] text-text-secondary">
-            {vehicles.length} Active Missions (Switch for Field Testing)
+            {vehicles.length} Active Missions (Field Testing)
           </span>
         </div>
         <div className="grid grid-cols-3 gap-1.5">
@@ -432,47 +844,59 @@ export const MobileMissionCockpit: React.FC = () => {
           <button
             onClick={toggleSimulatedOffline}
             className={`flex items-center space-x-1 px-2 py-1 rounded-sm text-[10px] font-semibold border btn-press ${
-            isOnline
-              ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
-              : 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
-          }`}
-        >
-          {isOnline ? (
-            <>
-              <Wifi className="w-3 h-3 text-status-open-solid" />
-              <span>Live Sync</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="w-3 h-3 text-status-highrisk-solid" />
-              <span>Offline ({offlineQueueCount})</span>
-            </>
-          )}
-        </button>
+              isOnline
+                ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+                : 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
+            }`}
+          >
+            {isOnline ? (
+              <>
+                <Wifi className="w-3 h-3 text-status-open-solid" />
+                <span>Live Sync</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3 h-3 text-status-highrisk-solid" />
+                <span>Offline ({offlineQueueCount})</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
       {/* 3. Mountain Dead-Zone & Watchdog SLA Timer Card */}
       <div
-        className={`p-3.5 rounded-md border shadow-xs space-y-1.5 ${
+        className={`p-3 rounded-md border text-xs space-y-2 transition-all ${
           isDeadZone
-            ? 'bg-status-highrisk-tint border-status-highrisk-solid text-status-highrisk-text'
-            : 'bg-surface border-border text-text-primary'
+            ? 'bg-amber-500/10 border-amber-500/50'
+            : 'bg-surface border-border'
         }`}
       >
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center space-x-1.5 font-bold">
-            <Radio className={`w-4 h-4 ${isDeadZone ? 'text-amber-600 animate-pulse' : 'text-primary'}`} />
-            <span>{t('deadZoneWatchdog')}</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Radio
+              className={`w-4 h-4 ${
+                isDeadZone ? 'text-amber-500 animate-pulse' : 'text-status-open-solid'
+              }`}
+            />
+            <span className="font-bold text-xs text-text-primary">
+              {isDeadZone ? t('cellularBlackoutDetected') : t('cellularLinkNominal')}
+            </span>
           </div>
-          <span className="font-mono text-[10px] font-bold">
-            {isDeadZone ? 'BLACKOUT EXTENUATION' : 'CELLULAR SATELLITE LOCK'}
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+              isDeadZone
+                ? 'bg-amber-500/20 text-amber-500'
+                : 'bg-status-open-tint text-status-open-text'
+            }`}
+          >
+            {isDeadZone ? 'DEAD-RECKONING' : '4G LTE CONNECTED'}
           </span>
         </div>
 
         <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-border/50">
           <div>
-            <span className="text-text-secondary block">D-R Distance Extrapolated:</span>
+            <span className="text-text-secondary block">Traveled in Dead-Zone:</span>
             <strong className="font-mono text-sm text-text-primary">
               {activeVehicle.dead_reckoning_distance_m > 0
                 ? `${(activeVehicle.dead_reckoning_distance_m / 1000).toFixed(1)} km (IMU Dead-Reckoning)`
@@ -488,20 +912,69 @@ export const MobileMissionCockpit: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. Center Interactive 2.5D Leaflet Navigation Map */}
+      {/* 4. Center Interactive Vector Navigation Map (Synchronized with Main Tactical GIS Map) */}
       <div className="bg-surface border border-border rounded-md shadow-xs overflow-hidden relative isolate z-0">
-        <div className="p-2.5 bg-surface-subtle border-b border-border flex items-center justify-between text-[11px]">
-          <span className="font-semibold text-text-primary flex items-center gap-1.5 truncate mr-2">
+        <div className="p-2.5 bg-surface-subtle border-b border-border flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+          <div className="flex items-center gap-1.5 min-w-0">
             <Navigation className="w-3.5 h-3.5 text-primary shrink-0" />
-            <span className="truncate">Radar: {assignedRoute.name}</span>
-          </span>
-          <span className="font-mono text-[10px] text-primary shrink-0">
-            Heading: {Math.round(activeVehicle.heading_deg)}°
-          </span>
+            <span className="font-semibold text-text-primary truncate max-w-[140px] xs:max-w-[180px] sm:max-w-xs">
+              Radar: {assignedRoute.name}
+            </span>
+            <span className="px-1.5 py-0.2 rounded-xs bg-primary-tint text-primary font-mono text-[9px] font-bold shrink-0">
+              {Math.round(activeVehicle.heading_deg)}°
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0 ml-auto">
+            {/* Follow Convoy Toggle */}
+            <button
+              onClick={() => setFollowConvoy(!followConvoy)}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 cursor-pointer transition ${
+                followConvoy
+                  ? 'bg-primary text-white border-primary shadow-xs'
+                  : 'bg-surface text-text-secondary border-border hover:bg-surface-subtle'
+              }`}
+              title="Toggle automatic convoy following"
+            >
+              <Compass className="w-3 h-3" />
+              <span>{followConvoy ? 'Tracking' : 'Free Pan'}</span>
+            </button>
+
+            {/* Recenter button */}
+            <button
+              onClick={handleRecenter}
+              className="p-1 rounded bg-surface hover:bg-surface-subtle border border-border text-text-secondary hover:text-text-primary cursor-pointer"
+              title="Recenter on Convoy"
+            >
+              <LocateFixed className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Expand / Compact Toggle */}
+            <button
+              onClick={() => setIsMapExpanded(!isMapExpanded)}
+              className="p-1 rounded bg-surface hover:bg-surface-subtle border border-border text-text-secondary hover:text-text-primary cursor-pointer"
+              title={isMapExpanded ? 'Compact Radar View' : 'Expand Tactical View'}
+            >
+              {isMapExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+
+            {/* Full Tactical GIS Command Bridge */}
+            <button
+              onClick={() => {
+                setSelectedMissionId(activeVehicle.mission_id);
+                setActiveView('GIS_COMMAND');
+              }}
+              className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#1B4B73] hover:bg-[#123A5A] text-white border border-blue-400/40 flex items-center gap-1 cursor-pointer shadow-xs transition"
+              title="Switch to full regional Tactical GIS Command deck"
+            >
+              <Layers className="w-3 h-3 text-sky-300" />
+              <span>Full GIS</span>
+            </button>
+          </div>
         </div>
 
         {/* Embedded Map Canvas strictly contained inside card */}
-        <div className="relative h-64 w-full overflow-hidden isolate z-0 rounded-b-md">
+        <div className={`relative ${isMapExpanded ? 'h-[440px]' : 'h-72 sm:h-80'} w-full overflow-hidden isolate z-0 rounded-b-md transition-all duration-200`}>
           <div ref={mapContainerRef} className="w-full h-full rounded-b-md" />
 
           {/* Roadblock Ahead Simulated Alert Banner */}
