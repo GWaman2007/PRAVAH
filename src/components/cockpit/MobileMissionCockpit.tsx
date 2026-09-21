@@ -73,7 +73,6 @@ export const MobileMissionCockpit: React.FC = () => {
     theme,
     activeDisruptions,
     incidents,
-    activeMissions,
     setActiveView,
     setSelectedMissionId,
   } = usePravahStore();
