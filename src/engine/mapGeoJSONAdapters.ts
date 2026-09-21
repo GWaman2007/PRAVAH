@@ -368,14 +368,61 @@ export function createRoadStatusGeoJSON(
 }
 
 /**
- * 7. Disasters GeoJSON - Removed older bigger generic hazard polygons (community-related polygons are used exclusively)
+ * 7. Disasters GeoJSON (ISRO Bhuvan LHZ & Geological Disaster Hazard Polygons)
  */
 export function createDisastersGeoJSON(
-  _hazardZones?: HazardZone[]
+  hazardZones: HazardZone[] = []
 ): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
+  const features: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+
+  if (LANDSLIDE_HAZARD_GEOJSON && Array.isArray(LANDSLIDE_HAZARD_GEOJSON.features)) {
+    LANDSLIDE_HAZARD_GEOJSON.features.forEach((feat: any) => {
+      if (feat.geometry?.type === 'Polygon') {
+        const sev = feat.properties?.severity || 'High';
+        let color = '#EA580C'; // Default High: Orange
+        if (sev === 'Very High' || sev === 'Critical') color = '#DC2626'; // Red
+        else if (sev === 'Moderate') color = '#D97706'; // Amber
+
+        features.push({
+          type: 'Feature',
+          geometry: feat.geometry,
+          properties: {
+            ...feat.properties,
+            hazard_type: feat.properties?.hazard_type || 'Landslide Hazard Zone',
+            fillColor: color,
+            fillOpacity: 0.28,
+            outlineColor: color,
+          },
+        });
+      }
+    });
+  }
+
+  hazardZones.forEach((hz) => {
+    if (hz.polygon && hz.polygon.length >= 3) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [toGeoJSONLineString(hz.polygon)],
+        },
+        properties: {
+          zone_id: hz.id,
+          name: hz.name,
+          hazard_type: hz.hazardType || 'Geological Hazard Zone',
+          severity: 'Critical',
+          fillColor: '#DC2626',
+          fillOpacity: 0.32,
+          outlineColor: '#DC2626',
+          advisory: 'Emergency bypass enforced • Silt & slope instability',
+        },
+      });
+    }
+  });
+
   return {
     type: 'FeatureCollection',
-    features: [],
+    features,
   };
 }
 
@@ -458,6 +505,13 @@ export function createCommunityBoundariesGeoJSON(
         cutoffHours: c.cutoffTimeHours,
         finalScore: c.metrics?.finalScore ? Math.round(c.metrics.finalScore * 100) : 0,
         primaryCorridor: c.primaryCorridor,
+        healthcareFacilities: c.healthcareFacilities,
+        ingressRouteCount: c.ingressRouteCount,
+        nearestDepotName: c.nearestDepotName,
+        transitTimeHours: c.transitTimeHours,
+        disruptionProbMax: c.disruptionProbMax,
+        isMonsoonAlertActive: c.isMonsoonAlertActive,
+        actionWindow: c.metrics?.actionableDispatchWindow ?? (c.cutoffTimeHours - c.transitTimeHours),
       },
     });
   });

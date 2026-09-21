@@ -32,9 +32,10 @@ import { AlertFeedModal } from './AlertFeedModal';
 import { SOSModal } from './SOSModal';
 import { MapLegend } from './MapLegend';
 import { MissionDetailsPanel } from './MissionDetailsPanel';
+import { DisasterPolygonModal, type HazardZoneInfo } from './DisasterPolygonModal';
 import { useTranslation } from '../../data/uiTranslations';
 import { formatTimeAgo } from '../../engine/offlineSync';
-import type { Segment, VehicleProfile, ReliefMission, Incident, SegmentIncident } from '../../types';
+import type { Segment, VehicleProfile, ReliefMission, Incident, SegmentIncident, CommunityWithCalculation } from '../../types';
 import {
   CloudRain,
   Navigation,
@@ -202,6 +203,21 @@ export const TacticalMapDeck: React.FC = () => {
     affectedMissions: ReliefMission[];
   } | null>(null);
 
+  // Disaster Polygon & Sector Inspection Modal State
+  const [hoveredPolygon, setHoveredPolygon] = useState<{
+    x: number;
+    y: number;
+    title: string;
+    subtitle?: string;
+    badge: string;
+    badgeColor: string;
+    items: { label: string; value: string | number; alert?: boolean }[];
+    prompt: string;
+  } | null>(null);
+  const [inspectedCommunity, setInspectedCommunity] = useState<CommunityWithCalculation | null>(null);
+  const [inspectedHazardZone, setInspectedHazardZone] = useState<HazardZoneInfo | null>(null);
+  const [isDisasterModalOpen, setIsDisasterModalOpen] = useState<boolean>(false);
+
   // Custom specs state
   const [isCustomSpecsActive, setIsCustomSpecsActive] = useState<boolean>(false);
   const [customWeight, setCustomWeight] = useState<number>(32.0);
@@ -341,8 +357,59 @@ export const TacticalMapDeck: React.FC = () => {
       }
 
       // -------------------------------------------------------------
-      // 1. DISASTERS (Removed older bigger generic polygons - keeping only communities)
+      // 1. DISASTERS & GEOLOGICAL HAZARDS (ISRO Bhuvan LHZ & High-Risk Sectors)
       // -------------------------------------------------------------
+      map.addSource('disasters', {
+        type: 'geojson',
+        data: createDisastersGeoJSON(HAZARD_ZONES),
+      });
+
+      map.addLayer({
+        id: 'disasters-fill',
+        type: 'fill',
+        source: 'disasters',
+        layout: {
+          visibility: activeLayers.lhz ? 'visible' : 'none',
+        },
+        paint: {
+          'fill-color': ['get', 'fillColor'],
+          'fill-opacity': 0.24,
+        },
+      });
+
+      map.addLayer({
+        id: 'disasters-line',
+        type: 'line',
+        source: 'disasters',
+        layout: {
+          visibility: activeLayers.lhz ? 'visible' : 'none',
+        },
+        paint: {
+          'line-color': ['get', 'outlineColor'],
+          'line-width': 2.0,
+          'line-dasharray': [3, 2],
+        },
+      });
+
+      map.addLayer({
+        id: 'disasters-symbol',
+        type: 'symbol',
+        source: 'disasters',
+        layout: {
+          visibility: activeLayers.lhz ? 'visible' : 'none',
+          'text-field': ['concat', '⚠️ ', ['get', 'name']],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9.5,
+          'text-offset': [0, 0],
+          'text-anchor': 'center',
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#FEF08A',
+          'text-halo-color': '#0F172A',
+          'text-halo-width': 2.0,
+        },
+      });
 
       // -------------------------------------------------------------
       // 2. ROAD ACCESSIBILITY & STATUS (Lines)
@@ -973,17 +1040,100 @@ export const TacticalMapDeck: React.FC = () => {
       map.on('click', 'mission-endpoints-symbol', handleEndpointClick);
       map.on('click', 'mission-endpoints-core', handleEndpointClick);
 
-      // Click community (circle point or boundary polygon)
+      // Click community (circle point or boundary polygon) -> Zoom & Open Sector Details Modal
       const handleCommunitySelect = (e: any) => {
         const feat = e.features?.[0];
         if (feat?.properties?.community_id) {
           const commId = feat.properties.community_id;
           setSelectedCommunityId(commId);
           zoomToCommunity(commId, map);
+
+          const comm = communitiesRef.current.find((c) => c.id === commId);
+          if (comm) {
+            setInspectedCommunity(comm);
+            setInspectedHazardZone(null);
+            setIsDisasterModalOpen(true);
+          }
         }
       };
       map.on('click', 'communities-circle', handleCommunitySelect);
       map.on('click', 'community-boundaries-fill', handleCommunitySelect);
+
+      // Hover on community boundary polygon -> Show rich disaster sector briefing card
+      map.on('mousemove', 'community-boundaries-fill', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          const p = feat.properties;
+          const priority = p.priorityTier || 'P3';
+          const badgeColor =
+            priority === 'P1'
+              ? 'bg-red-500/20 text-red-400 border-red-500/50'
+              : priority === 'P2'
+              ? 'bg-orange-500/20 text-orange-400 border-orange-500/50'
+              : 'bg-amber-500/20 text-amber-300 border-amber-500/50';
+
+          setHoveredPolygon({
+            x: e.point.x,
+            y: e.point.y,
+            title: p.name,
+            subtitle: `${p.district || ''}, ${p.state || ''}`,
+            badge: `${priority} ${priority === 'P1' ? 'CRITICAL' : priority === 'P2' ? 'HIGH RISK' : 'MODERATE'}`,
+            badgeColor,
+            items: [
+              { label: 'Cutoff Runway', value: `${p.cutoffHours || 4}h until isolation`, alert: (p.cutoffHours || 4) <= 4 },
+              { label: 'Population', value: `${Number(p.population || 0).toLocaleString()} residents` },
+              { label: 'Corridor', value: p.primaryCorridor || 'Lifeline Axis' },
+              { label: 'Priority Score', value: `${p.finalScore || 85}/100` },
+            ],
+            prompt: t('clickToInspectPolygon'),
+          });
+        }
+      });
+      map.on('mouseleave', 'community-boundaries-fill', () => {
+        setHoveredPolygon(null);
+      });
+
+      // Click on disaster hazard polygon -> Open Geological Hazard Intelligence Modal
+      map.on('click', 'disasters-fill', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          setInspectedHazardZone(feat.properties as HazardZoneInfo);
+          setInspectedCommunity(null);
+          setIsDisasterModalOpen(true);
+        }
+      });
+
+      // Hover on disaster hazard polygon -> Show geological hazard preview card
+      map.on('mousemove', 'disasters-fill', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          const p = feat.properties;
+          const sev = p.severity || 'Critical';
+          const badgeColor =
+            sev === 'Very High' || sev === 'Critical'
+              ? 'bg-red-500/20 text-red-400 border-red-500/50'
+              : 'bg-orange-500/20 text-orange-400 border-orange-500/50';
+
+          setHoveredPolygon({
+            x: e.point.x,
+            y: e.point.y,
+            title: p.name,
+            subtitle: `${p.corridor || p.state || 'Hazard Sector'}`,
+            badge: `${sev.toUpperCase()}${p.hazard_score ? ` (${p.hazard_score}/10)` : ''}`,
+            badgeColor,
+            items: [
+              { label: 'Hazard Type', value: p.hazard_type || 'Landslide Hazard Zone' },
+              { label: 'ISRO Code', value: p.bhuvan_code || 'ISRO-BHUVAN-LHZ' },
+              { label: 'Slope', value: p.slope_gradient || '35° - 55°' },
+              { label: 'Advisory', value: (p.advisory || '').slice(0, 48) + '...' },
+            ],
+            prompt: t('clickToInspectHazard'),
+          });
+        }
+      });
+      map.on('mouseleave', 'disasters-fill', () => {
+        setHoveredPolygon(null);
+      });
 
       // Cursor change on interactive layers
       const interactiveLayers = [
@@ -998,6 +1148,7 @@ export const TacticalMapDeck: React.FC = () => {
         'mission-endpoints-core',
         'communities-circle',
         'community-boundaries-fill',
+        'disasters-fill',
       ];
       interactiveLayers.forEach((layerId) => {
         map.on('mouseenter', layerId, () => {
@@ -1109,6 +1260,12 @@ export const TacticalMapDeck: React.FC = () => {
       groundIntelSource.setData(createGroundIntelIncidentsGeoJSON(incidents));
     }
 
+    // Update disasters & hazard zones
+    const disasterSource = map.getSource('disasters') as maplibregl.GeoJSONSource;
+    if (disasterSource) {
+      disasterSource.setData(createDisastersGeoJSON(HAZARD_ZONES));
+    }
+
     // Update communities (database-backed boundary polygons and points)
     const commPolySource = map.getSource('community-boundaries') as maplibregl.GeoJSONSource;
     if (commPolySource) {
@@ -1141,11 +1298,14 @@ export const TacticalMapDeck: React.FC = () => {
       }
     };
 
-    // COMMUNITIES: Community Boundary Polygons & Markers
+    // COMMUNITIES & HAZARDS: Boundary Polygons & Markers
     setVisibility('community-boundaries-fill', activeLayers.lhz);
     setVisibility('community-boundaries-line', activeLayers.lhz);
     setVisibility('communities-circle', activeLayers.lhz);
     setVisibility('communities-label', activeLayers.lhz);
+    setVisibility('disasters-fill', activeLayers.lhz);
+    setVisibility('disasters-line', activeLayers.lhz);
+    setVisibility('disasters-symbol', activeLayers.lhz);
 
     // ROAD STATUS: Controls status lines and data-driven incident markers
     setVisibility('road-status-casing', activeLayers.roadStatus);
@@ -2113,6 +2273,45 @@ export const TacticalMapDeck: React.FC = () => {
               <div className="pt-1 text-[10px] text-slate-500 italic text-right">{t('clickForDetails')}</div>
             </div>
           )}
+
+          {/* Disaster & Community Sector Polygon Hover Preview Card */}
+          {activeLayers.lhz && hoveredPolygon && (
+            <div
+              className="absolute z-30 pointer-events-none bg-slate-900/95 border border-slate-700/80 rounded-sm p-3 shadow-2xl backdrop-blur-md text-xs w-68 space-y-2 text-slate-200 animate-fadeIn select-none"
+              style={{
+                left: Math.min(Math.max(12, hoveredPolygon.x + 14), (mapContainerRef.current?.clientWidth || window.innerWidth) - 290),
+                top: Math.min(Math.max(12, hoveredPolygon.y - 30), (mapContainerRef.current?.clientHeight || window.innerHeight) - 220),
+              }}
+            >
+              <div className="flex items-start justify-between border-b border-slate-800 pb-1.5 gap-2">
+                <div>
+                  <div className="font-bold text-sm text-white">{hoveredPolygon.title}</div>
+                  {hoveredPolygon.subtitle && (
+                    <div className="text-[11px] text-slate-400">{hoveredPolygon.subtitle}</div>
+                  )}
+                </div>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 border ${hoveredPolygon.badgeColor}`}>
+                  {hoveredPolygon.badge}
+                </span>
+              </div>
+
+              <div className="space-y-1 text-[11px]">
+                {hoveredPolygon.items.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400">{item.label}:</span>
+                    <span className={`font-semibold truncate max-w-[155px] ${item.alert ? 'text-red-400' : 'text-slate-200'}`}>
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-1.5 border-t border-slate-800/80 text-[10px] text-primary flex items-center justify-end gap-1 font-medium">
+                <span>{hoveredPolygon.prompt}</span>
+                <span>→</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Interactive GIS Legend */}
@@ -2164,6 +2363,86 @@ export const TacticalMapDeck: React.FC = () => {
             />
           </div>
         </>
+      )}
+
+      {/* ========================================================================= */}
+      {/* OVERLAY MODALS                                                            */}
+      {/* ========================================================================= */}
+      {/* 3. Disaster Polygon & Sector Intelligence Modal */}
+      <DisasterPolygonModal
+        isOpen={isDisasterModalOpen}
+        onClose={() => {
+          setIsDisasterModalOpen(false);
+          setInspectedCommunity(null);
+          setInspectedHazardZone(null);
+        }}
+        community={inspectedCommunity}
+        hazardZone={inspectedHazardZone}
+        activeMission={
+          inspectedCommunity
+            ? activeMissions.find(
+                (m) =>
+                  m.communityId === inspectedCommunity.id ||
+                  m.communityName.toLowerCase().includes(inspectedCommunity.name.toLowerCase()) ||
+                  inspectedCommunity.name.toLowerCase().includes(m.communityName.toLowerCase())
+              ) || null
+            : null
+        }
+        onFocusMission={(mission) => handleFocusMission(mission)}
+      />
+
+      {/* 4. Road Incident Details Modal */}
+      <RoadIncidentModal
+        isOpen={detailedIncident !== null}
+        onClose={() => setDetailedIncident(null)}
+        segment={detailedIncident?.segment || null}
+        disruption={detailedIncident?.disruption || null}
+        incident={detailedIncident?.incident || null}
+        affectedMissions={detailedIncident?.affectedMissions || []}
+        onOpenSegmentEngineering={(seg) => {
+          setDetailedIncident(null);
+          setInspectedSegment(seg);
+        }}
+      />
+
+      {/* 5. Road Segment Engineering Modal */}
+      {inspectedSegment && (
+        <SegmentModal
+          segment={inspectedSegment}
+          vehicle={selectedVehicle}
+          rainfallMmHr={rainfallMmHr}
+          currentDisruption={activeDisruptions[inspectedSegment.id]}
+          onClose={() => setInspectedSegment(null)}
+          onApplyDisruption={(segId, dis) => {
+            if (dis) {
+              setSegmentDisruption(segId, dis);
+            }
+          }}
+        />
+      )}
+
+      {/* 6. Alert Feed Modal */}
+      <AlertFeedModal
+        isOpen={isAlertModalOpen}
+        onClose={() => setIsAlertModalOpen(false)}
+        alerts={alerts}
+        onAcknowledge={(alertId) => acknowledgeAlert(alertId)}
+        onSelectVehicle={(vehId) => {
+          setSelectedVehicleId(vehId);
+          setIsInspectorOpen(true);
+          setIsAlertModalOpen(false);
+        }}
+      />
+
+      {/* 7. Driver SOS Emergency Modal */}
+      {activeSOSVehicleId && (
+        <SOSModal
+          vehicle={vehicles.find((v) => v.vehicle_id === activeSOSVehicleId) || null}
+          onClose={() => setActiveSOSVehicleId(null)}
+          onStandDown={() => {
+            setActiveSOSVehicleId(null);
+          }}
+        />
       )}
     </div>
   );
