@@ -29,7 +29,7 @@ import { SUPPORTED_LANGUAGES, PRESET_TRANSLATIONS, PHONETIC_READINGS, generateBr
 import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngine';
 import { calculateCompositePriority } from '../engine/priorityEngine';
 import { stepVehicleSimulation, initRouteDistances } from '../engine/telemetryEngine';
-import { generateDynamicMissionSuggestions, isMissionOngoing } from '../engine/missionEngine';
+import { generateDynamicMissionSuggestions, isMissionOngoing, COMMUNITY_ROUTING_PROFILES } from '../engine/missionEngine';
 import { getAuthoritativeHazardPolygons } from '../engine/realtimePolygonService';
 import {
   getOfflineQueue,
@@ -609,7 +609,8 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             stored.includes('"MOCK-') ||
             stored.includes('MISSION-MZ-') ||
             stored.includes('ROUTE-MZ-02') ||
-            stored.includes('ROUTE-MZ-04'))
+            stored.includes('ROUTE-MZ-04') ||
+            stored.includes('ROUTE-NL-01'))
         ) {
           localStorage.removeItem('pravah_relief_missions');
         }
@@ -631,29 +632,18 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             pm.status === 'DELIVERED')
       );
       if (cleaned.length > 0) {
-        // Sanitize any route references
+        // Sanitize any route references using COMMUNITY_ROUTING_PROFILES
         const sanitized = cleaned.map((pm: ReliefMission) => {
-          if (pm.communityId === 'MZ-KOL-004' && (pm.assignedRouteId === 'ROUTE-MZ-04' || pm.assignedRouteId === 'ROUTE-MZ-02')) {
-            const r = FLEET_ROUTES['ROUTE-SUG-01'];
+          const profile = COMMUNITY_ROUTING_PROFILES[pm.communityId];
+          if (profile && pm.assignedRouteId !== profile.routeId) {
+            const r = FLEET_ROUTES[profile.routeId];
             return {
               ...pm,
-              assignedRouteId: 'ROUTE-SUG-01',
-              suggestedDetour: 'NH-306 Safe Mountain Bypass (via Vairengte Spur)',
-              routeGeometry: r?.coordinates || pm.routeGeometry,
-              routeDistanceKm: r?.distanceKm || pm.routeDistanceKm,
-              routeDurationMinutes: r?.expectedDurationMinutes || pm.routeDurationMinutes,
-              destinationEndpoint: r?.coordinates ? r.coordinates[r.coordinates.length - 1] : pm.destinationEndpoint,
-            };
-          }
-          if (pm.communityId === 'SK-MAN-002' && pm.assignedRouteId === 'ROUTE-MZ-02') {
-            const r = FLEET_ROUTES['ROUTE-SK-02'];
-            return {
-              ...pm,
-              assignedRouteId: 'ROUTE-SK-02',
-              originWarehouseId: 'gangtok',
-              originWarehouseName: 'Gangtok STNM Hub',
-              originCoords: [27.33139, 88.61381] as [number, number],
-              suggestedDetour: 'NH-10 Teesta Mountain Corridor (Low Gear Transit)',
+              assignedRouteId: profile.routeId,
+              suggestedDetour: profile.detour,
+              originWarehouseId: profile.depotId,
+              originWarehouseName: profile.depotName,
+              originCoords: profile.depotCoords,
               routeGeometry: r?.coordinates || pm.routeGeometry,
               routeDistanceKm: r?.distanceKm || pm.routeDistanceKm,
               routeDurationMinutes: r?.expectedDurationMinutes || pm.routeDurationMinutes,

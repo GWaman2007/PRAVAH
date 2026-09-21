@@ -46,45 +46,50 @@ export function validateAndResolveMissionRoute(
 ): [number, number][] | null {
   if (!mission) return null;
 
-  const routes = fleetRoutes && Object.keys(fleetRoutes).length > 0 ? fleetRoutes : FLEET_ROUTES;
-  let routeDef = routes[mission.assignedRouteId];
-
   const dest = mission.destinationEndpoint;
+  const routes = fleetRoutes && Object.keys(fleetRoutes).length > 0 ? fleetRoutes : FLEET_ROUTES;
+  let routeDef: RouteDefinition | undefined;
+
+  // 1. Authoritative Community Profile Resolution:
+  // If the mission has a communityId and an authoritative routing profile exists (e.g. NL-KOH-009 -> ROUTE-SUG-02,
+  // MZ-KOL-004 -> ROUTE-SUG-01, SK-MAN-002 -> ROUTE-SK-02), ALWAYS use the authoritative community profile route!
+  // This guarantees that a Kohima mission always takes the full highway to Kohima (ROUTE-SUG-02), rather than stopping
+  // 12.5km away at the Zubza choke post (ROUTE-NL-01).
+  if (mission.communityId && COMMUNITY_ROUTING_PROFILES[mission.communityId]) {
+    const profile = COMMUNITY_ROUTING_PROFILES[mission.communityId];
+    if (routes[profile.routeId]) {
+      routeDef = routes[profile.routeId];
+    }
+  }
+
+  // 2. Fallback to assigned route ID if not resolved by profile
+  if (!routeDef) {
+    routeDef = routes[mission.assignedRouteId];
+  }
 
   const isGeographicallyMismatched = (coords: [number, number][] | undefined): boolean => {
     if (!coords || coords.length < 2 || !dest || !Number.isFinite(dest[0]) || !Number.isFinite(dest[1])) return false;
     const terminus = coords[coords.length - 1];
-    // If distance between route terminus and destination is > 35km, this is a regional mismatch!
-    return haversineDistanceKm(dest, terminus) > 35.0;
+    // If distance between route terminus and destination is > 10km, this is a regional mismatch!
+    return haversineDistanceKm(dest, terminus) > 10.0;
   };
 
-  // If assigned route does not exist or points to an entirely different region (e.g. Mizoram route on Sikkim mission)
+  // 3. If still mismatched (>10km from dest) or not found, search fleetRoutes for closest terminus
   if (!routeDef || isGeographicallyMismatched(routeDef.coordinates)) {
-    // 1. Try matching by community routing profile
-    if (mission.communityId && COMMUNITY_ROUTING_PROFILES[mission.communityId]) {
-      const profile = COMMUNITY_ROUTING_PROFILES[mission.communityId];
-      if (routes[profile.routeId]) {
-        routeDef = routes[profile.routeId];
-      }
-    }
-
-    // 2. If still mismatched, search fleetRoutes for the route whose terminus is nearest to dest
-    if (!routeDef || isGeographicallyMismatched(routeDef.coordinates)) {
-      if (dest && Number.isFinite(dest[0]) && Number.isFinite(dest[1])) {
-        let bestDist = Infinity;
-        let bestRoute: RouteDefinition | null = null;
-        Object.values(routes).forEach((r) => {
-          if (!r.coordinates || r.coordinates.length < 2) return;
-          const terminus = r.coordinates[r.coordinates.length - 1];
-          const d = haversineDistanceKm(dest, terminus);
-          if (d < bestDist) {
-            bestDist = d;
-            bestRoute = r;
-          }
-        });
-        if (bestRoute && bestDist <= 35.0) {
-          routeDef = bestRoute;
+    if (dest && Number.isFinite(dest[0]) && Number.isFinite(dest[1])) {
+      let bestDist = Infinity;
+      let bestRoute: RouteDefinition | null = null;
+      Object.values(routes).forEach((r) => {
+        if (!r.coordinates || r.coordinates.length < 2) return;
+        const terminus = r.coordinates[r.coordinates.length - 1];
+        const d = haversineDistanceKm(dest, terminus);
+        if (d < bestDist) {
+          bestDist = d;
+          bestRoute = r;
         }
+      });
+      if (bestRoute && bestDist <= 35.0) {
+        routeDef = bestRoute;
       }
     }
   }

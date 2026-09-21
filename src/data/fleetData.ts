@@ -46,7 +46,7 @@ export const FLEET_ROUTES: Record<string, RouteDefinition> = {
     endHub: 'Zubza Choke Relief Terminal',
     distanceKm: OSRM_PRECOMPUTED_ROUTES['MISSION-NL-01'].distanceKm,
     expectedDurationMinutes: OSRM_PRECOMPUTED_ROUTES['MISSION-NL-01'].durationMinutes,
-    coordinates: OSRM_PRECOMPUTED_ROUTES['MISSION-NL-01'].coordinates,
+    coordinates: OSRM_PRECOMPUTED_ROUTES['MISSION-NL-01'].coordinates.slice(0, 2067),
     deviationPath: [],
   },
 
