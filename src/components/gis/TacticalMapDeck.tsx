@@ -23,6 +23,8 @@ import {
   createRoadBreakdownsGeoJSON,
   createMissionEndpointsGeoJSON,
   createGroundIntelIncidentsGeoJSON,
+  createDraftIncidentPlotsGeoJSON,
+  createSelectedDraftRouteGeoJSON,
   registerMapIcons,
 } from '../../engine/mapGeoJSONAdapters';
 import { SegmentModal } from './SegmentModal';
@@ -55,6 +57,7 @@ import {
   Radio,
   Layers,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 
 export const TacticalMapDeck: React.FC = () => {
@@ -112,6 +115,12 @@ export const TacticalMapDeck: React.FC = () => {
     incidents,
     hazardPolygons,
     refreshHazardPolygons,
+    draftPlots,
+    rejectedReports,
+    approveDraftPlot,
+    dismissDraftPlot,
+    submitCitizenReport,
+    submitOfficerReport,
   } = usePravahStore();
 
   const { t } = useTranslation();
@@ -163,8 +172,58 @@ export const TacticalMapDeck: React.FC = () => {
     }
   }, []);
 
-  // Active sidebar tab: 'MISSIONS' (Ongoing & Suggested) vs 'ROUTING' (K-Shortest & Constraints)
-  const [sidebarTab, setSidebarTab] = useState<'MISSIONS' | 'ROUTING'>('MISSIONS');
+  // Active sidebar tab: 'MISSIONS' vs 'ROUTING' vs 'REPORTS_REVIEW'
+  const [sidebarTab, setSidebarTab] = useState<'MISSIONS' | 'ROUTING' | 'REPORTS_REVIEW'>('MISSIONS');
+  const [selectedDraftPlotId, setSelectedDraftPlotId] = useState<string | null>(null);
+  const [reviewSubTab, setReviewSubTab] = useState<'PENDING' | 'REJECTED'>('PENDING');
+
+  const selectedDraftPlot = useMemo(() => {
+    return draftPlots.find((d) => d.id === selectedDraftPlotId) || null;
+  }, [draftPlots, selectedDraftPlotId]);
+
+  // Direct Gemini Field Intel Ingest state
+  const [intelInputText, setIntelInputText] = useState('');
+  const [isProcessingIntel, setIsProcessingIntel] = useState(false);
+  const [intelStatus, setIntelStatus] = useState<string | null>(null);
+
+  const handleProcessIntel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!intelInputText.trim() || isProcessingIntel) return;
+    setIsProcessingIntel(true);
+    setIntelStatus('Connecting to Google Gemini Multimodal AI...');
+    try {
+      const res = await submitCitizenReport({
+        rawText: intelInputText.trim(),
+        coords: [25.712, 93.998], // Default to active NER corridor centroid
+        reporterName: 'Field Intel Ingest',
+      });
+      if (res.status === 'NEW_DRAFT') {
+        setIntelStatus('✨ Processed by Gemini & Added to Review Queue!');
+        setIntelInputText('');
+        if (res.draftPlot) {
+          setSelectedDraftPlotId(res.draftPlot.id);
+          if (mapInstanceRef.current && res.draftPlot.coordinates) {
+            mapInstanceRef.current.flyTo({
+              center: [res.draftPlot.coordinates[1], res.draftPlot.coordinates[0]],
+              zoom: 12,
+              speed: 1.2,
+            });
+          }
+        }
+      } else if (res.status === 'DUPLICATE') {
+        setIntelStatus(`✨ Gemini detected duplicate: Citation merged into ${res.duplicateOfId}`);
+        setIntelInputText('');
+      } else {
+        setIntelStatus(`Flagged by AI: ${res.rejectionReason || 'Spam / Geographic Mismatch'}`);
+      }
+    } catch (err: any) {
+      setIntelStatus(`Error: ${err?.message || 'Gemini processing failed'}`);
+    } finally {
+      setIsProcessingIntel(false);
+      setTimeout(() => setIntelStatus(null), 5000);
+    }
+  };
+
   const [missionTab, setMissionTab] = useState<'ONGOING' | 'SUGGESTED'>('ONGOING');
   const [mobileViewTab, setMobileViewTab] = useState<'MAP' | 'CONTROLS'>('MAP');
 
@@ -790,6 +849,143 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       // -------------------------------------------------------------
+      // 7c. DRAFT INCIDENT PLOTS (Pulsing Ghost Preview Pins for AI Drafts)
+      // -------------------------------------------------------------
+      map.addSource('draft-incident-plots', {
+        type: 'geojson',
+        data: createDraftIncidentPlotsGeoJSON(draftPlots),
+      });
+
+      map.addLayer({
+        id: 'draft-incident-plots-halo',
+        type: 'circle',
+        source: 'draft-incident-plots',
+        paint: {
+          'circle-radius': 15,
+          'circle-color': '#A855F7',
+          'circle-opacity': 0.35,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#C084FC',
+        },
+      });
+
+      map.addLayer({
+        id: 'draft-incident-plots-core',
+        type: 'circle',
+        source: 'draft-incident-plots',
+        paint: {
+          'circle-radius': 6.0,
+          'circle-color': '#9333EA',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      map.addLayer({
+        id: 'draft-incident-plots-label',
+        type: 'symbol',
+        source: 'draft-incident-plots',
+        layout: {
+          'text-field': ['concat', '✨ Draft: ', ['get', 'title']],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 9.0,
+          'text-offset': [0, 1.3],
+          'text-anchor': 'top',
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#E9D5FF',
+          'text-halo-color': '#3B0764',
+          'text-halo-width': 2.0,
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 7d. SELECTED DRAFT ROUTE & EXPECTED PIN PREVIEW
+      // -------------------------------------------------------------
+      map.addSource('selected-draft-route', {
+        type: 'geojson',
+        data: createSelectedDraftRouteGeoJSON(null),
+      });
+
+      // Glowing corridor line along expected road route
+      map.addLayer({
+        id: 'selected-draft-route-glow',
+        type: 'line',
+        source: 'selected-draft-route',
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': 10,
+          'line-opacity': 0.45,
+          'line-blur': 3,
+        },
+      });
+
+      // Dashed corridor line along expected road route
+      map.addLayer({
+        id: 'selected-draft-route-line',
+        type: 'line',
+        source: 'selected-draft-route',
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': 4.5,
+          'line-dasharray': [2, 1.5],
+        },
+      });
+
+      // Expected pin pulse ring
+      map.addLayer({
+        id: 'selected-draft-pin-pulse',
+        type: 'circle',
+        source: 'selected-draft-route',
+        filter: ['==', '$type', 'Point'],
+        paint: {
+          'circle-radius': 24,
+          'circle-color': '#F59E0B',
+          'circle-opacity': 0.45,
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#EF4444',
+        },
+      });
+
+      // Expected pin center point
+      map.addLayer({
+        id: 'selected-draft-pin-point',
+        type: 'circle',
+        source: 'selected-draft-route',
+        filter: ['==', '$type', 'Point'],
+        paint: {
+          'circle-radius': 8,
+          'circle-color': '#EF4444',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      // Expected pin badge text
+      map.addLayer({
+        id: 'selected-draft-pin-badge',
+        type: 'symbol',
+        source: 'selected-draft-route',
+        filter: ['==', '$type', 'Point'],
+        layout: {
+          'text-field': ['concat', '📍 EXPECTED PIN: ', ['get', 'hazardType'], ' (', ['get', 'severity'], ')'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 10,
+          'text-offset': [0, 1.5],
+          'text-anchor': 'top',
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#FEF08A',
+          'text-halo-color': '#78350F',
+          'text-halo-width': 2.5,
+        },
+      });
+
+      // -------------------------------------------------------------
       // 8. VEHICLE SOS ANIMATED PULSE RING
       // -------------------------------------------------------------
       map.addSource('vehicle-sos', {
@@ -989,6 +1185,29 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       map.on('mouseleave', 'ground-intel-incidents-core', () => {
+        setHoveredBreakdown(null);
+      });
+
+      // Hover on draft incident plot marker
+      map.on('mousemove', 'draft-incident-plots-core', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          setHoveredBreakdown({
+            x: e.point.x,
+            y: e.point.y,
+            segment_id: feat.properties.id,
+            segment_name: `[AI DRAFT] ${feat.properties.title}`,
+            highway: feat.properties.corridor,
+            status: feat.properties.severity,
+            cause: feat.properties.hazardType,
+            severity: feat.properties.severity,
+            reportedBy: `${feat.properties.reporterName} (+${feat.properties.citationsCount} Citations)`,
+            lastUpdated: `Model: ${feat.properties.geminiModel}`,
+          });
+        }
+      });
+
+      map.on('mouseleave', 'draft-incident-plots-core', () => {
         setHoveredBreakdown(null);
       });
 
@@ -1221,6 +1440,10 @@ export const TacticalMapDeck: React.FC = () => {
           map.setPaintProperty('ground-intel-incidents-pulse', 'circle-radius', 13 + radiusOffset * 1.5);
           map.setPaintProperty('ground-intel-incidents-pulse', 'circle-opacity', Math.max(0.12, opacity));
         }
+        if (map.getLayer('draft-incident-plots-halo')) {
+          map.setPaintProperty('draft-incident-plots-halo', 'circle-radius', 14 + radiusOffset * 1.5);
+          map.setPaintProperty('draft-incident-plots-halo', 'circle-opacity', Math.max(0.12, opacity));
+        }
       }
 
       animFrameIdRef.current = requestAnimationFrame(animatePulse);
@@ -1276,6 +1499,14 @@ export const TacticalMapDeck: React.FC = () => {
     if (groundIntelSource) {
       groundIntelSource.setData(createGroundIntelIncidentsGeoJSON(incidents));
     }
+    const draftPlotsSource = map.getSource('draft-incident-plots') as maplibregl.GeoJSONSource;
+    if (draftPlotsSource) {
+      draftPlotsSource.setData(createDraftIncidentPlotsGeoJSON(draftPlots));
+    }
+    const selectedDraftRouteSource = map.getSource('selected-draft-route') as maplibregl.GeoJSONSource;
+    if (selectedDraftRouteSource) {
+      selectedDraftRouteSource.setData(createSelectedDraftRouteGeoJSON(selectedDraftPlot));
+    }
 
     // Update disasters & hazard zones (Real-Time API Polygons)
     const disasterSource = map.getSource('disasters') as maplibregl.GeoJSONSource;
@@ -1303,6 +1534,8 @@ export const TacticalMapDeck: React.FC = () => {
     selectedCommunityId,
     incidents,
     hazardPolygons,
+    draftPlots,
+    selectedDraftPlot,
   ]);
 
   // 5. Update Layer Visibility from activeLayers filters
@@ -1335,6 +1568,11 @@ export const TacticalMapDeck: React.FC = () => {
     setVisibility('ground-intel-incidents-pulse', true);
     setVisibility('ground-intel-incidents-core', true);
     setVisibility('ground-intel-incidents-symbol', true);
+
+    // DRAFT INCIDENT PLOTS: Pulsing ghost preview pins for AI drafts
+    setVisibility('draft-incident-plots-halo', true);
+    setVisibility('draft-incident-plots-core', true);
+    setVisibility('draft-incident-plots-label', true);
 
     // MISSION ROUTES & ENDPOINTS: Active routes and mission destination targets (solid markers only)
     setVisibility('mission-routes-glow', activeLayers.routes);
@@ -1514,32 +1752,51 @@ export const TacticalMapDeck: React.FC = () => {
       {/* LEFT SIDEBAR: MISSION OPERATIONS & PREDICTIVE ROUTING                     */}
       {/* ========================================================================= */}
       <aside aria-label="Tactical Mission Control Sidebar" className={`w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-hidden z-10 shadow-xs pb-16 lg:pb-0 shrink-0 ${mobileViewTab === 'CONTROLS' ? 'flex' : 'hidden lg:flex'}`}>
-        {/* Navigation Tabs Header: Mission Operations vs K-Shortest Routing */}
-        <div className="flex border-b border-border bg-surface-subtle p-1 shrink-0">
+        {/* Navigation Tabs Header: Mission Operations, K-Shortest Paths, Reports for Review */}
+        <div className="flex border-b border-border bg-surface-subtle p-1 shrink-0 gap-1">
           <button
             onClick={() => setSidebarTab('MISSIONS')}
-            className={`flex-1 py-2 px-2.5 rounded-xs text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 px-2 rounded-xs text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               sidebarTab === 'MISSIONS'
                 ? 'bg-surface text-primary shadow-xs border border-border'
                 : 'text-text-secondary hover:text-text-primary'
             }`}
+            title="Mission Operations"
           >
-            <Shield className="w-3.5 h-3.5 text-primary" />
-            <span>{t('missionOperations')}</span>
-            <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-xs bg-primary/10 text-primary">
+            <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span className="truncate">{t('missionOperations')}</span>
+            <span className="font-mono text-[9px] px-1 py-0.2 rounded-xs bg-primary/10 text-primary shrink-0">
               {activeMissions.length}
             </span>
           </button>
           <button
             onClick={() => setSidebarTab('ROUTING')}
-            className={`flex-1 py-2 px-2.5 rounded-xs text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 px-2 rounded-xs text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               sidebarTab === 'ROUTING'
-                ? 'bg-surface text-primary shadow-xs border border-border'
+                ? 'bg-surface text-sky-500 shadow-xs border border-border'
                 : 'text-text-secondary hover:text-text-primary'
             }`}
+            title="K-Shortest Paths"
           >
-            <Navigation className="w-3.5 h-3.5 text-sky-500" />
-            <span>{t('kShortestPaths')}</span>
+            <Navigation className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+            <span className="truncate">{t('kShortestPaths')}</span>
+          </button>
+          <button
+            onClick={() => setSidebarTab('REPORTS_REVIEW')}
+            className={`flex-1 py-1.5 px-2 rounded-xs text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+              sidebarTab === 'REPORTS_REVIEW'
+                ? 'bg-surface text-amber-500 shadow-xs border border-border'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+            title="Reports for Review"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="truncate">Reports for Review</span>
+            {draftPlots.length > 0 && (
+              <span className="font-mono text-[9px] px-1 py-0.2 rounded-xs bg-amber-500/20 text-amber-400 font-bold shrink-0 animate-pulse">
+                {draftPlots.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -2044,6 +2301,259 @@ export const TacticalMapDeck: React.FC = () => {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* TAB 3: REPORTS FOR REVIEW (AI Verified Draft Incidents & Spam Quarantined) */}
+        {sidebarTab === 'REPORTS_REVIEW' && (
+          <div className="flex-1 flex flex-col overflow-hidden text-xs">
+            {/* Sub-tab toggle: [ Pending Review (X) ] [ Quarantined (Y) ] */}
+            <div className="p-2 border-b border-border bg-surface-subtle shrink-0">
+              <div className="flex bg-surface p-0.5 rounded-sm border border-border">
+                <button
+                  onClick={() => setReviewSubTab('PENDING')}
+                  className={`flex-1 py-1.5 px-2 rounded-xs text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    reviewSubTab === 'PENDING'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3 text-amber-300" />
+                  <span>Pending Review</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-xs font-mono text-[9px] font-bold ${
+                      reviewSubTab === 'PENDING' ? 'bg-white/20 text-white' : 'bg-amber-500/20 text-amber-400'
+                    }`}
+                  >
+                    {draftPlots.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setReviewSubTab('REJECTED')}
+                  className={`flex-1 py-1.5 px-2 rounded-xs text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    reviewSubTab === 'REJECTED'
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  <span>AI Quarantined</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-xs font-mono text-[9px] font-bold ${
+                      reviewSubTab === 'REJECTED' ? 'bg-white/20 text-white' : 'bg-rose-500/20 text-rose-400'
+                    }`}
+                  >
+                    {rejectedReports.length}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Content for PENDING DRAFT REPORTS */}
+            {reviewSubTab === 'PENDING' && (
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2.5">
+                <div className="p-2 rounded-xs bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Click any report to inspect its expected pin location & affected road corridor on the map before approving.</span>
+                </div>
+
+                {/* Direct Gemini Field Intel Ingest Box */}
+                <form onSubmit={handleProcessIntel} className="p-2.5 rounded-sm bg-surface-subtle border border-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[11px] text-text-primary flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Direct Field Intel Ingest</span>
+                    </span>
+                    <span className="text-[10px] text-indigo-400 font-mono">Gemini AI Engine</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={intelInputText}
+                      onChange={(e) => setIntelInputText(e.target.value)}
+                      placeholder="Type or paste field report (e.g. NH-29 landslide near Zubza)..."
+                      className="flex-1 px-2.5 py-1.5 text-xs bg-surface border border-border rounded-xs text-text-primary focus:outline-none focus:border-amber-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isProcessingIntel || !intelInputText.trim()}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold rounded-xs text-[11px] flex items-center gap-1 cursor-pointer transition shrink-0"
+                    >
+                      {isProcessingIntel ? (
+                        <>
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3 h-3" />
+                          <span>Process AI</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {intelStatus && (
+                    <div className="text-[10px] text-amber-400 font-medium animate-fadeIn">
+                      {intelStatus}
+                    </div>
+                  )}
+                </form>
+
+                {draftPlots.length === 0 ? (
+                  <div className="p-6 text-center bg-surface-subtle rounded-sm text-text-secondary text-[11px] space-y-2 border border-border">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto opacity-80" />
+                    <p className="font-bold text-text-primary">All Ground Reports Reviewed</p>
+                    <p className="text-[10px]">No pending citizen disaster plots waiting for administrative review.</p>
+                  </div>
+                ) : (
+                  draftPlots.map((draft) => {
+                    const isSelected = draft.id === selectedDraftPlotId;
+
+                    return (
+                      <div
+                        key={draft.id}
+                        onClick={() => {
+                          setSelectedDraftPlotId(draft.id);
+                          if (mapInstanceRef.current) {
+                            mapInstanceRef.current.flyTo({
+                              center: [draft.coordinates[1], draft.coordinates[0]],
+                              zoom: 12,
+                              speed: 1.2,
+                              essential: true,
+                            });
+                          }
+                        }}
+                        className={`p-3 rounded-sm border transition-all cursor-pointer space-y-2.5 text-xs shadow-xs ${
+                          isSelected
+                            ? 'bg-amber-500/10 border-amber-500 ring-1 ring-amber-500 shadow-md'
+                            : 'bg-surface border-border hover:border-amber-500/50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                {draft.id}
+                              </span>
+                              <span className="font-bold text-text-primary">{draft.title}</span>
+                            </div>
+                            <span className="text-[10px] text-text-secondary block mt-0.5">
+                              Corridor: <strong className="text-text-primary">{draft.corridor}</strong>
+                            </span>
+                            <span className="text-[9px] text-text-tertiary block font-mono">
+                              Coords: [{draft.coordinates[0].toFixed(3)}, {draft.coordinates[1].toFixed(3)}]
+                            </span>
+                          </div>
+
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span
+                              className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border ${
+                                draft.severity === 'TOTAL_BLOCKAGE'
+                                  ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                                  : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                              }`}
+                            >
+                              {draft.severity}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded-xs font-mono text-[9px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              +{draft.citationsCount} Cited
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Inspection indicator */}
+                        {isSelected && (
+                          <div className="px-2 py-1 rounded-xs bg-amber-500/20 border border-amber-500/40 text-[10px] text-amber-300 font-semibold flex items-center gap-1.5 animate-pulse">
+                            <Radio className="w-3 h-3 text-amber-400" />
+                            <span>Expected Map Pin & Corridor Preview Active</span>
+                          </div>
+                        )}
+
+                        {/* Gemini AI Verification Snippet */}
+                        <div className="p-2 rounded-xs bg-surface-subtle border border-border/70 text-[10px] space-y-1">
+                          <div className="flex items-center justify-between text-text-secondary">
+                            <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Geo Check: Passed
+                            </span>
+                            <span className="font-mono text-indigo-300">
+                              AI: {draft.aiValidation.geminiModelUsed}
+                            </span>
+                            <span className="font-bold text-text-primary">
+                              Score: {draft.aiValidation.confidenceScore}/10
+                            </span>
+                          </div>
+                          <p className="text-text-primary italic pt-0.5 leading-tight">
+                            "{draft.summary}"
+                          </p>
+                          <div className="text-[9px] text-text-tertiary pt-0.5 border-t border-border/40">
+                            By <strong>{draft.sourceReport.reporterName}</strong> ({draft.sourceReport.role}) • Raw: "{draft.sourceReport.rawText}"
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="pt-1 border-t border-border/40 flex items-center justify-end gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              dismissDraftPlot(draft.id);
+                              if (selectedDraftPlotId === draft.id) setSelectedDraftPlotId(null);
+                            }}
+                            className="px-2.5 py-1 rounded-xs bg-surface hover:bg-surface-subtle text-text-secondary hover:text-text-primary text-[10px] font-semibold border border-border cursor-pointer transition"
+                          >
+                            Dismiss
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              approveDraftPlot(draft.id);
+                              if (selectedDraftPlotId === draft.id) setSelectedDraftPlotId(null);
+                            }}
+                            className="px-3 py-1 rounded-xs bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold shadow-xs flex items-center gap-1 cursor-pointer transition btn-press"
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Approve & Plot to Live Map</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* Content for QUARANTINED REPORTS */}
+            {reviewSubTab === 'REJECTED' && (
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2 text-xs">
+                {rejectedReports.length === 0 ? (
+                  <div className="p-6 text-center bg-surface-subtle rounded-sm text-text-secondary text-[11px] border border-border">
+                    No quarantined reports logged.
+                  </div>
+                ) : (
+                  rejectedReports.map((rej) => (
+                    <div
+                      key={rej.id}
+                      className="p-2.5 rounded-sm border border-rose-500/30 bg-surface space-y-1.5 text-[10px]"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold px-1.5 py-0.2 rounded-xs bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                          {rej.flaggedAs}
+                        </span>
+                        <span className="text-text-tertiary font-mono">
+                          {formatTimeAgo(rej.timestamp)}
+                        </span>
+                      </div>
+                      <div className="p-1.5 rounded-xs bg-surface-subtle border border-border text-rose-400">
+                        <strong>Reason:</strong> {rej.rejectionReason}
+                      </div>
+                      <div className="text-text-secondary">
+                        Raw: "<span className="text-text-primary">{rej.rawText}</span>" — Reporter: {rej.reporterName}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         )}
 

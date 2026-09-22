@@ -592,3 +592,74 @@ export interface RealtimeHazardPolygon {
   externalEventId?: string;
   url?: string;
 }
+
+// ==========================================
+// 11. Gemini AI Intelligence Pipeline (Native Multimodal)
+// ==========================================
+export interface DraftIncidentPlot {
+  id: string;
+  title: string;
+  corridor: string;
+  coordinates: [number, number]; // [lat, lng]
+  hazardType: 'Landslide' | 'Flash Flood' | 'Bridge Damage' | 'Rockfall' | 'Road Subsidence';
+  severity: 'TOTAL_BLOCKAGE' | 'SINGLE_LANE_PASSABLE' | 'CAUTION';
+  estimatedCutoffHours: number;
+  summary: string;
+  citationsCount: number;
+  sourceReport: {
+    reporterName: string;
+    role: 'Local Citizen' | 'Field Officer (BRO/Police)';
+    rawText: string;
+    timestamp: string;
+    photoUrl?: string;
+    voiceNoteUrl?: string;
+  };
+  aiValidation: {
+    isGeographicallyConsistent: boolean;
+    confidenceScore: number;
+    landmarkVerified: string;
+    geminiModelUsed: string;
+    clarificationNotes?: string;
+  };
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'DISMISSED';
+  submittedAt: string;
+}
+
+export interface RejectedReport {
+  id: string;
+  rawText: string;
+  reporterName: string;
+  timestamp: string;
+  rejectionReason: string;
+  flaggedAs: 'SPAM_TROLL' | 'COERCIVE' | 'GEOGRAPHIC_MISMATCH';
+}
+
+export interface RerouteProposal {
+  id: string;
+  missionId: string;
+  vehicleId: string;
+  vehicleName: string;
+  driverName: string;
+  blockedSegmentId: string;
+  blockedSegmentName: string;
+  incidentSummary: string;
+  currentRouteId: string;
+  proposedRouteId: string;
+  proposedRouteName: string;
+  distanceDeltaKm: number;
+  etaDeltaMinutes: number;
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'DISMISSED';
+  proposedAt: string;
+  customAiInstructions?: string;
+}
+
+export interface MultimodalAdminIntelInput {
+  text?: string;
+  audioBase64?: string;
+  audioMimeType?: string;
+  imageBase64?: string;
+  imageMimeType?: string;
+  pdfBase64?: string;
+  pdfMimeType?: string;
+  conversationHistory?: Array<{ role: 'user' | 'model'; parts: string }>;
+}

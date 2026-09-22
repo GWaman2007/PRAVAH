@@ -20,7 +20,24 @@ import type {
   SegmentIncident,
   ReliefMission,
   RealtimeHazardPolygon,
+  DraftIncidentPlot,
+  RejectedReport,
+  RerouteProposal,
+  MultimodalAdminIntelInput,
 } from '../types';
+import {
+  verifyAndStructureCitizenReport,
+  structureOfficerReport,
+  editMissionWithAi,
+  editRerouteWithAi,
+  type CitizenVerificationResult,
+} from '../engine/geminiService';
+import {
+  getGeminiApiKey,
+  setGeminiApiKey as persistGeminiApiKey,
+  hasGeminiApiKey,
+  GEMINI_CONFIG,
+} from '../engine/geminiConfig';
 import { NER_SEGMENTS, NER_NODES, VEHICLE_PROFILES } from '../data/routingNetwork';
 import { INITIAL_COMMUNITIES } from '../data/communitiesData';
 import { INITIAL_VEHICLES, FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES } from '../data/fleetData';
@@ -209,6 +226,33 @@ interface PravahStoreContextType {
   runDemoStep2: () => void;
   runDemoStep3: () => void;
   resetDemoSimulation: () => void;
+
+  // 12. Gemini AI Intelligence Pipeline
+  draftPlots: DraftIncidentPlot[];
+  rejectedReports: RejectedReport[];
+  rerouteProposals: RerouteProposal[];
+  geminiApiKey: string;
+  setGeminiApiKey: (key: string) => void;
+  submitCitizenReport: (params: {
+    rawText: string;
+    coords: [number, number];
+    reporterName?: string;
+    photoUrl?: string;
+    voiceNoteUrl?: string;
+  }) => Promise<CitizenVerificationResult>;
+  submitOfficerReport: (params: {
+    rawText: string;
+    coords: [number, number];
+    officerName?: string;
+    nearestLandmark?: string;
+    photoUrl?: string;
+  }) => Promise<DraftIncidentPlot>;
+  approveDraftPlot: (draftId: string) => Promise<void>;
+  dismissDraftPlot: (draftId: string) => void;
+  approveRerouteProposal: (proposalId: string) => void;
+  dismissRerouteProposal: (proposalId: string) => void;
+  updateMissionWithAi: (missionId: string, prompt: string) => Promise<string>;
+  updateRerouteWithAi: (proposalId: string, prompt: string) => Promise<string>;
 }
 
 const PravahStoreContext = createContext<PravahStoreContextType | null>(null);
@@ -2777,6 +2821,263 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, []);
 
+  // =========================================================================
+  // 16. Gemini AI Intelligence Pipeline (Native Multimodal & Adaptive Rerouting)
+  // =========================================================================
+  const [draftPlots, setDraftPlots] = useState<DraftIncidentPlot[]>([]);
+  const [rejectedReports, setRejectedReports] = useState<RejectedReport[]>([]);
+
+  const [rerouteProposals, setRerouteProposals] = useState<RerouteProposal[]>([]);
+  const [geminiApiKey, setGeminiApiKeyState] = useState<string>(() => getGeminiApiKey());
+
+  const setGeminiApiKey = useCallback((key: string) => {
+    persistGeminiApiKey(key);
+    setGeminiApiKeyState(key);
+  }, []);
+
+  const submitCitizenReport = useCallback(
+    async (params: {
+      rawText: string;
+      coords: [number, number];
+      reporterName?: string;
+      photoUrl?: string;
+      voiceNoteUrl?: string;
+    }): Promise<CitizenVerificationResult> => {
+      const result = await verifyAndStructureCitizenReport({
+        rawText: params.rawText,
+        coords: params.coords,
+        reporterName: params.reporterName || 'Local Citizen',
+        existingPlots: draftPlots,
+        photoUrl: params.photoUrl,
+        voiceNoteUrl: params.voiceNoteUrl,
+      });
+
+      if (result.status === 'REJECTED') {
+        const rej: RejectedReport = {
+          id: `REJ-${Date.now()}`,
+          rawText: params.rawText,
+          reporterName: params.reporterName || 'Anonymous Citizen',
+          timestamp: new Date().toISOString(),
+          rejectionReason: result.rejectionReason || 'Filtered by AI spam/coercion detector',
+          flaggedAs: result.flaggedAs || 'SPAM_TROLL',
+        };
+        setRejectedReports((prev) => [rej, ...prev]);
+      } else if (result.status === 'DUPLICATE' && result.duplicateOfId) {
+        setDraftPlots((prev) =>
+          prev.map((d) => (d.id === result.duplicateOfId ? { ...d, citationsCount: d.citationsCount + 1 } : d))
+        );
+      } else if (result.status === 'NEW_DRAFT' && result.draftPlot) {
+        setDraftPlots((prev) => [result.draftPlot!, ...prev]);
+      }
+
+      return result;
+    },
+    [draftPlots]
+  );
+
+  const submitOfficerReport = useCallback(
+    async (params: {
+      rawText: string;
+      coords: [number, number];
+      officerName?: string;
+      nearestLandmark?: string;
+      photoUrl?: string;
+    }): Promise<DraftIncidentPlot> => {
+      const structured = await structureOfficerReport({
+        rawText: params.rawText,
+        coords: params.coords,
+        officerName: params.officerName || 'BRO Field Commander',
+        nearestLandmark: params.nearestLandmark,
+        photoUrl: params.photoUrl,
+      });
+
+      // Direct fast-track: plot immediately to live map!
+      addIncident({
+        title: structured.title,
+        corridorFlair: structured.corridor,
+        incidentType: structured.hazardType as any,
+        severity: structured.severity === 'TOTAL_BLOCKAGE' ? 'Total Blockage' : 'Single Lane Passable',
+        location: {
+          lat: structured.coordinates[0],
+          lng: structured.coordinates[1],
+          placeName: structured.corridor,
+          corridorId: structured.corridor.includes('NH-29')
+            ? 'SEG-DIM-KOH'
+            : structured.corridor.includes('NH-306')
+            ? 'SEG-SIL-KOL'
+            : 'SEG-TEESTA-GANG',
+        },
+        author: {
+          name: structured.sourceReport.reporterName,
+          role: structured.sourceReport.role,
+        },
+        timestamp: structured.sourceReport.timestamp,
+        mediaUrl: structured.sourceReport.photoUrl || '',
+      });
+
+      return structured;
+    },
+    [addIncident]
+  );
+
+  const approveDraftPlot = useCallback(
+    async (draftId: string) => {
+      const target = draftPlots.find((d) => d.id === draftId);
+      if (!target) return;
+
+      // 1. Remove from pending review queue
+      setDraftPlots((prev) => prev.filter((d) => d.id !== draftId));
+
+      // 2. Add to live incidents & road disruptions
+      addIncident({
+        title: target.title,
+        corridorFlair: target.corridor,
+        incidentType: target.hazardType as any,
+        severity: target.severity === 'TOTAL_BLOCKAGE' ? 'Total Blockage' : 'Single Lane Passable',
+        location: {
+          lat: target.coordinates[0],
+          lng: target.coordinates[1],
+          placeName: target.corridor,
+          corridorId: target.corridor.includes('NH-29')
+            ? 'SEG-DIM-KOH'
+            : target.corridor.includes('NH-306')
+            ? 'SEG-SIL-KOL'
+            : 'SEG-TEESTA-GANG',
+        },
+        author: {
+          name: target.sourceReport.reporterName,
+          role: target.sourceReport.role,
+        },
+        timestamp: target.sourceReport.timestamp,
+        mediaUrl: target.sourceReport.photoUrl || '',
+      });
+
+      // 3. Adaptive Rerouting Cascade: Check ongoing convoys traversing affected corridor
+      const affectedMissions = activeMissions.filter(
+        (m) =>
+          isMissionOngoing(m) &&
+          ((target.corridor.includes('NH-29') && (m.assignedRouteId?.includes('NL') || m.id.includes('NL'))) ||
+            (target.corridor.includes('NH-306') && (m.assignedRouteId?.includes('MZ') || m.id.includes('MZ'))) ||
+            (target.corridor.includes('NH-10') && (m.assignedRouteId?.includes('SK') || m.id.includes('SK'))))
+      );
+
+      for (const mission of affectedMissions) {
+        const vehicle = vehicles.find((v) => v.vehicle_id === mission.assignedVehicleId) || vehicles[0];
+        const newProposal: RerouteProposal = {
+          id: `REROUTE-${mission.id}-${Date.now()}`,
+          missionId: mission.id,
+          vehicleId: vehicle.vehicle_id,
+          vehicleName: vehicle.vehicle_name,
+          driverName: vehicle.driver_name,
+          blockedSegmentId: target.corridor.includes('NH-29') ? 'SEG-DIM-KOH' : 'SEG-SIL-KOL',
+          blockedSegmentName: target.corridor,
+          incidentSummary: target.summary,
+          currentRouteId: mission.assignedRouteId || 'ROUTE-DEFAULT',
+          proposedRouteId: target.corridor.includes('NH-29') ? 'ROUTE-NL-02' : 'ROUTE-SUG-02',
+          proposedRouteName: target.corridor.includes('NH-29')
+            ? 'Mokokchung / Wokha Mountain Bypass'
+            : 'NH-108 Tripura / Mamit High-Clearance Bypass',
+          distanceDeltaKm: 34.5,
+          etaDeltaMinutes: 55,
+          status: 'PENDING_APPROVAL',
+          proposedAt: new Date().toISOString(),
+        };
+        setRerouteProposals((prev) => [newProposal, ...prev.filter((p) => p.missionId !== mission.id)]);
+      }
+    },
+    [draftPlots, activeMissions, vehicles, addIncident]
+  );
+
+  const dismissDraftPlot = useCallback((draftId: string) => {
+    setDraftPlots((prev) => prev.filter((d) => d.id !== draftId));
+  }, []);
+
+  const approveRerouteProposal = useCallback(
+    (proposalId: string) => {
+      const proposal = rerouteProposals.find((p) => p.id === proposalId);
+      if (!proposal) return;
+
+      setRerouteProposals((prev) =>
+        prev.map((p) => (p.id === proposalId ? { ...p, status: 'APPROVED' as const } : p))
+      );
+
+      // Update mission assigned route
+      setActiveMissions((prev) =>
+        prev.map((m) => {
+          if (m.id === proposal.missionId) {
+            return {
+              ...m,
+              assignedRouteId: proposal.proposedRouteId,
+            };
+          }
+          return m;
+        })
+      );
+
+      // Update vehicle route & push dispatch alert
+      setVehicles((prev) =>
+        prev.map((v) => {
+          if (v.vehicle_id === proposal.vehicleId) {
+            return {
+              ...v,
+              assigned_route_id: proposal.proposedRouteId,
+            };
+          }
+          return v;
+        })
+      );
+
+      const targetVeh = vehicles.find((v) => v.vehicle_id === proposal.vehicleId);
+      const rerouteAlert: AlertEvent = {
+        id: `alert-reroute-${Date.now()}`,
+        vehicle_id: proposal.vehicleId,
+        vehicle_name: proposal.vehicleName,
+        cargo_type: 'Relief Convoy',
+        timestamp: new Date().toISOString(),
+        severity: 'WARNING',
+        type: 'ROUTE_DEVIATION',
+        title: 'OFFICIAL DETOUR ROUTE ASSIGNED',
+        message: `Command Dispatch has approved ${proposal.proposedRouteName} due to blockage on ${proposal.blockedSegmentName}. GPS guidance updated.`,
+        coords: targetVeh?.current_coords || [24.833, 92.778],
+        acknowledged: false,
+      };
+      setAlerts((prev) => [rerouteAlert, ...prev]);
+
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('DRIVER_REROUTE_ASSIGNED', { proposal, alert: rerouteAlert });
+      }
+    },
+    [rerouteProposals]
+  );
+
+  const dismissRerouteProposal = useCallback((proposalId: string) => {
+    setRerouteProposals((prev) => prev.filter((p) => p.id !== proposalId));
+  }, []);
+
+  const updateMissionWithAi = useCallback(
+    async (missionId: string, prompt: string): Promise<string> => {
+      const mission = activeMissions.find((m) => m.id === missionId);
+      if (!mission) throw new Error('Mission not found');
+
+      const { modifiedMission, explanation } = await editMissionWithAi(mission, prompt);
+      setActiveMissions((prev) => prev.map((m) => (m.id === missionId ? modifiedMission : m)));
+      return explanation;
+    },
+    [activeMissions]
+  );
+
+  const updateRerouteWithAi = useCallback(
+    async (proposalId: string, prompt: string): Promise<string> => {
+      const proposal = rerouteProposals.find((p) => p.id === proposalId);
+      if (!proposal) throw new Error('Proposal not found');
+
+      const { modifiedProposal, explanation } = await editRerouteWithAi(proposal, prompt);
+      setRerouteProposals((prev) => prev.map((p) => (p.id === proposalId ? modifiedProposal : p)));
+      return explanation;
+    },
+    [rerouteProposals]
+  );
+
   const value = {
     userContext,
     activeRole,
@@ -2867,6 +3168,20 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     runDemoStep2,
     runDemoStep3,
     resetDemoSimulation,
+    // 12. Gemini AI Intelligence Pipeline
+    draftPlots,
+    rejectedReports,
+    rerouteProposals,
+    geminiApiKey,
+    setGeminiApiKey,
+    submitCitizenReport,
+    submitOfficerReport,
+    approveDraftPlot,
+    dismissDraftPlot,
+    approveRerouteProposal,
+    dismissRerouteProposal,
+    updateMissionWithAi,
+    updateRerouteWithAi,
   };
 
   return <PravahStoreContext.Provider value={value}>{children}</PravahStoreContext.Provider>;

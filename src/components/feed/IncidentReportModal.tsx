@@ -24,6 +24,7 @@ import {
   Crosshair,
   RefreshCw,
   CheckCircle2,
+  Sparkles,
 } from 'lucide-react';
 import { compressImageToJpeg, type CompressionResult } from '../../utils/imageCompression';
 
@@ -52,7 +53,9 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
   defaultType = 'Landslide',
   initialInputMethod = 'TEXT',
 }) => {
-  const { userContext, isOnline, addIncident } = usePravahStore();
+  const { userContext, isOnline, addIncident, submitCitizenReport, submitOfficerReport } = usePravahStore();
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [aiStatusMessage, setAiStatusMessage] = useState<string | null>(null);
 
   const [formTitle, setFormTitle] = useState(defaultTitle);
   const [formCorridor, setFormCorridor] = useState<CorridorFlair>(defaultCorridor);
@@ -253,41 +256,70 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
 
   const isOfficer = userContext.role === 'FIELD_OFFICER' || userContext.role === 'SUPER_ADMIN';
 
-  const handleCreateReport = (e: React.FormEvent) => {
+  const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim() || !formLocationName.trim()) return;
+    if (!formTitle.trim() || !formLocationName.trim() || isSubmitting) return;
 
     const finalLat = capturedCoords ? capturedCoords[0] : defaultCoords[0];
     const finalLng = capturedCoords ? capturedCoords[1] : defaultCoords[1];
 
-    addIncident({
-      title: formTitle.trim(),
-      corridorFlair: formCorridor,
-      incidentType: formType,
-      severity: formSeverity,
-      location: {
-        lat: finalLat,
-        lng: finalLng,
-        placeName: formLocationName.trim(),
-        corridorId: defaultCorridorId,
-      },
-      author: {
-        name: userContext.name,
-        role: (userContext.role === 'FIELD_OFFICER'
-          ? 'Field Officer (BRO/Police)'
-          : userContext.role === 'DRIVER'
-          ? 'Registered Driver'
-          : 'Local Citizen') as AuthorRole,
-      },
-      timestamp: new Date().toISOString(),
-      mediaUrl:
-        photoPreview ||
-        (formType === 'Landslide'
-          ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80'
-          : 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80'),
-    });
+    setIsSubmitting(true);
+    setAiStatusMessage('Connecting to Google Gemini Multimodal AI...');
 
-    onClose();
+    const combinedText = `${formTitle.trim()}. Location details: ${formLocationName.trim()}. Corridor: ${formCorridor}. Hazard: ${formType} (${formSeverity}).`;
+
+    try {
+      if (userContext.role === 'FIELD_OFFICER' || userContext.role === 'SUPER_ADMIN') {
+        setAiStatusMessage('Structuring Officer Report with Gemini...');
+        await submitOfficerReport({
+          rawText: combinedText,
+          coords: [finalLat, finalLng],
+          officerName: userContext.name,
+          nearestLandmark: formLocationName.trim(),
+          photoUrl: photoPreview || undefined,
+        });
+      } else {
+        setAiStatusMessage('Validating & Structuring Ground Report with Gemini AI...');
+        await submitCitizenReport({
+          rawText: combinedText,
+          coords: [finalLat, finalLng],
+          reporterName: userContext.name,
+          photoUrl: photoPreview || undefined,
+        });
+
+        // Also broadcast to community feed for ground intelligence
+        addIncident({
+          title: formTitle.trim(),
+          corridorFlair: formCorridor,
+          incidentType: formType,
+          severity: formSeverity,
+          location: {
+            lat: finalLat,
+            lng: finalLng,
+            placeName: formLocationName.trim(),
+            corridorId: defaultCorridorId,
+          },
+          author: {
+            name: userContext.name,
+            role: (userContext.role === 'DRIVER'
+              ? 'Registered Driver'
+              : 'Local Citizen') as AuthorRole,
+          },
+          timestamp: new Date().toISOString(),
+          mediaUrl:
+            photoPreview ||
+            (formType === 'Landslide'
+              ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80'
+              : 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80'),
+        });
+      }
+    } catch (err) {
+      console.warn('[IncidentReportModal] Report submission error:', err);
+    } finally {
+      setIsSubmitting(false);
+      setAiStatusMessage(null);
+      onClose();
+    }
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -736,10 +768,20 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold btn-press shadow-xs flex items-center space-x-1.5 cursor-pointer"
+              disabled={isSubmitting}
+              className="px-4 py-2 bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] disabled:opacity-60 text-white rounded-sm text-xs font-semibold btn-press shadow-xs flex items-center space-x-1.5 cursor-pointer"
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>Submit Incident Report</span>
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>{aiStatusMessage || 'Processing with Gemini AI...'}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Submit with Gemini AI</span>
+                </>
+              )}
             </button>
           </div>
         </form>
