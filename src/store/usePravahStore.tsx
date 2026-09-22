@@ -1439,51 +1439,49 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 13. Mission Dispatch & Customization
   const approveMission = useCallback((missionId: string) => {
-    let targetMission: ReliefMission | undefined;
+    const existing = activeMissionsRef.current.find((m) => m.id === missionId);
+    if (!existing) return;
+    const targetMission: ReliefMission = { ...existing, status: 'APPROVED' as const };
+
     setActiveMissions((prev) => {
-      const next = prev.map((m) => {
-        if (m.id === missionId) {
-          targetMission = { ...m, status: 'APPROVED' as const };
-          return targetMission;
-        }
-        return m;
-      });
+      const next = prev.map((m) => (m.id === missionId ? targetMission : m));
       persistMissions(next);
       return next;
     });
 
-    if (isSupabaseConfigured && targetMission) {
+    if (isSupabaseConfigured) {
       upsertCloudMission(targetMission);
       broadcastCloudMissionApproved(missionId);
     }
   }, []);
 
   const dispatchMission = useCallback((missionId: string, vehicleId?: string) => {
-    // 1. Synchronously resolve mission from current ref — never invent a fallback vehicle
     const targetMission = activeMissionsRef.current.find((m) => m.id === missionId);
-    const assignedVehId = vehicleId || targetMission?.assignedVehicleId;
+    if (!targetMission) {
+      console.warn(`[PRAVAH] dispatchMission: Cannot find mission ${missionId}`);
+      return;
+    }
+    const assignedVehId = vehicleId || targetMission.assignedVehicleId;
     if (!assignedVehId) {
       console.warn(`[PRAVAH] dispatchMission: No vehicle assigned for mission ${missionId}. Cannot dispatch without real vehicle assignment.`);
       return;
     }
-    const originCoords = targetMission?.originCoords || [24.8333, 92.7789];
-    const destName = targetMission?.destinationName || targetMission?.communityName || 'Disaster Operational Target';
+    const originCoords = targetMission.originCoords || [24.8333, 92.7789];
+    const destName = targetMission.destinationName || targetMission.communityName || 'Disaster Operational Target';
 
     // 2. Transition mission to IN_TRANSIT with confirmed vehicle assignment
-    let updatedMission: ReliefMission | undefined;
+    const updatedMission: ReliefMission = {
+      ...targetMission,
+      status: 'IN_TRANSIT' as const,
+      assignedVehicleId: assignedVehId,
+      dispatchedAt: new Date().toISOString(),
+    };
+
     setActiveMissions((prev) => {
-      const next = prev.map((m) => {
-        if (m.id === missionId) {
-          updatedMission = {
-            ...m,
-            status: 'IN_TRANSIT' as const,
-            assignedVehicleId: assignedVehId,
-            dispatchedAt: new Date().toISOString(),
-          };
-          return updatedMission;
-        }
-        return m;
-      });
+      const next = prev.map((m) => (m.id === missionId ? updatedMission : m));
+      if (!next.some((m) => m.id === missionId)) {
+        next.push(updatedMission);
+      }
       persistMissions(next);
       return next;
     });
@@ -1608,22 +1606,18 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Field Officer / Driver: Report Delivery Finished (moves to PENDING_ADMIN_CLOSEOUT)
   const reportMissionDeliveryByField = useCallback((missionId: string) => {
-    let targetMission: ReliefMission | undefined;
-    let targetVehId: string | undefined;
+    const existing = activeMissionsRef.current.find((m) => m.id === missionId);
+    if (!existing) return;
+
+    const deliveredMission: ReliefMission = {
+      ...existing,
+      status: 'PENDING_ADMIN_CLOSEOUT' as const,
+      deliveredAt: new Date().toISOString(),
+    };
+    const targetVehId = existing.assignedVehicleId;
 
     setActiveMissions((prev) => {
-      const next = prev.map((m) => {
-        if (m.id === missionId) {
-          targetMission = {
-            ...m,
-            status: 'PENDING_ADMIN_CLOSEOUT' as const,
-            deliveredAt: new Date().toISOString(),
-          };
-          targetVehId = m.assignedVehicleId;
-          return targetMission;
-        }
-        return m;
-      });
+      const next = prev.map((m) => (m.id === missionId ? deliveredMission : m));
       persistMissions(next);
       return next;
     });
@@ -1644,43 +1638,38 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       id: alertId,
       vehicle_id: targetVehId || 'Convoy',
       vehicle_name: targetVehId || 'Convoy Unit',
-      cargo_type: targetMission?.cargoAllocations?.[0]?.item || 'Relief Consignment',
+      cargo_type: existing.cargoAllocations?.[0]?.item || 'Relief Consignment',
       timestamp: new Date().toISOString(),
       severity: 'HIGH RISK',
       type: 'DELIVERY_PENDING_CLOSEOUT',
       title: 'FIELD DELIVERY COMPLETED — PENDING ADMIN SIGN-OFF',
-      message: `${officerName} reported relief delivery finished for mission ${missionId} at ${targetMission?.destinationName || 'destination'}. Awaiting Central Command Admin review and sign-off.`,
-      coords: targetMission?.destinationEndpoint || [24.22, 92.67],
+      message: `${officerName} reported relief delivery finished for mission ${missionId} at ${existing.destinationName || 'destination'}. Awaiting Central Command Admin review and sign-off.`,
+      coords: existing.destinationEndpoint || [24.22, 92.67],
       acknowledged: false,
     };
     setAlerts((prev) => [newAlert, ...prev]);
 
-    if (isSupabaseConfigured && targetMission) {
-      upsertCloudMission(targetMission);
+    if (isSupabaseConfigured) {
+      upsertCloudMission(deliveredMission);
       broadcastCloudMissionPendingCloseout(missionId, targetVehId, officerName);
     }
   }, []);
 
   // Central Super Admin: Review & Closeout Mission
   const adminCloseoutMission = useCallback((missionId: string) => {
-    let closedMission: ReliefMission | undefined;
-    let commId: string | undefined;
-    let vehId: string | undefined;
+    const existing = activeMissionsRef.current.find((m) => m.id === missionId);
+    if (!existing) return;
+
+    const closedMission: ReliefMission = {
+      ...existing,
+      status: 'DELIVERED' as const,
+      deliveredAt: existing.deliveredAt || new Date().toISOString(),
+    };
+    const commId = existing.communityId;
+    const vehId = existing.assignedVehicleId;
 
     setActiveMissions((prev) => {
-      const next = prev.map((m) => {
-        if (m.id === missionId) {
-          closedMission = {
-            ...m,
-            status: 'DELIVERED' as const,
-            deliveredAt: m.deliveredAt || new Date().toISOString(),
-          };
-          commId = m.communityId;
-          vehId = m.assignedVehicleId;
-          return closedMission;
-        }
-        return m;
-      });
+      const next = prev.map((m) => (m.id === missionId ? closedMission : m));
       persistMissions(next);
       return next;
     });
@@ -1738,13 +1727,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         type: 'DELIVERY_COMPLETED',
         title: 'MISSION CLOSED OUT & STOCKS RESTORED',
         message: `Admin signed off mission ${missionId}. Community inventory restored to 100% capacity (Priority P4 Nominal). Vehicle ${vehId || 'unit'} released to AVAILABLE.`,
-        coords: closedMission?.destinationEndpoint || [24.22, 92.67],
+        coords: closedMission.destinationEndpoint || [24.22, 92.67],
         acknowledged: false,
       },
       ...prev,
     ]);
 
-    if (isSupabaseConfigured && closedMission) {
+    if (isSupabaseConfigured) {
       upsertCloudMission(closedMission);
       broadcastCloudMissionClosedOut(missionId, commId || '', vehId);
     }
@@ -2267,6 +2256,28 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             });
             persistMissions(merged);
             return merged;
+          });
+
+          // Sync vehicle status for active in-transit cloud missions across devices
+          cleanCloud.forEach((cm) => {
+            if (
+              (cm.status === 'IN_TRANSIT' || cm.status === 'PENDING_ADMIN_CLOSEOUT') &&
+              cm.assignedVehicleId
+            ) {
+              setVehicles((prev) =>
+                prev.map((v) =>
+                  v.vehicle_id === cm.assignedVehicleId
+                    ? {
+                        ...v,
+                        status: 'ON_ROUTE',
+                        mission_id: cm.id,
+                        assigned_route_id: cm.assignedRouteId,
+                        destination_name: cm.destinationName,
+                      }
+                    : v
+                )
+              );
+            }
           });
         }
       }

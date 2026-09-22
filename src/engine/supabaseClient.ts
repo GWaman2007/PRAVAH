@@ -467,7 +467,7 @@ export async function upsertCloudMission(mission: ReliefMission): Promise<boolea
       route_distance_km: mission.routeDistanceKm || null,
       route_duration_minutes: mission.routeDurationMinutes || null,
       route_status: mission.routeStatus || null,
-      route_geometry: mission.routeGeometry || null,
+      route_geometry: null,
       updated_at: new Date().toISOString(),
     };
 
@@ -476,6 +476,7 @@ export async function upsertCloudMission(mission: ReliefMission): Promise<boolea
       console.warn('⚠️ [Supabase] Upsert mission error:', error.message);
       return false;
     }
+    console.log('✅ [Supabase] Successfully upserted cloud mission:', mission.id, mission.status);
     return true;
   } catch (err) {
     console.warn('⚠️ [Supabase] Exception upserting mission:', err);
