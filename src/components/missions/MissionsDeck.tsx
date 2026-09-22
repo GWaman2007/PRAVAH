@@ -23,6 +23,7 @@ export const MissionsDeck: React.FC = () => {
     vehicles,
     candidateRoutes,
     approveAndDispatchMission,
+    dispatchMission,
     customizeMission,
     reportMissionDeliveryByField,
     adminCloseoutMission,
@@ -42,9 +43,9 @@ export const MissionsDeck: React.FC = () => {
     [activeMissions]
   );
 
-  // Ongoing missions strictly display missions currently in progress or awaiting admin closeout
+  // Ongoing missions strictly display missions currently in progress, approved for dispatch, or awaiting admin closeout
   const ongoingMissions = useMemo(
-    () => activeMissions.filter((m) => m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT'),
+    () => activeMissions.filter((m) => m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT' || m.status === 'APPROVED'),
     [activeMissions]
   );
 
@@ -291,10 +292,16 @@ export const MissionsDeck: React.FC = () => {
                         className={`px-2 py-0.5 rounded-xs font-mono font-bold text-[9px] border ${
                           isPendingCloseout
                             ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50 animate-pulse'
+                            : mission.status === 'APPROVED'
+                            ? 'bg-sky-500/20 text-sky-400 border-sky-500/50'
                             : 'bg-primary-tint text-primary border-primary/30'
                         }`}
                       >
-                        {isPendingCloseout ? 'PENDING ADMIN CLOSEOUT' : mission.status}
+                        {isPendingCloseout
+                          ? 'PENDING ADMIN CLOSEOUT'
+                          : mission.status === 'APPROVED'
+                          ? 'APPROVED · READY TO DISPATCH'
+                          : mission.status}
                       </span>
                     </div>
 
@@ -370,7 +377,15 @@ export const MissionsDeck: React.FC = () => {
                         <span>{t('trackOnGis')}</span>
                       </button>
 
-                      {!isPendingCloseout && (
+                      {mission.status === 'APPROVED' ? (
+                        <button
+                          onClick={() => dispatchMission(mission.id, mission.assignedVehicleId)}
+                          className="flex-1 py-1.5 px-2 bg-[#1B4B73] hover:bg-[#123A5A] text-white rounded-sm font-semibold text-xs flex items-center justify-center gap-1 btn-press cursor-pointer transition-colors shadow-xs"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>{t('dispatchMission')}</span>
+                        </button>
+                      ) : !isPendingCloseout ? (
                         <button
                           onClick={() => reportMissionDeliveryByField(mission.id)}
                           className="flex-1 py-1.5 px-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/40 rounded-sm font-semibold text-xs flex items-center justify-center gap-1 btn-press cursor-pointer transition-colors"
@@ -379,7 +394,7 @@ export const MissionsDeck: React.FC = () => {
                           <PackageCheck className="w-3.5 h-3.5" />
                           <span>Report Finished</span>
                         </button>
-                      )}
+                      ) : null}
                     </div>
 
                     {/* Admin Closeout Action */}

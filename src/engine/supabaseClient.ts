@@ -495,13 +495,16 @@ export function broadcastCloudMissionDispatched(mission: ReliefMission, vehicleI
   }
 }
 
-export function broadcastCloudMissionApproved(missionId: string): void {
+export function broadcastCloudMissionApproved(mission: ReliefMission | string, communityId?: string): void {
   const channel = getRealtimeChannel();
   if (channel) {
+    const isObj = typeof mission === 'object' && mission !== null;
+    const mId = isObj ? mission.id : mission;
+    const commId = isObj ? mission.communityId : communityId;
     channel.send({
       type: 'broadcast',
       event: 'MISSION_APPROVED',
-      payload: { missionId },
+      payload: { missionId: mId, communityId: commId, mission: isObj ? mission : undefined },
     });
   }
 }

@@ -1,4 +1,4 @@
-import type { Incident, CommunityBase } from '../types';
+import type { Incident, CommunityBase, ReliefMission, SegmentIncident } from '../types';
 
 export const STORAGE_KEYS = {
   INCIDENTS: 'pravah_ner_incidents_v2',
@@ -6,6 +6,7 @@ export const STORAGE_KEYS = {
   MISSIONS: 'pravah_ner_missions_v3',
   COMMUNITIES: 'pravah_ner_communities_v2',
   OFFLINE_QUEUE: 'pravah_ner_offline_queue_v2',
+  MUTATION_QUEUE: 'pravah_ner_mutations_v1',
   SIMULATED_OFFLINE: 'pravah_simulated_offline_v2',
 };
 
@@ -405,6 +406,226 @@ export function clearOfflineQueue(): void {
       localStorage.removeItem(STORAGE_KEYS.OFFLINE_QUEUE);
     }
   } catch {}
+}
+
+/**
+ * Universal Offline Mutation Queue
+ * Stores any user action taken while offline (mission approval, dispatch, delivery,
+ * disruption, incident vote, update, community restock) so it can be flushed
+ * to Supabase DB once internet connectivity returns.
+ */
+export type OfflineMutationType =
+  | 'UPSERT_INCIDENT'
+  | 'VOTE_INCIDENT'
+  | 'ADD_INCIDENT_UPDATE'
+  | 'UPSERT_DISRUPTION'
+  | 'UPSERT_MISSION'
+  | 'APPROVE_MISSION'
+  | 'DISPATCH_MISSION'
+  | 'DELIVER_MISSION'
+  | 'CLOSEOUT_MISSION'
+  | 'UPSERT_COMMUNITY';
+
+export interface OfflineMutation {
+  id: string;
+  type: OfflineMutationType;
+  entityId: string;
+  payload: any;
+  timestamp: string;
+}
+
+export function getOfflineMutationQueue(): OfflineMutation[] {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.MUTATION_QUEUE) : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function queueOfflineMutation(mutation: Omit<OfflineMutation, 'id' | 'timestamp'>): OfflineMutation[] {
+  try {
+    const queue = getOfflineMutationQueue();
+    const newEntry: OfflineMutation = {
+      ...mutation,
+      id: `mut-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
+    };
+    // Deduplicate / replace existing pending mutation for same entityId and type
+    const filtered = queue.filter((m) => !(m.entityId === mutation.entityId && m.type === mutation.type));
+    filtered.push(newEntry);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.MUTATION_QUEUE, JSON.stringify(filtered));
+    }
+    return filtered;
+  } catch (err) {
+    console.warn('[OfflineSync] Failed to queue offline mutation:', err);
+    return [];
+  }
+}
+
+export function clearOfflineMutationQueue(): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEYS.MUTATION_QUEUE);
+    }
+  } catch {}
+}
+
+/**
+ * Conflict Resolution Engine
+ * Handles bidirectional reconciliation between LocalStorage and Cloud Database:
+ * 1. Cloud changes override LocalStorage when Local has no uncommitted offline changes.
+ * 2. LocalStorage offline changes override Cloud DB upon reconnect by pushing mutations.
+ * 3. Conflicts are resolved via deterministic lifecycle rankings and timestamps.
+ */
+
+const MISSION_LIFECYCLE_RANK: Record<string, number> = {
+  SUGGESTED: 0,
+  APPROVED: 1,
+  IN_TRANSIT: 2,
+  PENDING_ADMIN_CLOSEOUT: 3,
+  DELIVERED: 4,
+};
+
+export function resolveMissionConflict(
+  localMissions: ReliefMission[],
+  cloudMissions: ReliefMission[]
+): ReliefMission[] {
+  if (!cloudMissions || cloudMissions.length === 0) return localMissions;
+  const result: ReliefMission[] = [];
+  const processedCommIds = new Set<string>();
+
+  const cloudById = new Map(cloudMissions.map((m) => [m.id, m]));
+
+  // Active cloud communities that already have a non-suggested mission
+  const activeCloudCommunities = new Set(
+    cloudMissions
+      .filter((cm) => cm.status === 'APPROVED' || cm.status === 'IN_TRANSIT' || cm.status === 'PENDING_ADMIN_CLOSEOUT')
+      .map((cm) => cm.communityId)
+  );
+
+  // 1. Process all cloud missions (cloud is authoritative unless local has an uncommitted higher status)
+  for (const cm of cloudMissions) {
+    // Find matching local mission: either exact ID match, or matching community for active missions
+    const lm = localMissions.find((m) => {
+      if (m.id === cm.id) return true;
+      if (m.communityId === cm.communityId) {
+        if (cm.status !== 'DELIVERED') return true;
+        if (cm.status === 'DELIVERED' && m.status === 'DELIVERED') return true;
+      }
+      return false;
+    });
+    if (!lm) {
+      result.push(cm);
+      processedCommIds.add(cm.communityId);
+      continue;
+    }
+
+    const cRank = MISSION_LIFECYCLE_RANK[cm.status] ?? 0;
+    const lRank = MISSION_LIFECYCLE_RANK[lm.status] ?? 0;
+
+    // If local has advanced further (e.g. dispatched locally while cloud was approved), local wins
+    if (lRank > cRank) {
+      result.push(lm);
+    } else {
+      // Cloud is equal or further advanced -> Cloud wins and overrides local
+      result.push(cm);
+    }
+    processedCommIds.add(cm.communityId);
+  }
+
+  // 2. Process local missions not present in cloud
+  for (const lm of localMissions) {
+    if (cloudById.has(lm.id)) continue;
+    // If this community already has an active cloud mission, evict any local SUGGESTED mission
+    if (activeCloudCommunities.has(lm.communityId) && lm.status === 'SUGGESTED') {
+      continue; // EVICT / POP
+    }
+    if (processedCommIds.has(lm.communityId)) {
+      continue; // Already reconciled for this community
+    }
+    // Local mission for community with no cloud equivalent
+    result.push(lm);
+    processedCommIds.add(lm.communityId);
+  }
+
+  return result;
+}
+
+export function resolveIncidentConflict(
+  localIncidents: Incident[],
+  cloudIncidents: Incident[]
+): Incident[] {
+  if (!cloudIncidents || cloudIncidents.length === 0) return localIncidents;
+  const result: Incident[] = [];
+  const cloudMap = new Map(cloudIncidents.map((inc) => [inc.id, inc]));
+
+  for (const ci of cloudIncidents) {
+    const li = localIncidents.find((i) => i.id === ci.id);
+    if (!li) {
+      result.push(ci);
+      continue;
+    }
+
+    // Merge updates arrays without duplicates
+    const updateMap = new Map<string, any>();
+    (ci.updates || []).forEach((u) => updateMap.set(u.id, u));
+    (li.updates || []).forEach((u) => updateMap.set(u.id, u));
+
+    const mergedIncident: Incident = {
+      ...ci,
+      updates: Array.from(updateMap.values()),
+      hasOfficerVerified: ci.hasOfficerVerified || li.hasOfficerVerified,
+      confidenceScore: Math.max(ci.confidenceScore, li.confidenceScore),
+      votes: {
+        upvotes: Math.max(ci.votes.upvotes, li.votes.upvotes),
+        downvotes: Math.max(ci.votes.downvotes, li.votes.downvotes),
+        userVote: li.votes.userVote || ci.votes.userVote || null,
+      },
+      sync_status: 'SYNCED',
+    };
+    result.push(mergedIncident);
+  }
+
+  // Include any locally created incidents not yet in cloud
+  for (const li of localIncidents) {
+    if (!cloudMap.has(li.id)) {
+      result.push(li);
+    }
+  }
+
+  return result.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
+export function resolveDisruptionConflict(
+  localDisruptions: Record<string, SegmentIncident>,
+  cloudDisruptions: Record<string, SegmentIncident>
+): Record<string, SegmentIncident> {
+  if (!cloudDisruptions) return localDisruptions;
+  return {
+    ...localDisruptions,
+    ...cloudDisruptions,
+  };
+}
+
+export function resolveCommunityConflict(
+  localCommunities: CommunityBase[],
+  cloudCommunities: CommunityBase[]
+): CommunityBase[] {
+  if (!cloudCommunities || cloudCommunities.length === 0) return localCommunities;
+  const cloudMap = new Map(cloudCommunities.map((c) => [c.id, c]));
+
+  return localCommunities.map((lc) => {
+    const cc = cloudMap.get(lc.id);
+    if (!cc) return lc;
+    return {
+      ...lc,
+      ...cc,
+      inventories: cc.inventories || lc.inventories,
+      elapsedTimeHours: cc.elapsedTimeHours ?? lc.elapsedTimeHours,
+    };
+  });
 }
 
 export function formatTimeAgo(isoString: string): string {

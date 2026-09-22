@@ -30,7 +30,13 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
   const { t } = useTranslation();
   const [activeCustomizeMission, setActiveCustomizeMission] = useState<ReliefMission | null>(null);
 
-  if (!missions || missions.length === 0) {
+  // Strictly show only missions with status 'SUGGESTED'
+  const suggestedMissions = React.useMemo(
+    () => (missions || []).filter((m) => m.status === 'SUGGESTED'),
+    [missions]
+  );
+
+  if (suggestedMissions.length === 0) {
     return (
       <div className="bg-surface border border-border rounded-md p-5 text-center shadow-xs space-y-2 text-xs">
         <div className="w-10 h-10 rounded-full bg-status-open-tint text-status-open-solid flex items-center justify-center mx-auto">
@@ -50,7 +56,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-primary animate-pulse" />
           <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-            {t('pendingSuggestions')} ({missions.length})
+            {t('pendingSuggestions')} ({suggestedMissions.length})
           </h2>
         </div>
         <span className="text-[10px] font-mono px-2 py-0.5 rounded-xs bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid/40 font-bold">
@@ -59,7 +65,7 @@ export const MissionSuggestionQueue: React.FC<MissionSuggestionQueueProps> = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {missions.map((mission) => {
+        {suggestedMissions.map((mission) => {
           const isPending = mission.status === 'SUGGESTED';
           const isInTransit = mission.status === 'IN_TRANSIT';
 

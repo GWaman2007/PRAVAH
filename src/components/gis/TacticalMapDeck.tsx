@@ -236,11 +236,13 @@ export const TacticalMapDeck: React.FC = () => {
 
   // Computed: Ongoing vs Suggested Missions
   const ongoingMissions = useMemo(() => {
-    return activeMissions.filter((m) => m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT');
+    return activeMissions.filter(
+      (m) => m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT' || m.status === 'APPROVED'
+    );
   }, [activeMissions]);
 
   const suggestedMissions = useMemo(() => {
-    return activeMissions.filter((m) => m.status === 'SUGGESTED' || m.status === 'APPROVED');
+    return activeMissions.filter((m) => m.status === 'SUGGESTED');
   }, [activeMissions]);
 
   // Selected mission object
@@ -1630,12 +1632,16 @@ export const TacticalMapDeck: React.FC = () => {
 
                           <span
                             className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 ${
-                              m.status === 'PENDING_ADMIN_CLOSEOUT'
+                              m.status === 'APPROVED'
+                                ? 'bg-sky-500/20 text-sky-400 border-sky-500/50'
+                                : m.status === 'PENDING_ADMIN_CLOSEOUT'
                                 ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50 animate-pulse'
                                 : 'bg-status-open-tint text-status-open-text border-status-open-solid/40'
                             }`}
                           >
-                            {m.status === 'PENDING_ADMIN_CLOSEOUT'
+                            {m.status === 'APPROVED'
+                              ? 'APPROVED'
+                              : m.status === 'PENDING_ADMIN_CLOSEOUT'
                               ? 'AWAITING SIGN-OFF'
                               : veh?.speed_kmh
                               ? `${veh.speed_kmh} km/h`
@@ -1653,7 +1659,7 @@ export const TacticalMapDeck: React.FC = () => {
                           <div>
                             <span>{t('progress')}:</span>{' '}
                             <strong className="text-status-open-text font-mono">
-                              {m.status === 'PENDING_ADMIN_CLOSEOUT' ? '100' : (veh?.route_progress_pct ?? 45)}%
+                              {m.status === 'APPROVED' ? '0' : m.status === 'PENDING_ADMIN_CLOSEOUT' ? '100' : (veh?.route_progress_pct ?? 45)}%
                             </strong>
                           </div>
                           <div>
@@ -1663,13 +1669,26 @@ export const TacticalMapDeck: React.FC = () => {
                           <div>
                             <span>{t('eta')}:</span>{' '}
                             <strong className="text-text-primary font-mono">
-                              {m.status === 'PENDING_ADMIN_CLOSEOUT' ? 'Arrived' : `${m.routeDurationMinutes || 90} min`}
+                              {m.status === 'APPROVED' ? 'Ready' : m.status === 'PENDING_ADMIN_CLOSEOUT' ? 'Arrived' : `${m.routeDurationMinutes || 90} min`}
                             </strong>
                           </div>
                         </div>
 
                         {/* Action buttons for Ongoing / Closeout */}
-                        {m.status === 'PENDING_ADMIN_CLOSEOUT' ? (
+                        {m.status === 'APPROVED' ? (
+                          <div className="pt-1 border-t border-border/40 space-y-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                dispatchMission(m.id, m.assignedVehicleId);
+                              }}
+                              className="w-full py-1 px-2 bg-[#1B4B73] hover:bg-[#123A5A] text-white font-bold rounded-xs text-[10px] flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-xs"
+                            >
+                              <Send className="w-3 h-3" />
+                              <span>{t('dispatchMission')}</span>
+                            </button>
+                          </div>
+                        ) : m.status === 'PENDING_ADMIN_CLOSEOUT' ? (
                           <div className="pt-1 border-t border-border/40 space-y-1">
                             <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
                               Delivery reported by crew • Awaiting Admin Sign-Off

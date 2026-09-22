@@ -110,8 +110,8 @@ export const GroundIntelligenceFeed: React.FC = () => {
     setCommentingIncidentId(null);
   };
 
-  const handleFlushQueue = () => {
-    const result = flushOfflineQueue();
+  const handleFlushQueue = async () => {
+    const result = await flushOfflineQueue();
     if (result.syncedCount > 0) {
       playDispatchPacketSound();
       const notif: SyncNotification = {

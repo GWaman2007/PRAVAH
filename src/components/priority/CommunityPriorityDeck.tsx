@@ -43,6 +43,11 @@ export const CommunityPriorityDeck: React.FC = () => {
     customizeMission,
   } = usePravahStore();
 
+  const suggestedMissions = useMemo(
+    () => activeMissions.filter((m) => m.status === 'SUGGESTED'),
+    [activeMissions]
+  );
+
   const [explainModalOpen, setExplainModalOpen] = useState(false);
   const [restockToast, setRestockToast] = useState<RestockToastData | null>(null);
 
@@ -138,7 +143,7 @@ export const CommunityPriorityDeck: React.FC = () => {
 
       {/* AI Preemptive Relief Convoy Mission Queue */}
       <MissionSuggestionQueue
-        missions={activeMissions}
+        missions={suggestedMissions}
         candidateRoutes={candidateRoutes}
         onApproveAndDispatch={approveAndDispatchMission}
         onCustomizedDispatch={customizeMission}

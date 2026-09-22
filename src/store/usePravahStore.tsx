@@ -35,6 +35,14 @@ import {
   getOfflineQueue,
   queueIncidentOffline,
   clearOfflineQueue,
+  getOfflineMutationQueue,
+  queueOfflineMutation,
+  clearOfflineMutationQueue,
+  resolveMissionConflict,
+  resolveIncidentConflict,
+  resolveDisruptionConflict,
+  resolveCommunityConflict,
+  type OfflineMutation,
   calculateIncidentConfidence,
   STORAGE_KEYS,
   DEFAULT_INCIDENTS,
@@ -94,7 +102,7 @@ interface PravahStoreContextType {
   lastDataSyncTime: number;
   lastOfflineTransitionTime: number | null;
   toggleSimulatedOffline: () => void;
-  flushOfflineQueue: () => { syncedCount: number; details: string[] };
+  flushOfflineQueue: () => Promise<{ syncedCount: number; details: string[] }>;
   isSupabaseConfigured: boolean;
 
   // Routing State
@@ -354,73 +362,187 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, []);
 
-  // Auto-sync when coming back online
-  useEffect(() => {
-    if (isOnline && offlineQueue.length > 0) {
-      // Flush queue into main incidents feed
-      setIncidents((prev) => {
-        const synced = offlineQueue.map((item) => ({
-          ...item,
-          sync_status: 'SYNCED' as const,
-        }));
-        const merged = [...synced, ...prev.filter((p) => !offlineQueue.some((q) => q.id === p.id))];
-        persistIncidents(merged);
-        return merged;
-      });
-      offlineQueue.forEach((item) => {
-        if (socketRef.current?.connected) {
-          socketRef.current.emit('SUBMIT_INCIDENT', item);
+  // Universal Offline Queue Flush & Conflict Reconciliation
+  const flushOfflineQueue = useCallback(async () => {
+    const queue = getOfflineQueue();
+    const mutationQueue = getOfflineMutationQueue();
+    const totalCount = queue.length + mutationQueue.length;
+    const details: string[] = [];
+
+    // 1. Flush any pending offline mutations to Cloud DB
+    if (mutationQueue.length > 0) {
+      for (const mutation of mutationQueue) {
+        try {
+          if (mutation.type === 'APPROVE_MISSION') {
+            if (isSupabaseConfigured) {
+              await upsertCloudMission(mutation.payload);
+              broadcastCloudMissionApproved(mutation.payload);
+            }
+            details.push(`Approved Mission: ${mutation.payload.id}`);
+          } else if (mutation.type === 'DISPATCH_MISSION') {
+            if (isSupabaseConfigured) {
+              await upsertCloudMission(mutation.payload);
+              broadcastCloudMissionDispatched(mutation.payload, mutation.payload.assignedVehicleId);
+            }
+            details.push(`Dispatched Mission: ${mutation.payload.id}`);
+          } else if (mutation.type === 'DELIVER_MISSION') {
+            if (isSupabaseConfigured) {
+              await upsertCloudMission(mutation.payload);
+              broadcastCloudMissionPendingCloseout(mutation.payload.id, mutation.payload.assignedVehicleId);
+            }
+            details.push(`Delivered Mission: ${mutation.payload.id}`);
+          } else if (mutation.type === 'CLOSEOUT_MISSION') {
+            if (isSupabaseConfigured) {
+              if (mutation.payload?.mission) await upsertCloudMission(mutation.payload.mission);
+              if (mutation.payload?.community) await upsertCloudCommunity(mutation.payload.community);
+              broadcastCloudMissionClosedOut(mutation.entityId, mutation.payload?.community?.id);
+            }
+            details.push(`Closed Out Mission: ${mutation.entityId}`);
+          } else if (mutation.type === 'UPSERT_MISSION') {
+            if (isSupabaseConfigured) {
+              await upsertCloudMission(mutation.payload);
+            }
+            details.push(`Synced Mission: ${mutation.entityId}`);
+          } else if (mutation.type === 'UPSERT_DISRUPTION') {
+            if (isSupabaseConfigured) {
+              await upsertCloudDisruption(mutation.entityId, mutation.payload);
+            }
+            details.push(`Disruption: ${mutation.entityId}`);
+          } else if (mutation.type === 'UPSERT_COMMUNITY') {
+            if (isSupabaseConfigured) {
+              await upsertCloudCommunity(mutation.payload);
+            }
+            details.push(`Community: ${mutation.entityId}`);
+          } else if (mutation.type === 'UPSERT_INCIDENT') {
+            if (isSupabaseConfigured) {
+              await upsertCloudIncident(mutation.payload);
+            }
+            details.push(`Incident: ${mutation.payload.title}`);
+          } else if (mutation.type === 'ADD_INCIDENT_UPDATE') {
+            if (isSupabaseConfigured) {
+              await addCloudIncidentUpdate(mutation.entityId, mutation.payload.update, mutation.payload.allUpdates);
+            }
+            details.push(`Incident Update: ${mutation.entityId}`);
+          } else if (mutation.type === 'VOTE_INCIDENT') {
+            if (isSupabaseConfigured) {
+              await upsertCloudIncident(mutation.payload);
+            }
+          }
+        } catch (err) {
+          console.warn('[PRAVAH] Error flushing mutation:', mutation, err);
         }
-      });
+      }
+      clearOfflineMutationQueue();
+    }
+
+    // 2. Synchronize legacy queued incident reports
+    if (queue.length > 0) {
+      for (const item of queue) {
+        const syncedItem: Incident = { ...item, sync_status: 'SYNCED' };
+        if (isSupabaseConfigured) {
+          await upsertCloudIncident(syncedItem);
+          const matchedCorridor = item.location.corridorId || 'SEG-SIL-KOL';
+          await upsertCloudDisruption(matchedCorridor, {
+            status: item.severity === 'Total Blockage' ? ('TOTAL_BLOCKAGE' as const) : ('SINGLE_LANE_PASSABLE' as const),
+            cause: item.incidentType,
+            description: item.title,
+            reportedBy: `${item.author.name} (${item.author.role})`,
+          });
+        }
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('SUBMIT_INCIDENT', syncedItem);
+        }
+        details.push(item.title);
+      }
       clearOfflineQueue();
       setOfflineQueue([]);
     }
-  }, [isOnline, offlineQueue]);
 
-  const flushOfflineQueue = useCallback(() => {
-    const queue = getOfflineQueue();
-    const count = queue.length;
-    if (count === 0) return { syncedCount: 0, details: [] };
-    const details = queue.map((item) => `${item.title} (${item.corridorFlair})`);
+    // 3. Bidirectional Reconciliation: Fetch cloud DB state and reconcile with local storage
+    if (isSupabaseConfigured) {
+      try {
+        const [cloudMissions, cloudIncidents, cloudDisruptions, cloudCommunities] = await Promise.all([
+          fetchCloudMissions(),
+          fetchCloudIncidents(),
+          fetchCloudDisruptions(),
+          fetchCloudCommunities(),
+        ]);
 
-    // 1. Update incidents state and mark as SYNCED
-    setIncidents((prev) => {
-      const merged = prev.map((p) => {
-        const matched = queue.find((q) => q.id === p.id);
-        return matched ? { ...p, sync_status: 'SYNCED' as const } : p;
-      });
-      queue.forEach((q) => {
-        if (!merged.some((m) => m.id === q.id)) {
-          merged.unshift({ ...q, sync_status: 'SYNCED' as const });
+        if (cloudMissions && cloudMissions.length > 0) {
+          const cleanCloud = cloudMissions.filter(
+            (m) => m && typeof m.id === 'string' && !m.id.startsWith('MISSION-') && !m.id.startsWith('MOCK-')
+          );
+          setActiveMissions((prev) => {
+            const next = resolveMissionConflict(prev, cleanCloud);
+            persistMissions(next);
+            return next;
+          });
+
+          // Sync vehicle status for active in-transit cloud missions
+          cleanCloud.forEach((cm) => {
+            if (
+              (cm.status === 'IN_TRANSIT' || cm.status === 'PENDING_ADMIN_CLOSEOUT') &&
+              cm.assignedVehicleId
+            ) {
+              setVehicles((prev) =>
+                prev.map((v) =>
+                  v.vehicle_id === cm.assignedVehicleId
+                    ? {
+                        ...v,
+                        status: 'ON_ROUTE',
+                        mission_id: cm.id,
+                        assigned_route_id: cm.assignedRouteId,
+                        destination_name: cm.destinationName,
+                      }
+                    : v
+                )
+              );
+            }
+          });
         }
-      });
-      persistIncidents(merged);
-      return merged;
-    });
 
-    // 2. Synchronize each queued item to Supabase Cloud DB & broadcast
-    queue.forEach((item) => {
-      const syncedItem: Incident = { ...item, sync_status: 'SYNCED' };
-      if (isSupabaseConfigured) {
-        upsertCloudIncident(syncedItem);
-        const matchedCorridor = item.location.corridorId || 'SEG-SIL-KOL';
-        upsertCloudDisruption(matchedCorridor, {
-          status: item.severity === 'Total Blockage' ? ('TOTAL_BLOCKAGE' as const) : ('SINGLE_LANE_PASSABLE' as const),
-          cause: item.incidentType,
-          description: item.title,
-          reportedBy: `${item.author.name} (${item.author.role})`,
-        });
-      }
-      if (socketRef.current?.connected) {
-        socketRef.current.emit('SUBMIT_INCIDENT', syncedItem);
-      }
-    });
+        if (cloudIncidents && cloudIncidents.length > 0) {
+          setIncidents((prev) => {
+            const next = resolveIncidentConflict(prev, cloudIncidents);
+            persistIncidents(next);
+            return next;
+          });
+        }
 
-    clearOfflineQueue();
-    setOfflineQueue([]);
+        if (cloudDisruptions) {
+          setActiveDisruptions((prev) => {
+            const next = resolveDisruptionConflict(prev, cloudDisruptions);
+            persistDisruptions(next);
+            return next;
+          });
+        }
+
+        if (cloudCommunities && cloudCommunities.length > 0) {
+          setRawCommunities((prev) => {
+            const next = resolveCommunityConflict(prev, cloudCommunities);
+            persistCommunities(next);
+            return next;
+          });
+        }
+      } catch (err) {
+        console.warn('[PRAVAH] Error reconciling cloud state after flush:', err);
+      }
+    }
+
     setLastDataSyncTime(Date.now());
-    return { syncedCount: count, details };
+    return { syncedCount: totalCount, details };
   }, []);
+
+  // Auto-sync when coming back online
+  useEffect(() => {
+    if (isOnline) {
+      const mutCount = getOfflineMutationQueue().length;
+      const incCount = getOfflineQueue().length;
+      if (mutCount > 0 || incCount > 0) {
+        flushOfflineQueue();
+      }
+    }
+  }, [isOnline, flushOfflineQueue]);
 
   const toggleSimulatedOffline = useCallback(() => {
     setIsSimulatedOffline((prev) => {
@@ -519,13 +641,30 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       } else {
         next[segmentId] = disruption;
       }
+      persistDisruptions(next);
       return next;
     });
-  }, []);
+
+    if (isOnline && isSupabaseConfigured) {
+      upsertCloudDisruption(segmentId, disruption);
+    } else {
+      queueOfflineMutation({ type: 'UPSERT_DISRUPTION', entityId: segmentId, payload: disruption });
+    }
+  }, [isOnline]);
 
   const clearAllDisruptions = useCallback(() => {
     setActiveDisruptions({});
-  }, []);
+    persistDisruptions({});
+    if (isOnline && isSupabaseConfigured) {
+      fetchCloudDisruptions().then((cloudDisruptions) => {
+        if (cloudDisruptions) {
+          Object.keys(cloudDisruptions).forEach((corridorId) => {
+            upsertCloudDisruption(corridorId, null);
+          });
+        }
+      });
+    }
+  }, [isOnline]);
 
   const triggerScenarioNH6Landslide = useCallback(() => {
     setActiveDisruptions((prev) => ({
@@ -632,8 +771,16 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             pm.status === 'DELIVERED')
       );
       if (cleaned.length > 0) {
+        // Evict any local SUGGESTED mission if an active (APPROVED, IN_TRANSIT, PENDING_ADMIN_CLOSEOUT) mission exists for that community
+        const activeCommIds = new Set(
+          cleaned
+            .filter((m) => m.status === 'APPROVED' || m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT')
+            .map((m) => m.communityId)
+        );
+        const deduplicated = cleaned.filter((m) => !(m.status === 'SUGGESTED' && activeCommIds.has(m.communityId)));
+
         // Sanitize any route references using COMMUNITY_ROUTING_PROFILES
-        const sanitized = cleaned.map((pm: ReliefMission) => {
+        const sanitized = deduplicated.map((pm: ReliefMission) => {
           const profile = COMMUNITY_ROUTING_PROFILES[pm.communityId];
           if (profile && pm.assignedRouteId !== profile.routeId) {
             const r = FLEET_ROUTES[profile.routeId];
@@ -846,7 +993,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return INITIAL_COMMUNITIES;
   });
 
+  const rawCommunitiesRef = useRef<CommunityBase[]>(rawCommunities);
   useEffect(() => {
+    rawCommunitiesRef.current = rawCommunities;
     persistCommunities(rawCommunities);
   }, [rawCommunities]);
 
@@ -883,14 +1032,28 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [rawCommunities]);
 
   const advanceCommunityElapsedHours = useCallback((communityId: string, hours: number) => {
-    setRawCommunities((prev) =>
-      prev.map((c) =>
-        c.id === communityId
-          ? { ...c, elapsedTimeHours: Math.max(0, c.elapsedTimeHours + hours) }
-          : c
-      )
-    );
-  }, []);
+    let targetCommunity: CommunityBase | undefined;
+    setRawCommunities((prev) => {
+      const next = prev.map((c) => {
+        if (c.id === communityId) {
+          const updated = { ...c, elapsedTimeHours: Math.max(0, c.elapsedTimeHours + hours) };
+          targetCommunity = updated;
+          return updated;
+        }
+        return c;
+      });
+      persistCommunities(next);
+      return next;
+    });
+
+    if (targetCommunity) {
+      if (isOnline && isSupabaseConfigured) {
+        upsertCloudCommunity(targetCommunity);
+      } else {
+        queueOfflineMutation({ type: 'UPSERT_COMMUNITY', entityId: communityId, payload: targetCommunity });
+      }
+    }
+  }, [isOnline]);
 
   // 8. Field Intelligence Feed
   const [incidents, setIncidents] = useState<Incident[]>(() => {
@@ -1087,6 +1250,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     if (!isOnline) {
       queueIncidentOffline(newIncident);
+      queueOfflineMutation({ type: 'UPSERT_INCIDENT', entityId: newIncident.id, payload: newIncident });
       setOfflineQueue((q) => [...q, newIncident]);
       // Also display immediately in local feed as PENDING sync
       setIncidents((prev) => {
@@ -1272,18 +1436,23 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         });
       }
 
-      if (isSupabaseConfigured) {
+      if (isOnline && isSupabaseConfigured) {
         voteCloudIncident(
           incidentId,
           { upvotes: targetUpvotes, downvotes: targetDownvotes },
           targetScore,
           targetHasOfficer
         );
+      } else {
+        const targetInc = next.find((i) => i.id === incidentId);
+        if (targetInc) {
+          queueOfflineMutation({ type: 'VOTE_INCIDENT', entityId: incidentId, payload: targetInc });
+        }
       }
 
       return next;
     });
-  }, [activeRole]);
+  }, [activeRole, isOnline]);
 
   // Add nested ground update comment
   const addIncidentUpdate = useCallback((incidentId: string, message: string) => {
@@ -1310,12 +1479,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (socketRef.current?.connected) {
       socketRef.current.emit('ADD_INCIDENT_UPDATE', { incidentId, update });
     }
-    if (isSupabaseConfigured) {
-      const inc = incidents.find((i) => i.id === incidentId);
-      const allUpdates = inc ? [...inc.updates, update] : [update];
+    const inc = incidents.find((i) => i.id === incidentId);
+    const allUpdates = inc ? [...inc.updates, update] : [update];
+    if (isOnline && isSupabaseConfigured) {
       addCloudIncidentUpdate(incidentId, update, allUpdates);
+    } else {
+      queueOfflineMutation({ type: 'ADD_INCIDENT_UPDATE', entityId: incidentId, payload: { update, allUpdates } });
     }
-  }, [incidents, userContext]);
+  }, [incidents, isOnline, userContext]);
 
   // =========================================================================
   // 12. CLOSED-LOOP GROUND TRUTH: Mark Mission Delivered
@@ -1330,10 +1501,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     // 1. Reset community inventory to 100% capacity and reset elapsed time Delta-t = 0
-    setRawCommunities((prev) =>
-      prev.map((c) => {
+    let updatedCommunity: CommunityBase | undefined;
+    setRawCommunities((prev) => {
+      const next = prev.map((c) => {
         if (c.id === communityId) {
-          return {
+          updatedCommunity = {
             ...c,
             elapsedTimeHours: 0,
             hasActiveIndent: false,
@@ -1359,10 +1531,21 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
               },
             },
           };
+          return updatedCommunity;
         }
         return c;
-      })
-    );
+      });
+      persistCommunities(next);
+      return next;
+    });
+
+    if (updatedCommunity) {
+      if (isOnline && isSupabaseConfigured) {
+        upsertCloudCommunity(updatedCommunity);
+      } else {
+        queueOfflineMutation({ type: 'UPSERT_COMMUNITY', entityId: communityId, payload: updatedCommunity });
+      }
+    }
 
     // 2. Update Vehicle Status
     setVehicles((prev) =>
@@ -1413,11 +1596,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ...prev,
     ]);
 
-    // 5. Update Mission state to DELIVERED
+    // 5. Update Mission state to DELIVERED and evict any lingering SUGGESTED mission for this community
     let deliveredMission: ReliefMission | undefined;
     setActiveMissions((prev) => {
-      const next = prev.map((m) => {
-        if (m.communityId === communityId || m.assignedVehicleId === targetVehId) {
+      const filtered = prev.filter(
+        (m) => !(m.status === 'SUGGESTED' && m.communityId === communityId)
+      );
+      const next = filtered.map((m) => {
+        if (m.communityId === communityId || (targetVehId && m.assignedVehicleId === targetVehId)) {
           deliveredMission = {
             ...m,
             status: 'DELIVERED' as const,
@@ -1431,11 +1617,15 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return next;
     });
 
-    if (isSupabaseConfigured && deliveredMission) {
-      upsertCloudMission(deliveredMission);
-      broadcastCloudMissionDelivered(deliveredMission.id, targetVehId, deliveredMission.deliveredAt);
+    if (deliveredMission) {
+      if (isOnline && isSupabaseConfigured) {
+        upsertCloudMission(deliveredMission);
+        broadcastCloudMissionDelivered(deliveredMission.id, targetVehId, deliveredMission.deliveredAt);
+      } else {
+        queueOfflineMutation({ type: 'DELIVER_MISSION', entityId: deliveredMission.id, payload: deliveredMission });
+      }
     }
-  }, []);
+  }, [isOnline]);
 
   // 13. Mission Dispatch & Customization
   const approveMission = useCallback((missionId: string) => {
@@ -1444,16 +1634,22 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const targetMission: ReliefMission = { ...existing, status: 'APPROVED' as const };
 
     setActiveMissions((prev) => {
-      const next = prev.map((m) => (m.id === missionId ? targetMission : m));
+      // Evict any other SUGGESTED mission for this community
+      const filtered = prev.filter(
+        (m) => !(m.status === 'SUGGESTED' && m.communityId === existing.communityId && m.id !== missionId)
+      );
+      const next = filtered.map((m) => (m.id === missionId ? targetMission : m));
       persistMissions(next);
       return next;
     });
 
-    if (isSupabaseConfigured) {
+    if (isOnline && isSupabaseConfigured) {
       upsertCloudMission(targetMission);
-      broadcastCloudMissionApproved(missionId);
+      broadcastCloudMissionApproved(targetMission);
+    } else {
+      queueOfflineMutation({ type: 'APPROVE_MISSION', entityId: targetMission.id, payload: targetMission });
     }
-  }, []);
+  }, [isOnline]);
 
   const dispatchMission = useCallback((missionId: string, vehicleId?: string) => {
     const targetMission = activeMissionsRef.current.find((m) => m.id === missionId);
@@ -1478,7 +1674,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     setActiveMissions((prev) => {
-      const next = prev.map((m) => (m.id === missionId ? updatedMission : m));
+      // Evict any other SUGGESTED mission for this community
+      const filtered = prev.filter(
+        (m) => !(m.status === 'SUGGESTED' && m.communityId === targetMission.communityId && m.id !== missionId)
+      );
+      const next = filtered.map((m) => (m.id === missionId ? updatedMission : m));
       if (!next.some((m) => m.id === missionId)) {
         next.push(updatedMission);
       }
@@ -1577,15 +1777,19 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     ]);
 
     // 6. Supabase Cloud DB Persistence & Realtime Broadcast
-    if (isSupabaseConfigured && updatedMission) {
-      upsertCloudMission(updatedMission);
-      broadcastCloudMissionDispatched(updatedMission, assignedVehId);
+    if (updatedMission) {
+      if (isOnline && isSupabaseConfigured) {
+        upsertCloudMission(updatedMission);
+        broadcastCloudMissionDispatched(updatedMission, assignedVehId);
+      } else {
+        queueOfflineMutation({ type: 'DISPATCH_MISSION', entityId: updatedMission.id, payload: updatedMission });
+      }
     }
 
     if (socketRef.current?.connected) {
       socketRef.current.emit('DISPATCH_MISSION', { missionId, vehicleId: assignedVehId });
     }
-  }, []);
+  }, [isOnline]);
 
   const approveAndDispatchMission = useCallback((missionId: string, vehicleId?: string) => {
     approveMission(missionId);
@@ -1649,11 +1853,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
     setAlerts((prev) => [newAlert, ...prev]);
 
-    if (isSupabaseConfigured) {
+    if (isOnline && isSupabaseConfigured) {
       upsertCloudMission(deliveredMission);
       broadcastCloudMissionPendingCloseout(missionId, targetVehId, officerName);
+    } else {
+      queueOfflineMutation({ type: 'DELIVER_MISSION', entityId: deliveredMission.id, payload: deliveredMission });
     }
-  }, []);
+  }, [isOnline]);
 
   // Central Super Admin: Review & Closeout Mission
   const adminCloseoutMission = useCallback((missionId: string) => {
@@ -1692,8 +1898,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 DIESEL: { lastStock: 800, baselineDailyBurn: c.inventories.DIESEL?.baselineDailyBurn || 60, standardCapacity: c.inventories.DIESEL?.standardCapacity || 800 },
               },
             };
-            if (isSupabaseConfigured) {
+            if (isOnline && isSupabaseConfigured) {
               upsertCloudCommunity(replenished);
+            } else {
+              queueOfflineMutation({ type: 'UPSERT_COMMUNITY', entityId: replenished.id, payload: replenished });
             }
             return replenished;
           }
@@ -1733,11 +1941,18 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ...prev,
     ]);
 
-    if (isSupabaseConfigured) {
+    if (isOnline && isSupabaseConfigured) {
       upsertCloudMission(closedMission);
       broadcastCloudMissionClosedOut(missionId, commId || '', vehId);
+    } else {
+      const matchingComm = rawCommunitiesRef.current.find((c) => c.id === commId);
+      queueOfflineMutation({
+        type: 'CLOSEOUT_MISSION',
+        entityId: missionId,
+        payload: { mission: closedMission, community: matchingComm },
+      });
     }
-  }, []);
+  }, [isOnline]);
 
   // 14. Interactive 1-Click Walkthrough Demo Actions
   const runDemoStep1 = useCallback(() => {
@@ -2202,21 +2417,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     console.log('⚡ Connected to Supabase Cloud Database & Realtime Event Bus');
 
-    // 1. Initial hydration from cloud
+    // 1. Initial hydration from cloud with bidirectional conflict resolution
     fetchCloudIncidents().then((cloudIncidents) => {
       if (cloudIncidents && cloudIncidents.length > 0) {
         setIncidents((prev) => {
-          const userVoteMap = new Map<string, null | 'up' | 'down'>();
-          prev.forEach((p) => {
-            if (p.votes?.userVote) userVoteMap.set(p.id, p.votes.userVote);
-          });
-          const merged = cloudIncidents.map((c) => ({
-            ...c,
-            votes: {
-              ...c.votes,
-              userVote: userVoteMap.get(c.id) || c.votes.userVote || null,
-            },
-          }));
+          const merged = resolveIncidentConflict(prev, cloudIncidents);
           persistIncidents(merged);
           return merged;
         });
@@ -2226,7 +2431,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     fetchCloudDisruptions().then((cloudDisruptions) => {
       if (cloudDisruptions && Object.keys(cloudDisruptions).length > 0) {
         setActiveDisruptions((prev) => {
-          const next = { ...prev, ...cloudDisruptions };
+          const next = resolveDisruptionConflict(prev, cloudDisruptions);
           persistDisruptions(next);
           return next;
         });
@@ -2235,8 +2440,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     fetchCloudCommunities().then((cloudCommunities) => {
       if (cloudCommunities && cloudCommunities.length > 0) {
-        setRawCommunities(cloudCommunities);
-        persistCommunities(cloudCommunities);
+        setRawCommunities((prev) => {
+          const next = resolveCommunityConflict(prev, cloudCommunities);
+          persistCommunities(next);
+          return next;
+        });
       }
     });
 
@@ -2247,13 +2455,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         );
         if (cleanCloud.length > 0) {
           setActiveMissions((prev) => {
-            const cloudMap = new Map(cleanCloud.map((m) => [m.id, m]));
-            const merged = prev.map((m) => cloudMap.get(m.id) || m);
-            cleanCloud.forEach((cm) => {
-              if (!merged.some((m) => m.id === cm.id)) {
-                merged.push(cm);
-              }
-            });
+            const merged = resolveMissionConflict(prev, cleanCloud);
             persistMissions(merged);
             return merged;
           });
@@ -2364,9 +2566,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           if (payload?.mission) {
             const { mission, vehicleId } = payload;
             setActiveMissions((prev) => {
-              const next = prev.map((m) => (m.id === mission.id ? { ...m, ...mission } : m));
+              // Evict any other SUGGESTED mission for this community
+              const filtered = prev.filter(
+                (m) => !(mission.communityId && m.communityId === mission.communityId && m.status === 'SUGGESTED')
+              );
+              const next = filtered.map((m) => (m.id === mission.id ? { ...m, ...mission, status: 'IN_TRANSIT' as const } : m));
               if (!next.some((m) => m.id === mission.id)) {
-                next.push(mission);
+                next.push({ ...mission, status: 'IN_TRANSIT' as const });
               }
               persistMissions(next);
               return next;
@@ -2404,10 +2610,28 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             ]);
           }
         })
-        .on('broadcast', { event: 'MISSION_APPROVED' }, ({ payload }) => {
-          if (payload?.missionId) {
+        .on('broadcast', { event: 'MISSION_APPROVED' }, ({ payload }: any) => {
+          if (payload?.missionId || payload?.mission) {
+            const mId = payload.missionId || payload.mission?.id;
+            const commId = payload.communityId || payload.mission?.communityId;
             setActiveMissions((prev) => {
-              const next = prev.map((m) => (m.id === payload.missionId ? { ...m, status: 'APPROVED' as const } : m));
+              // Evict any other SUGGESTED mission for this community
+              const filtered = prev.filter(
+                (m) => !(commId && m.communityId === commId && m.status === 'SUGGESTED' && m.id !== mId)
+              );
+              let found = false;
+              const next = filtered.map((m) => {
+                if (m.id === mId || (commId && m.communityId === commId && m.status === 'SUGGESTED')) {
+                  found = true;
+                  return payload.mission
+                    ? { ...payload.mission, status: 'APPROVED' as const }
+                    : { ...m, status: 'APPROVED' as const };
+                }
+                return m;
+              });
+              if (!found && payload.mission) {
+                next.push({ ...payload.mission, status: 'APPROVED' as const });
+              }
               persistMissions(next);
               return next;
             });
@@ -2491,7 +2715,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         .on('broadcast', { event: 'MISSION_CLOSED_OUT' }, ({ payload }: any) => {
           if (payload?.missionId) {
             setActiveMissions((prev) => {
-              const next = prev.map((m) =>
+              const filtered = prev.filter(
+                (m) => !(payload.communityId && m.communityId === payload.communityId && m.status === 'SUGGESTED')
+              );
+              const next = filtered.map((m) =>
                 m.id === payload.missionId ? { ...m, status: 'DELIVERED' as const } : m
               );
               persistMissions(next);
@@ -2507,8 +2734,8 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
               );
             }
             if (payload?.communityId) {
-              setRawCommunities((prev) =>
-                prev.map((c) =>
+              setRawCommunities((prev) => {
+                const next = prev.map((c) =>
                   c.id === payload.communityId
                     ? {
                         ...c,
@@ -2521,8 +2748,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
                         },
                       }
                     : c
-                )
-              );
+                );
+                persistCommunities(next);
+                return next;
+              });
             }
           }
         })
@@ -2558,7 +2787,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     toggleTheme,
     isOnline,
     isSimulatedOffline,
-    offlineQueueCount: offlineQueue.length,
+    offlineQueueCount: offlineQueue.length + getOfflineMutationQueue().length,
     offlineQueue,
     lastDataSyncTime,
     lastOfflineTransitionTime,

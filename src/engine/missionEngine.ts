@@ -256,7 +256,7 @@ export function generateDynamicMissionSuggestions(
       ? 'Medic-01 (4x4 Emergency Medical Van)'
       : 'Cargo-01 (Heavy 6x6 Freight Truck)';
 
-    const missionId = `SUGG-${community.id.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`;
+    const missionId = `SUGG-${community.id.replace(/[^a-zA-Z0-9]/g, '')}`;
 
     // Ensure destination endpoint is snapped to the true road terminus of the route
     const roadTerminus =

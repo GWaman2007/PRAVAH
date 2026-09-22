@@ -1,7 +1,13 @@
 import { calculateCommodityDepletion, calculateCompositePriority, COMMODITY_CONFIG } from './src/engine/priorityEngine.ts';
 import { findKShortestPaths, evaluateAndRankPaths } from './src/engine/routingEngine.ts';
 import { stepVehicleSimulation } from './src/engine/telemetryEngine.ts';
-import { calculateIncidentConfidence } from './src/engine/offlineSync.ts';
+import {
+  calculateIncidentConfidence,
+  resolveMissionConflict,
+  resolveIncidentConflict,
+  resolveDisruptionConflict,
+  resolveCommunityConflict,
+} from './src/engine/offlineSync.ts';
 import { generateBroadcastForIncident, calculateSmsMetrics } from './src/data/translationsData.ts';
 import { resolveTtsParameters } from './src/utils/audioAlert.ts';
 import { NER_SEGMENTS, VEHICLE_PROFILES } from './src/data/routingNetwork.ts';
@@ -333,6 +339,158 @@ console.log('\n--- TEST SUITE 8: Real-Time API Hazard Polygons ---');
   assert(polygons.every((p) => p.hazardScore >= 0 && p.hazardScore <= 10), 'Every hazard polygon has calibrated hazard score [0-10]');
   assert(polygons.every((p) => typeof p.name === 'string' && p.name.length > 0), 'Every hazard polygon has an identified corridor name');
   assert(polygons.every((p) => p.source === 'ISRO_LHZ_BASELINE'), 'Baseline hazard zones cite authoritative ISRO NRSC source');
+}
+
+// ----------------------------------------------------
+// TEST 9: UNIVERSAL OFFLINE SYNC & BIDIRECTIONAL CONFLICT RESOLUTION
+// ----------------------------------------------------
+console.log('\n--- TEST SUITE 9: Universal Offline Sync & Bidirectional Conflict Resolution ---');
+{
+  // 1. Cross-Device Suggestion Eviction:
+  // When Person A approves a mission, it must pop from Person B's "Suggested" list even if suggestion IDs differed
+  const localMissionsDeviceB = [
+    {
+      id: 'SUGG-MZKOL-DEV-B-999',
+      communityId: 'MZ-KOL-004',
+      communityName: 'Kolasib Forward Camp',
+      status: 'SUGGESTED',
+      urgency: 'HIGH',
+      createdAt: new Date().toISOString(),
+      originCoords: [24.83, 92.77],
+      destinationEndpoint: [24.22, 92.67],
+    },
+  ];
+  const cloudMissionsFromDeviceA = [
+    {
+      id: 'SUGG-MZKOL-DEV-A-111',
+      communityId: 'MZ-KOL-004',
+      communityName: 'Kolasib Forward Camp',
+      status: 'APPROVED',
+      urgency: 'HIGH',
+      createdAt: new Date().toISOString(),
+      originCoords: [24.83, 92.77],
+      destinationEndpoint: [24.22, 92.67],
+    },
+  ];
+
+  const reconciledMissions = resolveMissionConflict(localMissionsDeviceB, cloudMissionsFromDeviceA);
+  assert(reconciledMissions.length === 1, `Reconciled missions has exactly 1 mission (got ${reconciledMissions.length})`);
+  assert(reconciledMissions[0].status === 'APPROVED', `Reconciled mission has status APPROVED (got ${reconciledMissions[0].status})`);
+  assert(reconciledMissions[0].id === 'SUGG-MZKOL-DEV-A-111', `Device A approved mission replaced Device B suggestion (got ${reconciledMissions[0].id})`);
+  assert(!reconciledMissions.some((m) => m.status === 'SUGGESTED'), 'Local SUGGESTED mission for Kolasib was successfully popped');
+
+  // 2. Lifecycle Rank: Local IN_TRANSIT overrides Cloud APPROVED if dispatched locally offline
+  const localDispatched = [
+    {
+      id: 'SUGG-MZKOL-DEV-A-111',
+      communityId: 'MZ-KOL-004',
+      communityName: 'Kolasib Forward Camp',
+      status: 'IN_TRANSIT',
+      assignedVehicleId: 'Medic-01',
+      urgency: 'HIGH',
+      createdAt: new Date().toISOString(),
+      dispatchedAt: new Date().toISOString(),
+      originCoords: [24.83, 92.77],
+      destinationEndpoint: [24.22, 92.67],
+    },
+  ];
+  const cloudStillApproved = [
+    {
+      id: 'SUGG-MZKOL-DEV-A-111',
+      communityId: 'MZ-KOL-004',
+      communityName: 'Kolasib Forward Camp',
+      status: 'APPROVED',
+      urgency: 'HIGH',
+      createdAt: new Date().toISOString(),
+      originCoords: [24.83, 92.77],
+      destinationEndpoint: [24.22, 92.67],
+    },
+  ];
+  const localAdvancementWins = resolveMissionConflict(localDispatched, cloudStillApproved);
+  assert(localAdvancementWins[0].status === 'IN_TRANSIT', `Local offline advancement to IN_TRANSIT wins over cloud APPROVED (got ${localAdvancementWins[0].status})`);
+
+  // 3. Incident Conflict Resolution: Union updates, max confidence, officer verification
+  const localIncident = [
+    {
+      id: 'inc-test-01',
+      title: 'NH-29 Mudflow',
+      corridorFlair: 'r/NH-29-Nagaland',
+      incidentType: 'Landslide',
+      severity: 'Total Blockage',
+      location: { lat: 25.75, lng: 93.98, placeName: 'Pagla Pahar', state: 'Nagaland', corridorId: 'SEG-DIM-KOH-MAIN' },
+      author: { name: 'Local Driver', role: 'Citizen Driver' },
+      timestamp: new Date().toISOString(),
+      votes: { upvotes: 5, downvotes: 1, userVote: 'up' },
+      confidenceScore: 4,
+      hasOfficerVerified: false,
+      sync_status: 'PENDING',
+      updates: [
+        { id: 'u-local-1', author: 'Driver 1', role: 'Citizen Driver', message: 'Local update', timestamp: new Date().toISOString() },
+      ],
+    },
+  ];
+  const cloudIncident = [
+    {
+      id: 'inc-test-01',
+      title: 'NH-29 Mudflow',
+      corridorFlair: 'r/NH-29-Nagaland',
+      incidentType: 'Landslide',
+      severity: 'Total Blockage',
+      location: { lat: 25.75, lng: 93.98, placeName: 'Pagla Pahar', state: 'Nagaland', corridorId: 'SEG-DIM-KOH-MAIN' },
+      author: { name: 'Local Driver', role: 'Citizen Driver' },
+      timestamp: new Date().toISOString(),
+      votes: { upvotes: 12, downvotes: 0, userVote: null },
+      confidenceScore: 22,
+      hasOfficerVerified: true,
+      sync_status: 'SYNCED',
+      updates: [
+        { id: 'u-cloud-1', author: 'Insp. L. Hmar', role: 'Field Officer (BRO/Police)', message: 'Cloud verified', timestamp: new Date().toISOString() },
+      ],
+    },
+  ];
+
+  const mergedIncidents = resolveIncidentConflict(localIncident, cloudIncident);
+  assert(mergedIncidents[0].updates.length === 2, `Updates from local and cloud merged without loss (got ${mergedIncidents[0].updates.length})`);
+  assert(mergedIncidents[0].confidenceScore === 22, `Max confidence score preserved (got ${mergedIncidents[0].confidenceScore})`);
+  assert(mergedIncidents[0].hasOfficerVerified === true, 'Officer verification preserved');
+  assert(mergedIncidents[0].votes.userVote === 'up', 'User local vote preserved');
+
+  // 4. Disruption Conflict Resolution: Union of segments
+  const localDisruptions = {
+    'SEG-SIL-KOL': { status: 'SINGLE_LANE_PASSABLE', cause: 'Road_Subsidence', description: 'Local report', reportedBy: 'Driver' },
+  };
+  const cloudDisruptions = {
+    'SEG-DIM-KOH-MAIN': { status: 'TOTAL_BLOCKAGE', cause: 'Landslide', description: 'Cloud blockage', reportedBy: 'BRO' },
+  };
+  const mergedDisruptions = resolveDisruptionConflict(localDisruptions, cloudDisruptions);
+  assert(Object.keys(mergedDisruptions).length === 2, `Both local and cloud disruptions combined (got ${Object.keys(mergedDisruptions).length})`);
+  assert(mergedDisruptions['SEG-DIM-KOH-MAIN'].status === 'TOTAL_BLOCKAGE', 'Cloud total blockage preserved');
+  assert(mergedDisruptions['SEG-SIL-KOL'].status === 'SINGLE_LANE_PASSABLE', 'Local disruption preserved');
+
+  // 5. Community Inventory Reconciliation: Cloud override reflects replenishment
+  const localCommunities = [
+    {
+      id: 'MZ-KOL-004',
+      name: 'Kolasib Forward Camp',
+      elapsedTimeHours: 24,
+      inventories: {
+        IV_FLUIDS: { lastStock: 10, baselineDailyBurn: 40, standardCapacity: 450 },
+      },
+    },
+  ];
+  const cloudReplenished = [
+    {
+      id: 'MZ-KOL-004',
+      name: 'Kolasib Forward Camp',
+      elapsedTimeHours: 0,
+      inventories: {
+        IV_FLUIDS: { lastStock: 450, baselineDailyBurn: 40, standardCapacity: 450 },
+      },
+    },
+  ];
+  const reconciledComm = resolveCommunityConflict(localCommunities, cloudReplenished);
+  assert(reconciledComm[0].elapsedTimeHours === 0, `Elapsed time reset by cloud delivery (got ${reconciledComm[0].elapsedTimeHours})`);
+  assert(reconciledComm[0].inventories.IV_FLUIDS.lastStock === 450, `Inventory replenished to 450 by cloud (got ${reconciledComm[0].inventories.IV_FLUIDS.lastStock})`);
 }
 
 console.log('\n====================================================');
