@@ -1,6 +1,7 @@
 -- =========================================================================
 -- PRAVAH NER Emergency Logistics - Supabase Cloud Database Schema
 -- Run this in your Supabase Project Dashboard -> SQL Editor -> Run
+-- IDEMPOTENT: Safe to run multiple times without 42710 policy errors
 -- =========================================================================
 
 -- 1. Incidents Table (Ground Intelligence Feed & Roadblocks)
@@ -35,26 +36,27 @@ CREATE TABLE IF NOT EXISTS public.disruptions (
 ALTER TABLE public.incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.disruptions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow public read access to incidents" ON public.incidents;
 CREATE POLICY "Allow public read access to incidents" ON public.incidents
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Allow public insert to incidents" ON public.incidents;
 CREATE POLICY "Allow public insert to incidents" ON public.incidents
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public update to incidents" ON public.incidents;
 CREATE POLICY "Allow public update to incidents" ON public.incidents
   FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Allow public read access to disruptions" ON public.disruptions;
 CREATE POLICY "Allow public read access to disruptions" ON public.disruptions
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Allow public insert/update to disruptions" ON public.disruptions;
 CREATE POLICY "Allow public insert/update to disruptions" ON public.disruptions
   FOR ALL USING (true);
 
--- 4. Enable Supabase Realtime for instant broadcast across devices
-ALTER PUBLICATION supabase_realtime ADD TABLE public.incidents;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.disruptions;
-
--- 5. Seed Initial Baseline Data
+-- 4. Seed Initial Baseline Incident Data
 INSERT INTO public.incidents (id, title, corridor_flair, incident_type, severity, location, author, timestamp, media_url, votes, confidence_score, has_officer_verified, updates)
 VALUES
 (
@@ -150,7 +152,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- =========================================================================
--- 6. Communities Table (Authoritative Communities & Real Polygon Geometry)
+-- 5. Communities Table (Authoritative Communities & Real Polygon Geometry)
 -- =========================================================================
 CREATE TABLE IF NOT EXISTS public.communities (
   id TEXT PRIMARY KEY,
@@ -176,15 +178,15 @@ CREATE TABLE IF NOT EXISTS public.communities (
 
 ALTER TABLE public.communities ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow public read access to communities" ON public.communities;
 CREATE POLICY "Allow public read access to communities" ON public.communities
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Allow public insert/update to communities" ON public.communities;
 CREATE POLICY "Allow public insert/update to communities" ON public.communities
   FOR ALL USING (true);
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.communities;
-
--- Seed Initial Baseline Communities with GeoJSON Polygon Boundaries (2xP1, 2xP2, 1xP3)
+-- Seed Initial Baseline Communities with GeoJSON Polygon Boundaries
 INSERT INTO public.communities (id, name, state, district, coordinates, boundary, population, healthcare_facilities, ingress_route_count, primary_corridor, nearest_depot_name, transit_time_hours, cutoff_time_hours, disruption_prob_max, elapsed_time_hours, is_monsoon_alert_active, has_active_indent, inventories)
 VALUES
 (
@@ -300,7 +302,7 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = NOW();
 
 -- =========================================================================
--- 7. Missions Table (Preemptive Relief Missions, Approvals & Dispatches)
+-- 6. Missions Table (Preemptive Relief Missions, Approvals & Dispatches)
 -- =========================================================================
 CREATE TABLE IF NOT EXISTS public.missions (
   id TEXT PRIMARY KEY,
@@ -334,169 +336,48 @@ CREATE TABLE IF NOT EXISTS public.missions (
 
 ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow public read access to missions" ON public.missions;
 CREATE POLICY "Allow public read access to missions" ON public.missions
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Allow public insert to missions" ON public.missions;
 CREATE POLICY "Allow public insert to missions" ON public.missions
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public update to missions" ON public.missions;
 CREATE POLICY "Allow public update to missions" ON public.missions
   FOR UPDATE USING (true);
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.missions;
+-- =========================================================================
+-- 7. Realtime Publication Setup (Idempotent: Safe to re-run anytime)
+-- =========================================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'incidents'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.incidents;
+  END IF;
 
--- Seed Initial Missions (Active In-Transit & Suggested Queue)
-INSERT INTO public.missions (
-  id, community_id, community_name, recommended_vehicle_type, cargo_allocations,
-  assigned_route_id, suggested_detour, status, urgency, created_at, dispatched_at,
-  assigned_driver, assigned_officer, origin_warehouse_id, origin_warehouse_name,
-  origin_coords, disaster_zone_id, disaster_zone_name, destination_endpoint,
-  destination_name, assigned_vehicle_id
-)
-VALUES
-(
-  'MISSION-MZ-04',
-  'MZ-KOL-004',
-  'Kolasib East (Mission MZ-04 Target)',
-  'Medic-01 (4x4 Emergency Van)',
-  '[{"item": "IV Fluids (Ringer Lactate)", "quantity": 350, "unit": "Bags"}, {"item": "Polyvalent Snake Antivenom", "quantity": 60, "unit": "Vials"}, {"item": "Emergency Suture & Burn Kits", "quantity": 45, "unit": "Kits"}]'::jsonb,
-  'ROUTE-MZ-04',
-  'NH-306 Bilkhawthlir Escarpment Spur',
-  'IN_TRANSIT',
-  'P1_CRITICAL',
-  NOW() - INTERVAL '60 minutes',
-  NOW() - INTERVAL '35 minutes',
-  'Rajesh Mech (+91 94350-18492)',
-  'Insp. L. Hmar (Mizoram Police)',
-  'silchar',
-  'Silchar Strategic Depot',
-  '[24.8333, 92.7789]'::jsonb,
-  'LHZ-MZ-01',
-  'NH-306 Bilkhawthlir Hill Escarpment',
-  '[24.25708, 92.72921]'::jsonb,
-  'Bilkhawthlir Escarpment Relief Post',
-  'Medic-01'
-),
-(
-  'MISSION-MZ-02',
-  'MZ-KOL-002',
-  'Bilkhawthlir Silt Ground Station',
-  'Cargo-01 (Heavy Cargo Truck)',
-  '[{"item": "Trauma Dressing & Splints", "quantity": 120, "unit": "Sets"}, {"item": "Oral Rehydration Salts", "quantity": 500, "unit": "Packets"}, {"item": "Portable Oxygen Concentrators", "quantity": 4, "unit": "Units"}]'::jsonb,
-  'ROUTE-MZ-02',
-  'NH-306 Silt Diversion',
-  'IN_TRANSIT',
-  'P1_CRITICAL',
-  NOW() - INTERVAL '55 minutes',
-  NOW() - INTERVAL '25 minutes',
-  'Malsawma Lushai (+91 98620-11234)',
-  'Sub-Insp. Z. Ralte',
-  'silchar',
-  'Silchar Strategic Depot',
-  '[24.8333, 92.7789]'::jsonb,
-  'HAZARD-01',
-  'Bilkhawthlir Silt Subsidence Zone',
-  '[24.2571, 92.7314]'::jsonb,
-  'Bilkhawthlir Silt Ground Station',
-  'Cargo-01'
-),
-(
-  'MISSION-AS-03',
-  'AS-HAF-003',
-  'Barail Range Clearance Sector',
-  'Engineer-01 (Engineering Vehicle)',
-  '[{"item": "Hydraulic Cutting Tools", "quantity": 6, "unit": "Kits"}, {"item": "High-Tensile Tow Cables", "quantity": 200, "unit": "Meters"}, {"item": "Fuel Drums (Diesel)", "quantity": 20, "unit": "Barrels"}]'::jsonb,
-  'ROUTE-AS-03',
-  'NH-27 Barail S-Curve',
-  'IN_TRANSIT',
-  'P2_ELEVATED',
-  NOW() - INTERVAL '75 minutes',
-  NOW() - INTERVAL '40 minutes',
-  'Anand Das (+91 94351-77890)',
-  'Maj. S. Saikia (BRO Project Pushpak)',
-  'silchar',
-  'Silchar Strategic Depot',
-  '[24.8333, 92.7789]'::jsonb,
-  'LHZ-AS-01',
-  'Barail Hill Cut Clearance',
-  '[25.1742, 93.0215]'::jsonb,
-  'Haflong Ridge Transit Post',
-  'Engineer-01'
-),
-(
-  'MISSION-SUG-01',
-  'MZ-KOL-004',
-  'Kolasib East (Mission MZ-04 Target)',
-  'Medic-04 (Light Rescue 4x4)',
-  '[{"item": "Water Purification Tablets", "quantity": 5000, "unit": "Tabs"}, {"item": "Emergency Tents & Ground Tarps", "quantity": 30, "unit": "Units"}]'::jsonb,
-  'ROUTE-SUG-01',
-  'NH-306 Upper Vairengte Spur',
-  'SUGGESTED',
-  'P1_CRITICAL',
-  NOW() - INTERVAL '15 minutes',
-  NULL,
-  'Duty Dispatch Driver',
-  'BRO Liaison Officer',
-  'silchar',
-  'Silchar Strategic Depot',
-  '[24.8333, 92.7789]'::jsonb,
-  'DISASTER-01',
-  'Kolasib Sector Outskirts',
-  '[24.2300, 92.6850]'::jsonb,
-  'Kolasib Community Clinic',
-  'Medic-04'
-),
-(
-  'MISSION-SUG-02',
-  'NL-KOH-009',
-  'Kohima South Sector (Phesama)',
-  'Rescue-02 (Heavy Tow & Recovery)',
-  '[{"item": "High-Lift Air Bags (20T)", "quantity": 4, "unit": "Kits"}, {"item": "Portable Generator Sets (5kW)", "quantity": 2, "unit": "Units"}]'::jsonb,
-  'ROUTE-SUG-02',
-  'NH-29 Bypass Ascending Ridge',
-  'SUGGESTED',
-  'P1_CRITICAL',
-  NOW() - INTERVAL '20 minutes',
-  NULL,
-  'Duty Dispatch Driver',
-  'Nagaland Police Liaison',
-  'dimapur',
-  'Dimapur Railhead',
-  '[25.9095, 93.7266]'::jsonb,
-  'DISASTER-02',
-  'Phesama Rockfall Bottleneck',
-  '[25.6450, 94.1150]'::jsonb,
-  'Phesama Forward Field Post',
-  'Rescue-02'
-),
-(
-  'MISSION-SUG-03',
-  'ML-SHL-001',
-  'Shillong Central Hub',
-  'Supply-04 (All-Terrain 10T Consignment)',
-  '[{"item": "High-Energy Nutritional Biscuits", "quantity": 2000, "unit": "kg"}, {"item": "Emergency Solar Lanterns", "quantity": 100, "unit": "Units"}]'::jsonb,
-  'ROUTE-SUG-03',
-  'NH-6 Umkiang Bypass',
-  'SUGGESTED',
-  'P2_ELEVATED',
-  NOW() - INTERVAL '10 minutes',
-  NULL,
-  'Duty Dispatch Driver',
-  'Meghalaya Civil Defence',
-  'guwahati',
-  'Guwahati Regional Hub',
-  '[26.1445, 91.7362]'::jsonb,
-  'DISASTER-03',
-  'Shillong Relief Reserve',
-  '[25.5788, 91.8933]'::jsonb,
-  'Shillong Emergency Store',
-  'Supply-04'
-)
-ON CONFLICT (id) DO UPDATE SET
-  status = EXCLUDED.status,
-  assigned_vehicle_id = EXCLUDED.assigned_vehicle_id,
-  dispatched_at = EXCLUDED.dispatched_at,
-  delivered_at = EXCLUDED.delivered_at,
-  updated_at = NOW();
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'disruptions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.disruptions;
+  END IF;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'communities'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.communities;
+  END IF;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'missions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.missions;
+  END IF;
+END $$;
