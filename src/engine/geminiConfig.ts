@@ -8,8 +8,9 @@
 export const GEMINI_CONFIG = {
   // Official active Google Gemini models with primary -> secondary fallback
   PRIMARY_MODEL: 'gemini-3.5-flash-lite',
+  BACKUP_MODEL: 'gemini-3.1-flash-lite',
   FAST_MODEL: 'gemini-3.5-flash-lite',
-  LITE_MODEL: 'gemini-3.5-flash-lite',
+  LITE_MODEL: 'gemini-3.1-flash-lite',
   FLASH_MODEL: 'gemini-3.5-flash',
   PRO_MODEL: 'gemini-1.5-pro',
   LEGACY_FALLBACK: 'gemini-1.5-flash',

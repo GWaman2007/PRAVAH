@@ -43,15 +43,18 @@ export async function executeGeminiPrompt(
 ): Promise<{ text: string; modelUsed: string }> {
   const apiKey = getGeminiApiKey();
 
-  const modelsToTry = [
+  const rawModels = [
     GEMINI_CONFIG.PRIMARY_MODEL, // gemini-3.5-flash-lite
+    GEMINI_CONFIG.BACKUP_MODEL,  // gemini-3.1-flash-lite
     'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
     'gemini-3.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
     'gemini-1.5-flash-8b',
     'gemini-1.5-pro',
   ];
+  const modelsToTry = Array.from(new Set(rawModels.filter(Boolean)));
 
   if (!apiKey) {
     console.warn('⚠️ [GeminiService] No Gemini API key detected in localStorage or env! Using local engine.');
