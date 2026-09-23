@@ -95,6 +95,9 @@ import {
   upsertCloudHazardZone,
   broadcastCloudSOS,
   cancelCloudSOS,
+  fetchCloudDraftReports,
+  upsertCloudDraftReport,
+  deleteCloudDraftReport,
 } from '../engine/supabaseClient';
 
 interface PravahStoreContextType {
@@ -2529,6 +2532,16 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
+    fetchCloudDraftReports().then((cloudDrafts) => {
+      if (cloudDrafts && cloudDrafts.length > 0) {
+        setDraftPlots((prev) => {
+          const ids = new Set(prev.map((d) => d.id));
+          const additions = cloudDrafts.filter((cd) => !ids.has(cd.id));
+          return [...prev, ...additions];
+        });
+      }
+    });
+
     // 2. Realtime Broadcast Channel Listener on shared global bus
     let channel: ReturnType<typeof supabase.channel> | null = null;
     try {
@@ -2537,6 +2550,17 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       });
 
       channel
+        .on('broadcast', { event: 'DRAFT_REPORT_UPDATED' }, ({ payload }: any) => {
+          if (payload?.draft) {
+            const d = payload.draft;
+            setDraftPlots((prev) => [d, ...prev.filter((item) => item.id !== d.id)]);
+          }
+        })
+        .on('broadcast', { event: 'DRAFT_REPORT_DELETED' }, ({ payload }: any) => {
+          if (payload?.draftId) {
+            setDraftPlots((prev) => prev.filter((item) => item.id !== payload.draftId));
+          }
+        })
         .on('broadcast', { event: 'INCIDENT_ADDED' }, ({ payload }: any) => {
           if (payload?.incident) {
             setIncidents((prev) => {
@@ -2868,6 +2892,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         );
       } else if (result.status === 'NEW_DRAFT' && result.draftPlot) {
         setDraftPlots((prev) => [result.draftPlot!, ...prev]);
+        upsertCloudDraftReport(result.draftPlot!);
       }
 
       return result;
@@ -2927,6 +2952,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       // 1. Remove from pending review queue
       setDraftPlots((prev) => prev.filter((d) => d.id !== draftId));
+      deleteCloudDraftReport(draftId);
 
       // 2. Add to live incidents & road disruptions
       addIncident({
@@ -2990,6 +3016,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const dismissDraftPlot = useCallback((draftId: string) => {
     setDraftPlots((prev) => prev.filter((d) => d.id !== draftId));
+    deleteCloudDraftReport(draftId);
   }, []);
 
   const approveRerouteProposal = useCallback(

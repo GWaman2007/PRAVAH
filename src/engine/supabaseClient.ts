@@ -1,5 +1,5 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission, RealtimeHazardPolygon } from '../types';
+import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission, RealtimeHazardPolygon, DraftIncidentPlot } from '../types';
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const supabasePublishableKey = (
@@ -607,6 +607,105 @@ export async function upsertCloudHazardZone(zone: RealtimeHazardPolygon): Promis
     return true;
   } catch (err) {
     console.warn('⚠️ [Supabase] Exception upserting hazard zone:', err);
+    return false;
+  }
+}
+
+/**
+ * Cloud Draft Incident Reports API (Pending AI Review)
+ */
+export async function fetchCloudDraftReports(): Promise<DraftIncidentPlot[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('draft_reports')
+      .select('*')
+      .eq('status', 'PENDING_APPROVAL')
+      .order('submitted_at', { ascending: false });
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch draft reports:', error.message);
+      return null;
+    }
+    if (!data) return null;
+    return data.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      corridor: row.corridor,
+      coordinates: Array.isArray(row.coordinates) ? row.coordinates : [25.712, 93.998],
+      hazardType: row.hazard_type || row.hazardType || 'Landslide',
+      severity: row.severity || 'TOTAL_BLOCKAGE',
+      estimatedCutoffHours: Number(row.estimated_cutoff_hours ?? 6),
+      summary: row.summary || '',
+      citationsCount: Number(row.citations_count ?? 1),
+      sourceReport: row.source_report || { reporterName: 'Citizen', role: 'Local Citizen', rawText: '', timestamp: row.submitted_at },
+      aiValidation: row.ai_validation || { isGeographicallyConsistent: true, confidenceScore: 8, landmarkVerified: row.corridor, geminiModelUsed: 'gemini-3.5-flash-lite' },
+      status: row.status || 'PENDING_APPROVAL',
+      submittedAt: row.submitted_at || new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching draft reports:', err);
+    return null;
+  }
+}
+
+export async function upsertCloudDraftReport(draft: DraftIncidentPlot): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: draft.id,
+      title: draft.title,
+      corridor: draft.corridor,
+      coordinates: draft.coordinates,
+      hazard_type: draft.hazardType,
+      severity: draft.severity,
+      estimated_cutoff_hours: draft.estimatedCutoffHours,
+      summary: draft.summary,
+      citations_count: draft.citationsCount,
+      source_report: draft.sourceReport,
+      ai_validation: draft.aiValidation,
+      status: draft.status,
+      submitted_at: draft.submittedAt,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('draft_reports').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert draft report error:', error.message);
+      return false;
+    }
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'DRAFT_REPORT_UPDATED',
+        payload: { draft },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting draft report:', err);
+    return false;
+  }
+}
+
+export async function deleteCloudDraftReport(draftId: string): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from('draft_reports').delete().eq('id', draftId);
+    if (error) {
+      console.warn('⚠️ [Supabase] Delete draft report error:', error.message);
+      return false;
+    }
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'DRAFT_REPORT_DELETED',
+        payload: { draftId },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception deleting draft report:', err);
     return false;
   }
 }

@@ -92,15 +92,38 @@ export function getGeminiApiKey(): string {
     }
   }
 
-  // 3. Vite client environment variable
-  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_API_KEY) {
-    return import.meta.env.VITE_GEMINI_API_KEY.trim();
+  // 4. Vite client environment variable (check all variations)
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    const candidateEnv = [
+      import.meta.env.VITE_GEMINI_API_KEY,
+      import.meta.env.GEMINI_API_KEY,
+      import.meta.env.VITE_GOOGLE_API_KEY,
+      import.meta.env.GOOGLE_API_KEY,
+      (import.meta.env as any).VITE_API_KEY,
+      (import.meta.env as any).API_KEY,
+    ];
+    for (const val of candidateEnv) {
+      if (val && typeof val === 'string' && val.trim().length > 5) {
+        return val.replace(/^["']|["']$/g, '').trim();
+      }
+    }
   }
 
-  // 4. Node / Server environment variable
-  const envProcess = typeof globalThis !== 'undefined' ? (globalThis as any).process : undefined;
-  if (envProcess?.env && (envProcess.env.VITE_GEMINI_API_KEY || envProcess.env.GEMINI_API_KEY)) {
-    return (envProcess.env.VITE_GEMINI_API_KEY || envProcess.env.GEMINI_API_KEY || '').trim();
+  // 5. Node / Server / Process environment variable
+  try {
+    const envProcess = typeof process !== 'undefined' ? process.env : undefined;
+    if (envProcess) {
+      const pKey =
+        envProcess.VITE_GEMINI_API_KEY ||
+        envProcess.GEMINI_API_KEY ||
+        envProcess.GOOGLE_API_KEY ||
+        envProcess.VITE_GOOGLE_API_KEY;
+      if (pKey && typeof pKey === 'string' && pKey.trim().length > 5) {
+        return pKey.replace(/^["']|["']$/g, '').trim();
+      }
+    }
+  } catch {
+    // ignore
   }
 
   return '';

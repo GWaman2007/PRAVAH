@@ -349,7 +349,65 @@ CREATE POLICY "Allow public update to missions" ON public.missions
   FOR UPDATE USING (true);
 
 -- =========================================================================
--- 7. Realtime Publication Setup (Idempotent: Safe to re-run anytime)
+-- 7. Hazard Zones Table (Real-Time API Polygons & ISRO NRSC Zones)
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.hazard_zones (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  source TEXT DEFAULT 'SUPABASE_CLOUD',
+  hazard_type TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  hazard_score NUMERIC NOT NULL DEFAULT 8.0,
+  advisory TEXT,
+  state TEXT,
+  district TEXT,
+  coordinates JSONB NOT NULL DEFAULT '[]'::jsonb,
+  url TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.hazard_zones ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read access to hazard_zones" ON public.hazard_zones;
+CREATE POLICY "Allow public read access to hazard_zones" ON public.hazard_zones
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert/update to hazard_zones" ON public.hazard_zones;
+CREATE POLICY "Allow public insert/update to hazard_zones" ON public.hazard_zones
+  FOR ALL USING (true);
+
+-- =========================================================================
+-- 8. Draft Reports Table (Citizen Ground Reports Pending AI Review)
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.draft_reports (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  corridor TEXT NOT NULL,
+  coordinates JSONB NOT NULL,
+  hazard_type TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  estimated_cutoff_hours NUMERIC DEFAULT 6,
+  summary TEXT NOT NULL,
+  citations_count INTEGER DEFAULT 1,
+  source_report JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ai_validation JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL',
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.draft_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read access to draft_reports" ON public.draft_reports;
+CREATE POLICY "Allow public read access to draft_reports" ON public.draft_reports
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert/update to draft_reports" ON public.draft_reports;
+CREATE POLICY "Allow public insert/update to draft_reports" ON public.draft_reports
+  FOR ALL USING (true);
+
+-- =========================================================================
+-- 9. Realtime Publication Setup (Idempotent: Safe to re-run anytime)
 -- =========================================================================
 DO $$
 BEGIN
@@ -379,5 +437,19 @@ BEGIN
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'missions'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.missions;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'hazard_zones'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.hazard_zones;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'draft_reports'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.draft_reports;
   END IF;
 END $$;

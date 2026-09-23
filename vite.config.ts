@@ -63,5 +63,10 @@ export default defineConfig({
     port: 5174,
     host: true,
   },
+  envPrefix: ['VITE_', 'GEMINI_', 'GOOGLE_'],
+  define: {
+    'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || ''),
+    'process.env.VITE_GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || ''),
+  },
 });
 
