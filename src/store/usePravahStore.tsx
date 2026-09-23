@@ -232,6 +232,7 @@ interface PravahStoreContextType {
 
   // 12. Gemini AI Intelligence Pipeline
   draftPlots: DraftIncidentPlot[];
+  approvedDraftPlots: DraftIncidentPlot[];
   rejectedReports: RejectedReport[];
   rerouteProposals: RerouteProposal[];
   geminiApiKey: string;
@@ -2845,11 +2846,104 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, []);
 
+const INITIAL_DRAFT_PLOTS: DraftIncidentPlot[] = [
+  {
+    id: 'DRAFT-CITIZEN-001',
+    title: 'NH-29 Pagla Pahar Landslide',
+    corridor: 'NH-29 (Dimapur-Kohima Corridor)',
+    coordinates: [25.765, 93.948],
+    hazardType: 'Landslide',
+    severity: 'TOTAL_BLOCKAGE',
+    estimatedCutoffHours: 6,
+    summary: 'Massive mudflow and boulders blocking both lanes near Pagla Pahar bridge. Convoy passage impassable.',
+    citationsCount: 4,
+    sourceReport: {
+      reporterName: 'Toshi Ao',
+      role: 'Local Citizen',
+      rawText: 'Huge landslide at Pagla Pahar on NH-29 right after the bridge, mud and heavy rocks covering highway completely.',
+      timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
+    },
+    aiValidation: {
+      isGeographicallyConsistent: true,
+      confidenceScore: 9,
+      landmarkVerified: 'Pagla Pahar Bridge Sector (NH-29)',
+      geminiModelUsed: 'gemini-3.5-flash-lite',
+    },
+    status: 'PENDING_APPROVAL',
+    submittedAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'DRAFT-CITIZEN-002',
+    title: 'NH-10 Teesta River Corridor Rockfall',
+    corridor: 'NH-10 (Siliguri-Gangtok Corridor)',
+    coordinates: [27.085, 88.465],
+    hazardType: 'Rockfall',
+    severity: 'SINGLE_LANE_PASSABLE',
+    estimatedCutoffHours: 3,
+    summary: 'Debris from hill cutting near 29th Mile. Single lane passable with high caution for light utility rigs.',
+    citationsCount: 2,
+    sourceReport: {
+      reporterName: 'Sonam Bhutia',
+      role: 'Field Officer (BRO/Police)',
+      rawText: 'Active rockfall near 29th Mile on NH-10. BRO earthmovers deployed, single lane movement operating slowly.',
+      timestamp: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+    },
+    aiValidation: {
+      isGeographicallyConsistent: true,
+      confidenceScore: 8,
+      landmarkVerified: '29th Mile Teesta Gorge Sector (NH-10)',
+      geminiModelUsed: 'gemini-3.5-flash-lite',
+    },
+    status: 'PENDING_APPROVAL',
+    submittedAt: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+  },
+];
+
+const INITIAL_APPROVED_PLOTS: DraftIncidentPlot[] = [
+  {
+    id: 'APR-DISPATCH-001',
+    title: 'NH-306 Kolasib Mountain Slump Verified',
+    corridor: 'NH-306 (Silchar-Aizawl Corridor)',
+    coordinates: [24.225, 92.68],
+    hazardType: 'Road Subsidence',
+    severity: 'TOTAL_BLOCKAGE',
+    estimatedCutoffHours: 8,
+    summary: 'Road subsidence at Km 42 near Kolasib North. Verified by District Magistrate and plotted to active tactical map.',
+    citationsCount: 6,
+    sourceReport: {
+      reporterName: 'Lalrempuia (Mizoram State Transport)',
+      role: 'Field Officer (BRO/Police)',
+      rawText: 'Pavement caved in following torrential rain overnight. Heavy vehicles halted at Vairengte border.',
+      timestamp: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
+    },
+    aiValidation: {
+      isGeographicallyConsistent: true,
+      confidenceScore: 10,
+      landmarkVerified: 'Kolasib North Km 42 (NH-306)',
+      geminiModelUsed: 'gemini-3.5-flash-lite',
+    },
+    status: 'APPROVED',
+    submittedAt: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
+  },
+];
+
+const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
+  {
+    id: 'REJ-001',
+    rawText: 'Aliens spotted landing flying saucer near Kohima bypass road, traffic halted!',
+    reporterName: 'Anonymous Troll',
+    timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
+    rejectionReason: 'Gemini Safety Filter & Fact Verification: Hallucinatory or fictitious emergency claim devoid of regional geographic corroboration.',
+    flaggedAs: 'SPAM_TROLL',
+  },
+];
+
   // =========================================================================
   // 16. Gemini AI Intelligence Pipeline (Native Multimodal & Adaptive Rerouting)
   // =========================================================================
-  const [draftPlots, setDraftPlots] = useState<DraftIncidentPlot[]>([]);
-  const [rejectedReports, setRejectedReports] = useState<RejectedReport[]>([]);
+  const [draftPlots, setDraftPlots] = useState<DraftIncidentPlot[]>(() => INITIAL_DRAFT_PLOTS);
+  const [approvedDraftPlots, setApprovedDraftPlots] = useState<DraftIncidentPlot[]>(() => INITIAL_APPROVED_PLOTS);
+  const [rejectedReports, setRejectedReports] = useState<RejectedReport[]>(() => INITIAL_REJECTED_REPORTS);
 
   const [rerouteProposals, setRerouteProposals] = useState<RerouteProposal[]>([]);
   const [geminiApiKey, setGeminiApiKeyState] = useState<string>(() => getGeminiApiKey());
@@ -2950,7 +3044,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const target = draftPlots.find((d) => d.id === draftId);
       if (!target) return;
 
-      // 1. Remove from pending review queue
+      // 1. Move to approvedDraftPlots & remove from pending review queue
+      const approvedPlot: DraftIncidentPlot = {
+        ...target,
+        status: 'APPROVED',
+      };
+      setApprovedDraftPlots((prev) => [approvedPlot, ...prev.filter((d) => d.id !== draftId)]);
       setDraftPlots((prev) => prev.filter((d) => d.id !== draftId));
       deleteCloudDraftReport(draftId);
 
@@ -3015,9 +3114,23 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   );
 
   const dismissDraftPlot = useCallback((draftId: string) => {
+    const target = draftPlots.find((d) => d.id === draftId);
     setDraftPlots((prev) => prev.filter((d) => d.id !== draftId));
     deleteCloudDraftReport(draftId);
-  }, []);
+    if (target) {
+      setRejectedReports((prev) => [
+        {
+          id: `REJ-${Date.now()}`,
+          rawText: target.sourceReport.rawText,
+          reporterName: target.sourceReport.reporterName,
+          timestamp: new Date().toISOString(),
+          rejectionReason: 'Dismissed by Dispatcher: Insufficient ground verification or non-actionable obstruction.',
+          flaggedAs: 'GEOGRAPHIC_MISMATCH',
+        },
+        ...prev,
+      ]);
+    }
+  }, [draftPlots]);
 
   const approveRerouteProposal = useCallback(
     (proposalId: string) => {
@@ -3197,6 +3310,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     resetDemoSimulation,
     // 12. Gemini AI Intelligence Pipeline
     draftPlots,
+    approvedDraftPlots,
     rejectedReports,
     rerouteProposals,
     geminiApiKey,
