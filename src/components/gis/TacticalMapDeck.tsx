@@ -37,7 +37,8 @@ import { MissionDetailsPanel } from './MissionDetailsPanel';
 import { DisasterPolygonModal, type HazardZoneInfo } from './DisasterPolygonModal';
 import { useTranslation } from '../../data/uiTranslations';
 import { formatTimeAgo } from '../../engine/offlineSync';
-import type { Segment, VehicleProfile, ReliefMission, Incident, SegmentIncident, CommunityWithCalculation } from '../../types';
+import type { Segment, VehicleProfile, ReliefMission, Incident, SegmentIncident, CommunityWithCalculation, DraftIncidentPlot } from '../../types';
+import { ensureLngLat } from '../../engine/gisMath';
 import {
   CloudRain,
   Navigation,
@@ -1487,9 +1488,9 @@ export const TacticalMapDeck: React.FC = () => {
         setSelectedDraftPlotId(draftId);
       }
 
-      if (mapInstanceRef.current && coords && Array.isArray(coords)) {
+      if (mapInstanceRef.current && coords && Array.isArray(coords) && coords.length >= 2) {
         mapInstanceRef.current.flyTo({
-          center: coords,
+          center: [Number(coords[0]), Number(coords[1])] as [number, number],
           zoom,
           speed: 1.4,
           essential: true,
