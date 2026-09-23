@@ -169,57 +169,63 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl text-slate-100 flex flex-col">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto custom-scrollbar bg-surface border border-border rounded-md shadow-2xl text-text-primary flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between p-5 border-b border-slate-800 bg-slate-900/95 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-br from-indigo-500/20 to-emerald-500/20 border border-indigo-500/40 rounded-xl text-indigo-400">
-              <Sparkles className="w-6 h-6 animate-pulse" />
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 border-b border-border bg-surface-subtle">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-500/15 border border-indigo-500/30 rounded-sm text-indigo-400">
+              <Sparkles className="w-5 h-5 animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white tracking-wide">
+                <h2 className="text-sm font-bold text-text-primary">
                   Gemini AI Multimodal Intel Copilot
                 </h2>
-                <span className="px-2 py-0.5 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full">
+                <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-xs">
                   {GEMINI_CONFIG.PRIMARY_MODEL}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-[11px] text-text-secondary mt-0.5">
                 Direct native multimodal ingestion for Voice Notes, Field Photos, PDF Circulars & Radio Dispatch
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={() => setShowKeyModal(true)}
-              className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
+              onClick={(e) => { e.stopPropagation(); setShowKeyModal(true); }}
+              className="p-1.5 text-text-tertiary hover:text-primary hover:bg-surface-subtle rounded-xs transition cursor-pointer"
               title="Configure Gemini API Key"
             >
-              <Key className="w-5 h-5" />
+              <Key className="w-4 h-4" />
             </button>
             <button
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              onClick={(e) => { e.stopPropagation(); onClose(); }}
+              className="p-1.5 text-text-tertiary hover:text-text-primary hover:bg-surface-subtle rounded-xs transition cursor-pointer"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* API Key Modal Banner if not set */}
+        {/* API Key Warning Banner */}
         {!geminiApiKey && (
-          <div className="mx-6 mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between text-xs text-amber-300">
+          <div className="mx-4 mt-3 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-sm flex items-center justify-between text-[11px] text-amber-400">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               <span>
                 Running in <strong>Local Heuristic Fallback</strong> mode. Add a Gemini API key for live deep multimodal reasoning.
               </span>
             </div>
             <button
-              onClick={() => setShowKeyModal(true)}
-              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-medium rounded-lg transition-colors"
+              onClick={(e) => { e.stopPropagation(); setShowKeyModal(true); }}
+              className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold rounded-xs transition text-[10px] cursor-pointer shrink-0"
             >
               Set Key
             </button>
@@ -227,42 +233,42 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
         )}
 
         {/* Content Body */}
-        <div className="p-6 space-y-6">
+        <div className="p-4 space-y-4">
           {/* 1. Multimodal Inputs Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* Audio Voice Recorder */}
-            <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl flex flex-col items-center justify-center text-center space-y-3">
-              <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Mic className="w-4 h-4 text-rose-400" /> Audio Voice Note
+            <div className="p-3 bg-surface-subtle border border-border rounded-sm flex flex-col items-center justify-center text-center space-y-2.5">
+              <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                <Mic className="w-3.5 h-3.5 text-rose-400" /> Audio Voice Note
               </div>
               {isRecording ? (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2 text-rose-400 font-mono font-bold animate-pulse text-sm">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                  <div className="flex items-center justify-center gap-2 text-rose-400 font-mono font-bold animate-pulse text-xs">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
                     Recording... {recordingSeconds}s
                   </div>
                   <button
                     onClick={stopRecording}
-                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors shadow-lg shadow-rose-900/30"
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold rounded-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer"
                   >
-                    <Square className="w-3.5 h-3.5 fill-current" /> Stop Audio
+                    <Square className="w-3 h-3 fill-current" /> Stop Audio
                   </button>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <button
                     onClick={startRecording}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors ${
+                    className={`px-2.5 py-1.5 text-[10px] font-bold rounded-xs flex items-center gap-1.5 transition cursor-pointer ${
                       audioBase64
-                        ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-600/40'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/30'
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25'
+                        : 'bg-primary hover:bg-primary-hover text-white shadow-xs'
                     }`}
                   >
-                    <Mic className="w-3.5 h-3.5" />
+                    <Mic className="w-3 h-3" />
                     {audioBase64 ? 'Re-record Audio' : 'Record Voice Note'}
                   </button>
                   {audioBase64 && (
-                    <span className="text-[11px] text-emerald-400 block font-medium">
+                    <span className="text-[10px] text-emerald-400 block font-medium">
                       ✓ Audio buffer attached ({audioMimeType})
                     </span>
                   )}
@@ -271,30 +277,30 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
             </div>
 
             {/* Field Photo Upload */}
-            <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl flex flex-col items-center justify-center text-center space-y-3">
-              <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <ImageIcon className="w-4 h-4 text-sky-400" /> Disaster Photo
+            <div className="p-3 bg-surface-subtle border border-border rounded-sm flex flex-col items-center justify-center text-center space-y-2.5">
+              <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-sky-400" /> Disaster Photo
               </div>
               {imagePreview ? (
                 <div className="relative group">
                   <img
                     src={imagePreview}
                     alt="Preview"
-                    className="w-20 h-16 object-cover rounded-lg border border-slate-600"
+                    className="w-16 h-14 object-cover rounded-xs border border-border"
                   />
                   <button
                     onClick={() => {
                       setImagePreview(null);
                       setImageBase64(null);
                     }}
-                    className="absolute -top-1.5 -right-1.5 p-0.5 bg-rose-600 text-white rounded-full text-xs hover:bg-rose-500"
+                    className="absolute -top-1.5 -right-1.5 p-0.5 bg-rose-600 text-white rounded-full text-xs hover:bg-rose-500 cursor-pointer"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-2.5 h-2.5" />
                   </button>
                 </div>
               ) : (
-                <label className="cursor-pointer px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors">
-                  <Upload className="w-3.5 h-3.5 text-sky-400" />
+                <label className="cursor-pointer px-2.5 py-1.5 bg-surface hover:bg-surface-subtle border border-border text-text-primary text-[10px] font-bold rounded-xs flex items-center gap-1.5 transition">
+                  <Upload className="w-3 h-3 text-sky-400" />
                   Attach Photo
                   <input
                     type="file"
@@ -307,27 +313,27 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
             </div>
 
             {/* Official PDF Circular Drop */}
-            <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl flex flex-col items-center justify-center text-center space-y-3">
-              <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-amber-400" /> PDF Advisory / Memo
+            <div className="p-3 bg-surface-subtle border border-border rounded-sm flex flex-col items-center justify-center text-center space-y-2.5">
+              <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-amber-400" /> PDF Advisory / Memo
               </div>
               {pdfFileName ? (
-                <div className="flex items-center gap-2 p-1.5 bg-slate-900/80 border border-slate-700 rounded-lg text-xs max-w-full truncate">
-                  <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="truncate text-slate-300">{pdfFileName}</span>
+                <div className="flex items-center gap-2 p-1.5 bg-surface border border-border rounded-xs text-[10px] max-w-full truncate">
+                  <FileText className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span className="truncate text-text-secondary">{pdfFileName}</span>
                   <button
                     onClick={() => {
                       setPdfBase64(null);
                       setPdfFileName(null);
                     }}
-                    className="text-rose-400 hover:text-rose-300"
+                    className="text-rose-400 hover:text-rose-300 cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
                 </div>
               ) : (
-                <label className="cursor-pointer px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors">
-                  <Upload className="w-3.5 h-3.5 text-amber-400" />
+                <label className="cursor-pointer px-2.5 py-1.5 bg-surface hover:bg-surface-subtle border border-border text-text-primary text-[10px] font-bold rounded-xs flex items-center gap-1.5 transition">
+                  <Upload className="w-3 h-3 text-amber-400" />
                   Attach PDF
                   <input
                     type="file"
@@ -341,17 +347,17 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
           </div>
 
           {/* 2. Text / Dispatch Context Area */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-text-secondary uppercase tracking-wider flex items-center justify-between">
               <span>Wireless Dispatch Text / Officer Bulletin Context</span>
-              <span className="text-[11px] text-slate-400 font-normal">Optional or supplementary notes</span>
+              <span className="text-[10px] text-text-tertiary font-normal normal-case">Optional or supplementary notes</span>
             </label>
             <textarea
               rows={3}
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               placeholder="e.g. Wireless report from BRO Project Sewak: Massive mudslide 4km before Zubza on NH-29. Road completely cut off. 3 excavator rigs requested."
-              className="w-full p-3 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+              className="w-full p-2.5 bg-surface border border-border rounded-sm text-xs text-text-primary placeholder-text-tertiary focus:outline-none focus:border-primary transition"
             />
           </div>
 
@@ -359,16 +365,16 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
           <button
             onClick={() => handleAnalyzeIntel()}
             disabled={isProcessing || (!textInput && !audioBase64 && !imageBase64 && !pdfBase64)}
-            className="w-full py-3 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm rounded-xl shadow-lg shadow-indigo-950/40 flex items-center justify-center gap-2 transition-all"
+            className="w-full py-2.5 bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs rounded-sm shadow-xs flex items-center justify-center gap-2 transition btn-press cursor-pointer"
           >
             {isProcessing ? (
               <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 <span>Gemini Multimodal Reasoning in Progress...</span>
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-3.5 h-3.5" />
                 <span>Extract Plottable Ground Truth with Gemini</span>
               </>
             )}
@@ -376,12 +382,12 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
 
           {/* 3. Clarification Dialog (If Gemini returns ambiguity) */}
           {intelResult?.needsClarification && (
-            <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
-              <div className="flex items-start gap-2.5 text-amber-300 text-sm">
-                <HelpCircle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-sm space-y-2.5">
+              <div className="flex items-start gap-2 text-amber-400 text-xs">
+                <HelpCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-semibold text-amber-200">Gemini Clarification Required:</h4>
-                  <p className="mt-1 text-slate-300">{intelResult.clarifyingQuestion}</p>
+                  <h4 className="font-bold text-amber-300">Gemini Clarification Required:</h4>
+                  <p className="mt-0.5 text-text-secondary">{intelResult.clarifyingQuestion}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -390,16 +396,16 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
                   value={clarificationAnswer}
                   onChange={(e) => setClarificationAnswer(e.target.value)}
                   placeholder="Type your response to clarify location or blockage status..."
-                  className="flex-1 p-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                  className="flex-1 p-2 bg-surface border border-border rounded-xs text-xs text-text-primary placeholder-text-tertiary focus:outline-none focus:border-amber-500"
                 />
                 <button
                   onClick={() => {
                     handleAnalyzeIntel(clarificationAnswer);
                     setClarificationAnswer('');
                   }}
-                  className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                  className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold rounded-xs flex items-center gap-1.5 transition cursor-pointer"
                 >
-                  <Send className="w-3.5 h-3.5" /> Send
+                  <Send className="w-3 h-3" /> Send
                 </button>
               </div>
             </div>
@@ -407,69 +413,69 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
 
           {/* 4. Structured Draft Plot Card (When extraction completes) */}
           {intelResult?.draftPlot && !intelResult.needsClarification && (
-            <div className="p-5 bg-slate-800/80 border border-emerald-500/30 rounded-xl space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-700/60 pb-3">
+            <div className="p-4 bg-surface-subtle border border-emerald-500/30 rounded-sm space-y-3">
+              <div className="flex items-center justify-between border-b border-border pb-2.5">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                  <h4 className="font-bold text-white text-sm">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <h4 className="font-bold text-text-primary text-xs">
                     {intelResult.draftPlot.title}
                   </h4>
                 </div>
-                <span className="px-2.5 py-0.5 text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full">
+                <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono bg-rose-500/15 text-rose-400 border border-rose-500/30 rounded-xs">
                   {intelResult.draftPlot.severity}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-700/40">
-                  <span className="text-slate-400 block text-[10px] uppercase">Corridor</span>
-                  <span className="font-medium text-slate-200 flex items-center gap-1 mt-0.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                <div className="p-2 bg-surface rounded-xs border border-border">
+                  <span className="text-[9px] uppercase font-bold text-text-tertiary block">Corridor</span>
+                  <span className="font-medium text-text-primary flex items-center gap-1 mt-0.5">
                     <MapPin className="w-3 h-3 text-indigo-400" />
                     {intelResult.draftPlot.corridor}
                   </span>
                 </div>
-                <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-700/40">
-                  <span className="text-slate-400 block text-[10px] uppercase">Hazard Type</span>
-                  <span className="font-medium text-slate-200 flex items-center gap-1 mt-0.5">
+                <div className="p-2 bg-surface rounded-xs border border-border">
+                  <span className="text-[9px] uppercase font-bold text-text-tertiary block">Hazard Type</span>
+                  <span className="font-medium text-text-primary flex items-center gap-1 mt-0.5">
                     <ShieldAlert className="w-3 h-3 text-amber-400" />
                     {intelResult.draftPlot.hazardType}
                   </span>
                 </div>
-                <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-700/40">
-                  <span className="text-slate-400 block text-[10px] uppercase">Est. Cutoff</span>
-                  <span className="font-medium text-slate-200 flex items-center gap-1 mt-0.5">
+                <div className="p-2 bg-surface rounded-xs border border-border">
+                  <span className="text-[9px] uppercase font-bold text-text-tertiary block">Est. Cutoff</span>
+                  <span className="font-medium text-text-primary flex items-center gap-1 mt-0.5">
                     <Clock className="w-3 h-3 text-sky-400" />
                     {intelResult.draftPlot.estimatedCutoffHours} Hours
                   </span>
                 </div>
-                <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-700/40">
-                  <span className="text-slate-400 block text-[10px] uppercase">GPS Coordinates</span>
-                  <span className="font-mono text-slate-200 block mt-0.5">
+                <div className="p-2 bg-surface rounded-xs border border-border">
+                  <span className="text-[9px] uppercase font-bold text-text-tertiary block">GPS Coordinates</span>
+                  <span className="font-mono text-text-primary block mt-0.5">
                     {intelResult.draftPlot.coordinates[0].toFixed(3)}, {intelResult.draftPlot.coordinates[1].toFixed(3)}
                   </span>
                 </div>
               </div>
 
-              <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-700/40 text-xs text-slate-300">
-                <span className="text-slate-400 font-semibold block text-[11px] mb-1">
+              <div className="p-2.5 bg-surface rounded-xs border border-border text-[11px] text-text-secondary">
+                <span className="text-text-tertiary font-bold block text-[10px] mb-0.5">
                   Gemini Operational Summary:
                 </span>
                 {intelResult.draftPlot.summary}
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <div className="flex items-center justify-end gap-2 pt-1.5">
                 <button
                   onClick={() => handleSaveToQueue(intelResult.draftPlot!)}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition-colors"
+                  className="px-3 py-1.5 bg-surface hover:bg-surface-subtle border border-border text-text-secondary hover:text-text-primary text-[10px] font-bold rounded-xs transition cursor-pointer"
                 >
                   Save to Draft Review Queue
                 </button>
                 <button
                   onClick={() => handleDirectApprove(intelResult.draftPlot!)}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-emerald-900/30 flex items-center gap-1.5 transition-colors"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer btn-press"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <CheckCircle2 className="w-3 h-3" />
                   Approve & Plot to Live Map
                 </button>
               </div>
@@ -480,34 +486,37 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
 
       {/* API Key Modal */}
       {showKeyModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl p-6 space-y-4 text-slate-100">
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-full max-w-md bg-surface border border-border rounded-md p-5 space-y-3 text-text-primary shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-white flex items-center gap-2">
-                <Key className="w-5 h-5 text-indigo-400" />
+              <h3 className="font-bold text-text-primary text-sm flex items-center gap-2">
+                <Key className="w-4 h-4 text-indigo-400" />
                 Configure Gemini API Key
               </h3>
               <button
                 onClick={() => setShowKeyModal(false)}
-                className="text-slate-400 hover:text-white"
+                className="p-1 text-text-tertiary hover:text-text-primary rounded-xs cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Enter your Google AI Studio Gemini API key to activate direct native multimodal processing (`gemini-3.5-flash-lite` / `gemini-3.1-flash-lite`).
+            <p className="text-[11px] text-text-secondary leading-relaxed">
+              Enter your Google AI Studio Gemini API key to activate direct native multimodal processing (<code className="font-mono text-indigo-400">gemini-3.5-flash-lite</code> / <code className="font-mono text-indigo-400">gemini-3.1-flash-lite</code>).
             </p>
             <input
               type="password"
               value={tempApiKey}
               onChange={(e) => setTempApiKey(e.target.value)}
               placeholder="AIzaSy..."
-              className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full p-2 bg-surface-subtle border border-border rounded-xs text-xs text-text-primary placeholder-text-tertiary focus:outline-none focus:border-primary"
             />
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-1">
               <button
                 onClick={() => setShowKeyModal(false)}
-                className="px-3 py-1.5 text-xs text-slate-400 hover:text-white"
+                className="px-2.5 py-1.5 text-[10px] text-text-tertiary hover:text-text-primary font-semibold cursor-pointer"
               >
                 Cancel
               </button>
@@ -516,7 +525,7 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
                   setGeminiApiKey(tempApiKey);
                   setShowKeyModal(false);
                 }}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-colors"
+                className="px-3 py-1.5 bg-primary hover:bg-primary-hover text-white text-[10px] font-bold rounded-xs transition cursor-pointer btn-press"
               >
                 Save Key
               </button>
