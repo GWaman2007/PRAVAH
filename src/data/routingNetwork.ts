@@ -469,3 +469,82 @@ export const NER_SEGMENTS: Segment[] = [
     ],
   },
 ];
+
+/**
+ * Resolves the authoritative segment ID from NER_SEGMENTS for a given corridor text or geographic coordinate.
+ * Guarantees mapping to an active segment ID used by the routing and disruption engines.
+ */
+export function resolveCorridorSegmentId(corridorText?: string, coords?: [number, number]): string {
+  const text = (corridorText || '').toLowerCase();
+
+  // 1. Direct Highway / Corridor Keyword Resolution
+  if (
+    text.includes('nh-29') ||
+    text.includes('dimapur') ||
+    text.includes('kohima') ||
+    text.includes('pagla') ||
+    text.includes('zubza') ||
+    text.includes('chumukedima')
+  ) {
+    return 'SEG-DIM-KOH-MAIN';
+  }
+  if (
+    text.includes('nh-306') ||
+    text.includes('nh-54') ||
+    text.includes('silchar') ||
+    text.includes('kolasib') ||
+    text.includes('vairengte') ||
+    text.includes('bilkhawthlir')
+  ) {
+    return 'SEG-SIL-KOL';
+  }
+  if (text.includes('nh-106') || text.includes('nongpoh') || (text.includes('guwahati') && text.includes('shillong'))) {
+    return 'SEG-GHY-SHL';
+  }
+  if (text.includes('nh-6') && (text.includes('shillong') || text.includes('jowai'))) {
+    return 'SEG-SHL-JOW';
+  }
+  if (text.includes('sonapur') || (text.includes('nh-6') && text.includes('silchar')) || text.includes('badarpur')) {
+    return 'SEG-JOW-SIL';
+  }
+  if (text.includes('nh-27') && text.includes('nagaon') && text.includes('dimapur')) {
+    return 'SEG-NAG-DIM';
+  }
+  if (text.includes('haflong') || text.includes('lumding')) {
+    return 'SEG-NAG-HAF';
+  }
+  if (text.includes('jatinga')) {
+    return 'SEG-HAF-SIL';
+  }
+  if (text.includes('imphal') || text.includes('senapati') || text.includes('mao')) {
+    return 'SEG-KOH-IMP';
+  }
+  if (text.includes('aizawl') || text.includes('kawnpui')) {
+    return 'SEG-KOL-AIZ';
+  }
+  if (text.includes('wokha') || text.includes('niuland')) {
+    return 'SEG-DIM-WOK';
+  }
+
+  // 2. Geographic Proximity Fallback against all NER_SEGMENTS polyline points
+  if (coords && Array.isArray(coords) && Number.isFinite(coords[0]) && Number.isFinite(coords[1])) {
+    const lat = coords[0] < 45 ? coords[0] : coords[1];
+    const lng = coords[1] > 60 ? coords[1] : coords[0];
+    let closestId = 'SEG-DIM-KOH-MAIN';
+    let minD = Infinity;
+
+    for (const seg of NER_SEGMENTS) {
+      if (!seg.coordinates) continue;
+      for (const pt of seg.coordinates) {
+        const d = (pt[0] - lat) ** 2 + (pt[1] - lng) ** 2;
+        if (d < minD) {
+          minD = d;
+          closestId = seg.id;
+        }
+      }
+    }
+    return closestId;
+  }
+
+  return 'SEG-DIM-KOH-MAIN';
+}

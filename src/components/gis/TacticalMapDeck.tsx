@@ -122,6 +122,8 @@ export const TacticalMapDeck: React.FC = () => {
     dismissDraftPlot,
     submitCitizenReport,
     submitOfficerReport,
+    pendingMapFocus,
+    setPendingMapFocus,
   } = usePravahStore();
 
   const { t } = useTranslation();
@@ -141,6 +143,8 @@ export const TacticalMapDeck: React.FC = () => {
   selectedCommunityIdRef.current = selectedCommunityId;
   const hazardPolygonsRef = useRef(hazardPolygons);
   hazardPolygonsRef.current = hazardPolygons;
+  const pendingMapFocusRef = useRef(pendingMapFocus);
+  pendingMapFocusRef.current = pendingMapFocus;
 
   // Zoom map to community polygon or coordinates
   const zoomToCommunity = useCallback((communityId: string, mapInstance?: maplibregl.Map | null) => {
@@ -178,9 +182,19 @@ export const TacticalMapDeck: React.FC = () => {
   const [selectedDraftPlotId, setSelectedDraftPlotId] = useState<string | null>(null);
   const [reviewSubTab, setReviewSubTab] = useState<'PENDING' | 'APPROVED' | 'REJECTED'>('PENDING');
 
+  const allDraftPlots = useMemo(() => {
+    const map = new Map<string, DraftIncidentPlot>();
+    approvedDraftPlots.forEach((p) => map.set(p.id, p));
+    draftPlots.forEach((p) => map.set(p.id, p));
+    return Array.from(map.values());
+  }, [draftPlots, approvedDraftPlots]);
+
+  const allDraftPlotsRef = useRef(allDraftPlots);
+  allDraftPlotsRef.current = allDraftPlots;
+
   const selectedDraftPlot = useMemo(() => {
-    return draftPlots.find((d) => d.id === selectedDraftPlotId) || approvedDraftPlots.find((d) => d.id === selectedDraftPlotId) || null;
-  }, [draftPlots, approvedDraftPlots, selectedDraftPlotId]);
+    return allDraftPlots.find((d) => d.id === selectedDraftPlotId) || null;
+  }, [allDraftPlots, selectedDraftPlotId]);
 
   // Direct Gemini Field Intel Ingest state
   const [intelInputText, setIntelInputText] = useState('');
@@ -854,50 +868,58 @@ export const TacticalMapDeck: React.FC = () => {
       // -------------------------------------------------------------
       map.addSource('draft-incident-plots', {
         type: 'geojson',
-        data: createDraftIncidentPlotsGeoJSON(draftPlots),
+        data: createDraftIncidentPlotsGeoJSON(allDraftPlotsRef.current),
       });
 
+      // Animated high-intensity red blinking outer halo
       map.addLayer({
         id: 'draft-incident-plots-halo',
         type: 'circle',
         source: 'draft-incident-plots',
         paint: {
-          'circle-radius': 15,
-          'circle-color': '#A855F7',
-          'circle-opacity': 0.35,
-          'circle-stroke-width': 1.5,
-          'circle-stroke-color': '#C084FC',
+          'circle-radius': 16,
+          'circle-color': '#EF4444',
+          'circle-opacity': 0.65,
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#DC2626',
         },
       });
 
+      // Solid central red incident core dot with white border
       map.addLayer({
         id: 'draft-incident-plots-core',
         type: 'circle',
         source: 'draft-incident-plots',
         paint: {
-          'circle-radius': 6.0,
-          'circle-color': '#9333EA',
-          'circle-stroke-width': 2,
+          'circle-radius': 7.5,
+          'circle-color': '#DC2626',
+          'circle-stroke-width': 2.5,
           'circle-stroke-color': '#FFFFFF',
         },
       });
 
+      // Incident title badge
       map.addLayer({
         id: 'draft-incident-plots-label',
         type: 'symbol',
         source: 'draft-incident-plots',
         layout: {
-          'text-field': ['concat', '✨ Draft: ', ['get', 'title']],
+          'text-field': [
+            'case',
+            ['==', ['get', 'status'], 'APPROVED'],
+            ['concat', '🚨 APPROVED INCIDENT: ', ['get', 'title']],
+            ['concat', '⚠️ AI DRAFT: ', ['get', 'title']],
+          ],
           'text-font': ['Noto Sans Bold'],
-          'text-size': 9.0,
-          'text-offset': [0, 1.3],
+          'text-size': 9.5,
+          'text-offset': [0, 1.4],
           'text-anchor': 'top',
-          'text-allow-overlap': false,
+          'text-allow-overlap': true,
         },
         paint: {
-          'text-color': '#E9D5FF',
-          'text-halo-color': '#3B0764',
-          'text-halo-width': 2.0,
+          'text-color': '#FCA5A5',
+          'text-halo-color': '#450A0A',
+          'text-halo-width': 2.5,
         },
       });
 
@@ -936,7 +958,7 @@ export const TacticalMapDeck: React.FC = () => {
         },
       });
 
-      // Expected pin pulse ring
+      // Expected pin pulse ring (Red Blinker)
       map.addLayer({
         id: 'selected-draft-pin-pulse',
         type: 'circle',
@@ -944,10 +966,10 @@ export const TacticalMapDeck: React.FC = () => {
         filter: ['==', '$type', 'Point'],
         paint: {
           'circle-radius': 24,
-          'circle-color': '#F59E0B',
-          'circle-opacity': 0.45,
-          'circle-stroke-width': 2.5,
-          'circle-stroke-color': '#EF4444',
+          'circle-color': '#EF4444',
+          'circle-opacity': 0.65,
+          'circle-stroke-width': 3,
+          'circle-stroke-color': '#DC2626',
         },
       });
 
@@ -1212,6 +1234,16 @@ export const TacticalMapDeck: React.FC = () => {
         setHoveredBreakdown(null);
       });
 
+      // Click draft incident plot marker -> Select and open in Review Queue
+      map.on('click', 'draft-incident-plots-core', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties?.id) {
+          setSelectedDraftPlotId(feat.properties.id);
+          setSidebarTab('REPORTS_REVIEW');
+          setReviewSubTab('PENDING');
+        }
+      });
+
       // Click ground intel incident -> Detailed incident modal
       const handleGroundIntelClick = (e: any) => {
         const feat = e.features?.[0];
@@ -1381,6 +1413,8 @@ export const TacticalMapDeck: React.FC = () => {
         'road-breakdowns-pulse',
         'ground-intel-incidents-core',
         'ground-intel-incidents-pulse',
+        'draft-incident-plots-core',
+        'draft-incident-plots-halo',
         'mission-endpoints-symbol',
         'mission-endpoints-core',
         'communities-circle',
@@ -1396,8 +1430,18 @@ export const TacticalMapDeck: React.FC = () => {
         });
       });
 
-      // If a community was selected prior to map load, zoom into it immediately
-      if (selectedCommunityIdRef.current) {
+      // If a pending map focus was queued (e.g. newly approved AI plot), focus on it immediately
+      if (pendingMapFocusRef.current?.coords) {
+        map.flyTo({
+          center: pendingMapFocusRef.current.coords,
+          zoom: pendingMapFocusRef.current.zoom || 13,
+          speed: 1.4,
+          essential: true,
+        });
+        if (pendingMapFocusRef.current.draftId) {
+          setSelectedDraftPlotId(pendingMapFocusRef.current.draftId);
+        }
+      } else if (selectedCommunityIdRef.current) {
         zoomToCommunity(selectedCommunityIdRef.current, map);
       }
     });
@@ -1418,32 +1462,86 @@ export const TacticalMapDeck: React.FC = () => {
     zoomToCommunity(selectedCommunityId);
   }, [selectedCommunityId, zoomToCommunity]);
 
+  // Reactively fly to pendingMapFocus whenever it changes (e.g. AI approved plot)
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isMapLoadedRef.current || !pendingMapFocus?.coords) return;
+    mapInstanceRef.current.flyTo({
+      center: pendingMapFocus.coords,
+      zoom: pendingMapFocus.zoom || 13,
+      speed: 1.4,
+      essential: true,
+    });
+    if (pendingMapFocus.draftId) {
+      setSelectedDraftPlotId(pendingMapFocus.draftId);
+    }
+  }, [pendingMapFocus]);
+
+  // Global map fly-to navigation listener
+  useEffect(() => {
+    const handleFlyTo = (e: any) => {
+      const coords = e.detail?.coords;
+      const zoom = e.detail?.zoom || 13;
+      const draftId = e.detail?.draftId;
+
+      if (draftId) {
+        setSelectedDraftPlotId(draftId);
+      }
+
+      if (mapInstanceRef.current && coords && Array.isArray(coords)) {
+        mapInstanceRef.current.flyTo({
+          center: coords,
+          zoom,
+          speed: 1.4,
+          essential: true,
+        });
+      }
+    };
+    window.addEventListener('pravah:fly-to', handleFlyTo);
+    return () => window.removeEventListener('pravah:fly-to', handleFlyTo);
+  }, []);
+
   // 3. Smooth Animated Pulses for SOS & Road Breakdowns
   useEffect(() => {
     let start = performance.now();
 
     const animatePulse = (time: number) => {
       const elapsed = (time - start) / 1000;
-      const radiusOffset = (Math.sin(elapsed * 2.5) + 1) * 3; // 0 to 6 (subtle)
-      const opacity = 0.38 - (Math.sin(elapsed * 2.5) + 1) * 0.12; // 0.14 to 0.38
+      // High-intensity emergency blinker (oscillating at ~2.5 Hz)
+      const pulse = (Math.sin(elapsed * 5.0) + 1) / 2;
+      const blinkerRadius = 14 + pulse * 18; // expands from 14px to 32px
+      const blinkerOpacity = Math.max(0.18, 0.90 - pulse * 0.70); // fades from 0.90 to 0.20
+      const blinkerStroke = 2.0 + pulse * 1.5;
 
       const map = mapInstanceRef.current;
       if (map && isMapLoadedRef.current) {
         if (map.getLayer('vehicle-sos-pulse')) {
-          map.setPaintProperty('vehicle-sos-pulse', 'circle-radius', 18 + radiusOffset * 1.5);
-          map.setPaintProperty('vehicle-sos-pulse', 'circle-opacity', Math.max(0.15, opacity));
+          map.setPaintProperty('vehicle-sos-pulse', 'circle-radius', 18 + pulse * 14);
+          map.setPaintProperty('vehicle-sos-pulse', 'circle-opacity', blinkerOpacity);
         }
         if (map.getLayer('road-breakdowns-pulse')) {
-          map.setPaintProperty('road-breakdowns-pulse', 'circle-radius', 11 + radiusOffset * 0.6);
-          map.setPaintProperty('road-breakdowns-pulse', 'circle-opacity', Math.max(0.12, opacity));
+          map.setPaintProperty('road-breakdowns-pulse', 'circle-radius', 12 + pulse * 10);
+          map.setPaintProperty('road-breakdowns-pulse', 'circle-opacity', blinkerOpacity);
         }
         if (map.getLayer('ground-intel-incidents-pulse')) {
-          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-radius', 13 + radiusOffset * 1.5);
-          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-opacity', Math.max(0.12, opacity));
+          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-radius', blinkerRadius);
+          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-opacity', blinkerOpacity);
+          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-stroke-width', blinkerStroke);
+          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-color', '#EF4444');
+          map.setPaintProperty('ground-intel-incidents-pulse', 'circle-stroke-color', '#DC2626');
         }
         if (map.getLayer('draft-incident-plots-halo')) {
-          map.setPaintProperty('draft-incident-plots-halo', 'circle-radius', 14 + radiusOffset * 1.5);
-          map.setPaintProperty('draft-incident-plots-halo', 'circle-opacity', Math.max(0.12, opacity));
+          map.setPaintProperty('draft-incident-plots-halo', 'circle-radius', blinkerRadius);
+          map.setPaintProperty('draft-incident-plots-halo', 'circle-opacity', blinkerOpacity);
+          map.setPaintProperty('draft-incident-plots-halo', 'circle-stroke-width', blinkerStroke);
+          map.setPaintProperty('draft-incident-plots-halo', 'circle-color', '#EF4444');
+          map.setPaintProperty('draft-incident-plots-halo', 'circle-stroke-color', '#DC2626');
+        }
+        if (map.getLayer('selected-draft-pin-pulse')) {
+          map.setPaintProperty('selected-draft-pin-pulse', 'circle-radius', 18 + pulse * 22);
+          map.setPaintProperty('selected-draft-pin-pulse', 'circle-opacity', blinkerOpacity);
+          map.setPaintProperty('selected-draft-pin-pulse', 'circle-stroke-width', blinkerStroke + 1);
+          map.setPaintProperty('selected-draft-pin-pulse', 'circle-color', '#EF4444');
+          map.setPaintProperty('selected-draft-pin-pulse', 'circle-stroke-color', '#DC2626');
         }
       }
 
@@ -1502,7 +1600,7 @@ export const TacticalMapDeck: React.FC = () => {
     }
     const draftPlotsSource = map.getSource('draft-incident-plots') as maplibregl.GeoJSONSource;
     if (draftPlotsSource) {
-      draftPlotsSource.setData(createDraftIncidentPlotsGeoJSON(draftPlots));
+      draftPlotsSource.setData(createDraftIncidentPlotsGeoJSON(allDraftPlots));
     }
     const selectedDraftRouteSource = map.getSource('selected-draft-route') as maplibregl.GeoJSONSource;
     if (selectedDraftRouteSource) {
@@ -1536,6 +1634,8 @@ export const TacticalMapDeck: React.FC = () => {
     incidents,
     hazardPolygons,
     draftPlots,
+    approvedDraftPlots,
+    allDraftPlots,
     selectedDraftPlot,
   ]);
 
@@ -2436,9 +2536,9 @@ export const TacticalMapDeck: React.FC = () => {
                           setSelectedDraftPlotId(draft.id);
                           if (mapInstanceRef.current) {
                             mapInstanceRef.current.flyTo({
-                              center: [draft.coordinates[1], draft.coordinates[0]],
-                              zoom: 12,
-                              speed: 1.2,
+                              center: ensureLngLat(draft.coordinates),
+                              zoom: 13.5,
+                              speed: 1.4,
                               essential: true,
                             });
                           }
@@ -2565,9 +2665,9 @@ export const TacticalMapDeck: React.FC = () => {
                           setSelectedDraftPlotId(draft.id);
                           if (mapInstanceRef.current) {
                             mapInstanceRef.current.flyTo({
-                              center: [draft.coordinates[1], draft.coordinates[0]],
-                              zoom: 12,
-                              speed: 1.2,
+                              center: ensureLngLat(draft.coordinates),
+                              zoom: 13.5,
+                              speed: 1.4,
                               essential: true,
                             });
                           }

@@ -7,7 +7,7 @@
 
 import { GEMINI_CONFIG, getGeminiApiKey } from './geminiConfig';
 import { NER_NODES, NER_SEGMENTS } from '../data/routingNetwork';
-import { haversineDistanceKm } from './gisMath';
+import { haversineDistanceKm, ensureLatLng } from './gisMath';
 import type {
   DraftIncidentPlot,
   RejectedReport,
@@ -477,10 +477,11 @@ Respond in JSON with format:
         };
       }
 
-      const coords: [number, number] =
+      const rawCoords: [number, number] =
         Array.isArray(parsed.coordinates) && parsed.coordinates.length === 2
-          ? parsed.coordinates
+          ? [Number(parsed.coordinates[0]), Number(parsed.coordinates[1])]
           : [25.75, 93.95];
+      const coords = ensureLatLng(rawCoords);
 
       const draft: DraftIncidentPlot = {
         id: `MULTIMODAL-${Date.now()}`,

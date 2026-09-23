@@ -620,7 +620,6 @@ export async function fetchCloudDraftReports(): Promise<DraftIncidentPlot[] | nu
     const { data, error } = await supabase
       .from('draft_reports')
       .select('*')
-      .eq('status', 'PENDING_APPROVAL')
       .order('submitted_at', { ascending: false });
     if (error) {
       console.warn('⚠️ [Supabase] Failed to fetch draft reports:', error.message);

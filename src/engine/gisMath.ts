@@ -242,3 +242,41 @@ export function interpolateAlongPolyline(
     segmentIndex: segIndex,
   };
 }
+
+/**
+ * Normalizes coordinates to ensure RFC 7946 GeoJSON [lng, lat] for MapLibre / DeckGL.
+ * In Northeast India, Longitude is ~88..98 (> 60), Latitude is ~20..30 (< 45).
+ */
+export function ensureLngLat(coords: [number, number]): [number, number] {
+  if (!coords || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) {
+    return [93.95, 25.75];
+  }
+  const c0 = Number(coords[0]);
+  const c1 = Number(coords[1]);
+  if (c0 > 60 && c1 < 45) {
+    return [c0, c1];
+  }
+  if (c1 > 60 && c0 < 45) {
+    return [c1, c0];
+  }
+  return [Math.max(c0, c1), Math.min(c0, c1)];
+}
+
+/**
+ * Normalizes coordinates to ensure standard PRAVAH [lat, lng].
+ * In Northeast India, Latitude is ~20..30 (< 45), Longitude is ~88..98 (> 60).
+ */
+export function ensureLatLng(coords: [number, number]): [number, number] {
+  if (!coords || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) {
+    return [25.75, 93.95];
+  }
+  const c0 = Number(coords[0]);
+  const c1 = Number(coords[1]);
+  if (c0 < 45 && c1 > 60) {
+    return [c0, c1];
+  }
+  if (c1 < 45 && c0 > 60) {
+    return [c1, c0];
+  }
+  return [Math.min(c0, c1), Math.max(c0, c1)];
+}

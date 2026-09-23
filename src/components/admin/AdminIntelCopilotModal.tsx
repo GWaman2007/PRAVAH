@@ -27,7 +27,7 @@ interface AdminIntelCopilotModalProps {
 }
 
 export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ isOpen, onClose }) => {
-  const { geminiApiKey, setGeminiApiKey, approveDraftPlot, submitCitizenReport } = usePravahStore();
+  const { geminiApiKey, setGeminiApiKey, approveDraftPlot, addDraftPlot, focusMapOnCoords } = usePravahStore();
 
   const [textInput, setTextInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -145,6 +145,12 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
         pdfMimeType,
       });
       setIntelResult(res);
+
+      // Immediately plot extracted draft to the map as a preview pin and focus map
+      if (res.draftPlot && !res.needsClarification) {
+        addDraftPlot(res.draftPlot);
+        focusMapOnCoords(res.draftPlot.coordinates, 12, res.draftPlot.id);
+      }
     } catch (err) {
       console.error('Error processing multimodal intel:', err);
     } finally {
@@ -154,17 +160,15 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
 
   // Direct Approve & Plot to Map
   const handleDirectApprove = async (draft: DraftIncidentPlot) => {
-    await approveDraftPlot(draft.id);
+    await approveDraftPlot(draft);
+    focusMapOnCoords(draft.coordinates, 13.5, draft.id);
     onClose();
   };
 
   // Save to Draft Queue
   const handleSaveToQueue = async (draft: DraftIncidentPlot) => {
-    await submitCitizenReport({
-      rawText: draft.summary,
-      coords: draft.coordinates,
-      reporterName: draft.sourceReport.reporterName,
-    });
+    addDraftPlot(draft);
+    focusMapOnCoords(draft.coordinates, 12.5, draft.id);
     onClose();
   };
 

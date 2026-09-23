@@ -38,7 +38,8 @@ import {
   hasGeminiApiKey,
   GEMINI_CONFIG,
 } from '../engine/geminiConfig';
-import { NER_SEGMENTS, NER_NODES, VEHICLE_PROFILES } from '../data/routingNetwork';
+import { NER_SEGMENTS, NER_NODES, VEHICLE_PROFILES, resolveCorridorSegmentId } from '../data/routingNetwork';
+import { ensureLngLat, ensureLatLng } from '../engine/gisMath';
 import { INITIAL_COMMUNITIES } from '../data/communitiesData';
 import { INITIAL_VEHICLES, FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES } from '../data/fleetData';
 import { INITIAL_DISTRICTS_HEALTH, INITIAL_BRO_BOTTLENECKS } from '../data/executiveData';
@@ -251,12 +252,16 @@ interface PravahStoreContextType {
     nearestLandmark?: string;
     photoUrl?: string;
   }) => Promise<DraftIncidentPlot>;
-  approveDraftPlot: (draftId: string) => Promise<void>;
+  addDraftPlot: (plot: DraftIncidentPlot) => void;
+  approveDraftPlot: (draftOrId: string | DraftIncidentPlot) => Promise<void>;
   dismissDraftPlot: (draftId: string) => void;
   approveRerouteProposal: (proposalId: string) => void;
   dismissRerouteProposal: (proposalId: string) => void;
   updateMissionWithAi: (missionId: string, prompt: string) => Promise<string>;
   updateRerouteWithAi: (proposalId: string, prompt: string) => Promise<string>;
+  pendingMapFocus: { coords: [number, number]; zoom?: number; draftId?: string; timestamp?: number } | null;
+  setPendingMapFocus: (focus: { coords: [number, number]; zoom?: number; draftId?: string; timestamp?: number } | null) => void;
+  focusMapOnCoords: (coords: [number, number], zoom?: number, draftId?: string) => void;
 }
 
 const PravahStoreContext = createContext<PravahStoreContextType | null>(null);
@@ -358,6 +363,40 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
   }, [activeView]);
+
+  // Map Camera Focus Queue (for automatic zoom & centering when plots/incidents are approved)
+  const [pendingMapFocus, setPendingMapFocus] = useState<{
+    coords: [number, number];
+    zoom?: number;
+    draftId?: string;
+    timestamp?: number;
+  } | null>(null);
+
+  const focusMapOnCoords = useCallback(
+    (coords: [number, number], zoom = 13.5, draftId?: string) => {
+      const lngLat = ensureLngLat(coords);
+      const focusPayload = { coords: lngLat, zoom, draftId, timestamp: Date.now() };
+      setPendingMapFocus(focusPayload);
+      setActiveView('GIS_COMMAND');
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('pravah:fly-to', {
+            detail: focusPayload,
+          })
+        );
+        // Double dispatch after short delay to ensure MapLibre container resize/mount has completed
+        setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent('pravah:fly-to', {
+              detail: focusPayload,
+            })
+          );
+        }, 120);
+      }
+    },
+    [setActiveView]
+  );
 
   // 3. Theme
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -2535,11 +2574,23 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     fetchCloudDraftReports().then((cloudDrafts) => {
       if (cloudDrafts && cloudDrafts.length > 0) {
-        setDraftPlots((prev) => {
-          const ids = new Set(prev.map((d) => d.id));
-          const additions = cloudDrafts.filter((cd) => !ids.has(cd.id));
-          return [...prev, ...additions];
-        });
+        const pending = cloudDrafts.filter((cd) => cd.status !== 'APPROVED');
+        const approved = cloudDrafts.filter((cd) => cd.status === 'APPROVED');
+
+        if (pending.length > 0) {
+          setDraftPlots((prev) => {
+            const ids = new Set(prev.map((d) => d.id));
+            const additions = pending.filter((cd) => !ids.has(cd.id));
+            return [...prev, ...additions];
+          });
+        }
+        if (approved.length > 0) {
+          setApprovedDraftPlots((prev) => {
+            const ids = new Set(prev.map((d) => d.id));
+            const additions = approved.filter((cd) => !ids.has(cd.id));
+            return [...prev, ...additions];
+          });
+        }
       }
     });
 
@@ -2554,12 +2605,18 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         .on('broadcast', { event: 'DRAFT_REPORT_UPDATED' }, ({ payload }: any) => {
           if (payload?.draft) {
             const d = payload.draft;
-            setDraftPlots((prev) => [d, ...prev.filter((item) => item.id !== d.id)]);
+            if (d.status === 'APPROVED') {
+              setDraftPlots((prev) => prev.filter((item) => item.id !== d.id));
+              setApprovedDraftPlots((prev) => [d, ...prev.filter((item) => item.id !== d.id)]);
+            } else {
+              setDraftPlots((prev) => [d, ...prev.filter((item) => item.id !== d.id)]);
+            }
           }
         })
         .on('broadcast', { event: 'DRAFT_REPORT_DELETED' }, ({ payload }: any) => {
           if (payload?.draftId) {
             setDraftPlots((prev) => prev.filter((item) => item.id !== payload.draftId));
+            setApprovedDraftPlots((prev) => prev.filter((item) => item.id !== payload.draftId));
           }
         })
         .on('broadcast', { event: 'INCIDENT_ADDED' }, ({ payload }: any) => {
@@ -3039,9 +3096,17 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
     [addIncident]
   );
 
+  const addDraftPlot = useCallback((plot: DraftIncidentPlot) => {
+    setDraftPlots((prev) => [plot, ...prev.filter((d) => d.id !== plot.id)]);
+    upsertCloudDraftReport(plot);
+  }, []);
+
   const approveDraftPlot = useCallback(
-    async (draftId: string) => {
-      const target = draftPlots.find((d) => d.id === draftId);
+    async (draftOrId: string | DraftIncidentPlot) => {
+      const target =
+        typeof draftOrId === 'string'
+          ? draftPlots.find((d) => d.id === draftOrId) || approvedDraftPlots.find((d) => d.id === draftOrId)
+          : draftOrId;
       if (!target) return;
 
       // 1. Move to approvedDraftPlots & remove from pending review queue
@@ -3049,40 +3114,94 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
         ...target,
         status: 'APPROVED',
       };
-      setApprovedDraftPlots((prev) => [approvedPlot, ...prev.filter((d) => d.id !== draftId)]);
-      setDraftPlots((prev) => prev.filter((d) => d.id !== draftId));
-      deleteCloudDraftReport(draftId);
+      setApprovedDraftPlots((prev) => [approvedPlot, ...prev.filter((d) => d.id !== target.id)]);
+      setDraftPlots((prev) => prev.filter((d) => d.id !== target.id));
 
-      // 2. Add to live incidents & road disruptions
-      addIncident({
+      // Persist approved draft state to Supabase Cloud
+      upsertCloudDraftReport(approvedPlot);
+
+      // 2. Add to live incidents & road disruptions with guaranteed valid coordinates
+      const [lat, lng] = ensureLatLng(target.coordinates);
+      const corridorId = resolveCorridorSegmentId(target.corridor, [lat, lng]);
+
+      const newIncident: Incident = {
+        id: `inc-${Date.now()}`,
         title: target.title,
         corridorFlair: target.corridor,
         incidentType: target.hazardType as any,
         severity: target.severity === 'TOTAL_BLOCKAGE' ? 'Total Blockage' : 'Single Lane Passable',
         location: {
-          lat: target.coordinates[0],
-          lng: target.coordinates[1],
+          lat,
+          lng,
           placeName: target.corridor,
-          corridorId: target.corridor.includes('NH-29')
-            ? 'SEG-DIM-KOH'
-            : target.corridor.includes('NH-306')
-            ? 'SEG-SIL-KOL'
-            : 'SEG-TEESTA-GANG',
+          corridorId,
         },
         author: {
-          name: target.sourceReport.reporterName,
-          role: target.sourceReport.role,
+          name: target.sourceReport?.reporterName || 'Gemini AI Copilot',
+          role: 'Field Officer (BRO/Police)',
         },
-        timestamp: target.sourceReport.timestamp,
-        mediaUrl: target.sourceReport.photoUrl || '',
+        timestamp: target.sourceReport?.timestamp || new Date().toISOString(),
+        mediaUrl: target.sourceReport?.photoUrl || '',
+        votes: { upvotes: 1, downvotes: 0, userVote: 'up' },
+        confidenceScore: 15,
+        hasOfficerVerified: true,
+        sync_status: isOnline ? 'SYNCED' : 'PENDING',
+        updates: [],
+      };
+
+      // 3. Add to local and persisted incidents feed
+      setIncidents((prev) => {
+        const next = [newIncident, ...prev.filter((i) => i.id !== newIncident.id)];
+        persistIncidents(next);
+        return next;
       });
 
-      // 3. Adaptive Rerouting Cascade: Check ongoing convoys traversing affected corridor
+      // 4. Update road disruptions so routing engines immediately calculate detours
+      const disruptionData: SegmentIncident = {
+        status: target.severity === 'TOTAL_BLOCKAGE' ? ('TOTAL_BLOCKAGE' as const) : ('SINGLE_LANE_PASSABLE' as const),
+        cause: target.hazardType,
+        description: target.title,
+        reportedBy: `${newIncident.author.name} (${newIncident.author.role})`,
+        location: { lat, lng },
+        incidentId: newIncident.id,
+        severity: target.severity,
+      };
+
+      setActiveDisruptions((prev) => {
+        const next = {
+          ...prev,
+          [corridorId]: disruptionData,
+        };
+        if (corridorId === 'SEG-DIM-KOH-MAIN') {
+          next['SEG-DIM-KOH'] = disruptionData;
+        }
+        persistDisruptions(next);
+        return next;
+      });
+
+      // 5. Save incident and disruption directly to Supabase
+      if (isSupabaseConfigured) {
+        upsertCloudIncident(newIncident);
+        upsertCloudDisruption(corridorId, disruptionData);
+        if (corridorId === 'SEG-DIM-KOH-MAIN') {
+          upsertCloudDisruption('SEG-DIM-KOH', disruptionData);
+        }
+      }
+
+      // 6. Broadcast event over socket if connected
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('SUBMIT_INCIDENT', newIncident);
+      }
+
+      // 7. Redirect and focus map directly onto the approved incident coordinates
+      focusMapOnCoords([lat, lng], 13.5, target.id);
+
+      // 8. Adaptive Rerouting Cascade: Check ongoing convoys traversing affected corridor
       const affectedMissions = activeMissions.filter(
         (m) =>
           isMissionOngoing(m) &&
-          ((target.corridor.includes('NH-29') && (m.assignedRouteId?.includes('NL') || m.id.includes('NL'))) ||
-            (target.corridor.includes('NH-306') && (m.assignedRouteId?.includes('MZ') || m.id.includes('MZ'))) ||
+          ((corridorId.includes('DIM-KOH') && (m.assignedRouteId?.includes('NL') || m.id.includes('NL'))) ||
+            (corridorId.includes('SIL-KOL') && (m.assignedRouteId?.includes('MZ') || m.id.includes('MZ'))) ||
             (target.corridor.includes('NH-10') && (m.assignedRouteId?.includes('SK') || m.id.includes('SK'))))
       );
 
@@ -3094,12 +3213,12 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
           vehicleId: vehicle.vehicle_id,
           vehicleName: vehicle.vehicle_name,
           driverName: vehicle.driver_name,
-          blockedSegmentId: target.corridor.includes('NH-29') ? 'SEG-DIM-KOH' : 'SEG-SIL-KOL',
+          blockedSegmentId: corridorId,
           blockedSegmentName: target.corridor,
           incidentSummary: target.summary,
           currentRouteId: mission.assignedRouteId || 'ROUTE-DEFAULT',
-          proposedRouteId: target.corridor.includes('NH-29') ? 'ROUTE-NL-02' : 'ROUTE-SUG-02',
-          proposedRouteName: target.corridor.includes('NH-29')
+          proposedRouteId: corridorId.includes('DIM-KOH') ? 'ROUTE-NL-02' : 'ROUTE-SUG-02',
+          proposedRouteName: corridorId.includes('DIM-KOH')
             ? 'Mokokchung / Wokha Mountain Bypass'
             : 'NH-108 Tripura / Mamit High-Clearance Bypass',
           distanceDeltaKm: 34.5,
@@ -3110,7 +3229,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
         setRerouteProposals((prev) => [newProposal, ...prev.filter((p) => p.missionId !== mission.id)]);
       }
     },
-    [draftPlots, activeMissions, vehicles, addIncident]
+    [draftPlots, approvedDraftPlots, activeMissions, vehicles, isOnline, isSupabaseConfigured, focusMapOnCoords]
   );
 
   const dismissDraftPlot = useCallback((draftId: string) => {
@@ -3317,12 +3436,16 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
     setGeminiApiKey,
     submitCitizenReport,
     submitOfficerReport,
+    addDraftPlot,
     approveDraftPlot,
     dismissDraftPlot,
     approveRerouteProposal,
     dismissRerouteProposal,
     updateMissionWithAi,
     updateRerouteWithAi,
+    pendingMapFocus,
+    setPendingMapFocus,
+    focusMapOnCoords,
   };
 
   return <PravahStoreContext.Provider value={value}>{children}</PravahStoreContext.Provider>;

@@ -13,24 +13,21 @@ import type {
 import { NER_NODES, NER_SEGMENTS } from '../data/routingNetwork';
 import { DESTINATION_PIN_DATA_URL } from '../assets/destinationPinBase64';
 import { FLEET_ROUTES } from '../data/fleetData';
-import { haversineDistanceKm } from './gisMath';
+import { haversineDistanceKm, ensureLngLat } from './gisMath';
 import { COMMUNITY_ROUTING_PROFILES } from './missionEngine';
 
 /**
- * Transforms [lat, lng] to RFC 7946 GeoJSON [lng, lat]
+ * Transforms coordinates to RFC 7946 GeoJSON [lng, lat]
  */
 export function toGeoJSONCoords(coord: [number, number]): [number, number] {
-  if (!coord || !Number.isFinite(coord[0]) || !Number.isFinite(coord[1])) {
-    return [92.7789, 24.8333];
-  }
-  return [coord[1], coord[0]];
+  return ensureLngLat(coord);
 }
 
 export function toGeoJSONLineString(coords: [number, number][]): [number, number][] {
   if (!coords || !Array.isArray(coords)) return [];
   return coords
     .filter((c) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))
-    .map((c) => [c[1], c[0]]);
+    .map((c) => ensureLngLat(c));
 }
 
 /**
@@ -887,8 +884,9 @@ export function createDraftIncidentPlotsGeoJSON(
       geminiModel: d.aiValidation.geminiModelUsed,
       confidenceScore: d.aiValidation.confidenceScore,
       summary: d.summary,
-      isDraft: true,
-      color: '#A855F7', // Indigo / Purple for AI Proposed Draft Pin
+      isDraft: d.status !== 'APPROVED',
+      status: d.status || 'PENDING_APPROVAL',
+      color: '#DC2626', // Emergency RED for AI Incident Blinker
     },
   }));
 
@@ -985,7 +983,7 @@ export function createSelectedDraftRouteGeoJSON(
       citationsCount: draftPlot.citationsCount,
       confidenceScore: draftPlot.aiValidation.confidenceScore,
       isExpectedPin: true,
-      color: '#F59E0B',
+      color: '#DC2626', // Emergency RED indicator
     },
   });
 
