@@ -7,11 +7,11 @@
 
 export const GEMINI_CONFIG = {
   // Official active Google Gemini models with primary -> secondary fallback
-  PRIMARY_MODEL: 'gemini-1.5-flash',
-  FAST_MODEL: 'gemini-2.0-flash',
-  LITE_MODEL: 'gemini-1.5-flash-8b',
+  PRIMARY_MODEL: 'gemini-3.5-flash-lite',
+  FAST_MODEL: 'gemini-3.5-flash-lite',
+  LITE_MODEL: 'gemini-3.5-flash-lite',
+  FLASH_MODEL: 'gemini-3.5-flash',
   PRO_MODEL: 'gemini-1.5-pro',
-  EXPERIMENTAL_MODEL: 'gemini-2.5-flash',
   LEGACY_FALLBACK: 'gemini-1.5-flash',
   API_BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/models',
   STORAGE_KEY_API_KEY: 'pravah_gemini_api_key',

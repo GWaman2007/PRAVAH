@@ -44,10 +44,13 @@ export async function executeGeminiPrompt(
   const apiKey = getGeminiApiKey();
 
   const modelsToTry = [
-    GEMINI_CONFIG.PRIMARY_MODEL, // gemini-1.5-flash
-    GEMINI_CONFIG.FAST_MODEL,    // gemini-2.0-flash
-    GEMINI_CONFIG.LITE_MODEL,    // gemini-1.5-flash-8b
-    GEMINI_CONFIG.PRO_MODEL,     // gemini-1.5-pro
+    GEMINI_CONFIG.PRIMARY_MODEL, // gemini-3.5-flash-lite
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-pro',
   ];
 
   if (!apiKey) {
@@ -114,6 +117,25 @@ export async function executeGeminiPrompt(
     text: '',
     modelUsed: 'local-heuristic-simulator',
   };
+}
+
+/**
+ * Fetches the live list of models provided by the Google Gemini API for the current API key
+ */
+export async function fetchLiveGeminiModelsList(): Promise<any[]> {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) return [];
+  try {
+    const res = await fetch(`${GEMINI_CONFIG.API_BASE_URL}?key=${apiKey}`);
+    if (res.ok) {
+      const data = await res.json();
+      console.log('📋 [GeminiService] Retrieved models list from Google API:', data.models);
+      return data.models || [];
+    }
+  } catch (err) {
+    console.warn('[GeminiService] Failed to query models list from Google API:', err);
+  }
+  return [];
 }
 
 /**
