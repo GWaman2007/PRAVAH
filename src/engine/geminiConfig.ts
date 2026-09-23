@@ -111,7 +111,7 @@ export function getGeminiApiKey(): string {
 
   // 5. Node / Server / Process environment variable
   try {
-    const envProcess = typeof process !== 'undefined' ? process.env : undefined;
+    const envProcess = typeof (globalThis as any).process !== 'undefined' ? (globalThis as any).process?.env : undefined;
     if (envProcess) {
       const pKey =
         envProcess.VITE_GEMINI_API_KEY ||
