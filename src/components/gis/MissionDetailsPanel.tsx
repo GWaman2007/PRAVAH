@@ -313,16 +313,17 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                         : 'bg-surface border-emerald-900/40 hover:border-emerald-700/60'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
+                    {/* Header: Dot + Status + Source + Check */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-1.5 flex-wrap">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span
-                            className={`w-2.5 h-2.5 rounded-full shadow-xs ${
+                            className={`w-2.5 h-2.5 rounded-full shrink-0 shadow-xs ${
                               isRank1 ? 'bg-blue-500' : 'bg-emerald-500'
                             }`}
                           />
                           <span
-                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase border ${
+                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase border shrink-0 ${
                               isRank1
                                 ? 'bg-blue-500/15 text-blue-400 border-blue-500/35'
                                 : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/35'
@@ -330,78 +331,86 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                           >
                             {isRank1 ? 'BEST FEASIBLE PATH' : 'LEAST FEASIBLE PATH'}
                           </span>
-                          <span className="font-bold text-xs text-text-primary">
-                            {opt.routeName || `Route ${opt.routeNumber}`}
-                          </span>
-                          {opt.routeSource === 'BHUVAN' && (
-                            <span className="text-[9px] font-mono px-1 py-0.2 rounded uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                              ISRO BHUVAN
-                            </span>
-                          )}
                           {opt.routeSource === 'GRAPH' && (
-                            <span className="text-[9px] font-mono px-1 py-0.2 rounded uppercase bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 shrink-0">
                               YEN'S K-SHORTEST
                             </span>
                           )}
+                          {opt.routeSource === 'BHUVAN' && (
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+                              ISRO BHUVAN
+                            </span>
+                          )}
                           {opt.routeSource === 'OSRM' && (
-                            <span className="text-[9px] font-mono px-1 py-0.2 rounded uppercase bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shrink-0">
                               OSRM ENGINE
                             </span>
                           )}
                         </div>
-                        {opt.routeName && (
-                          <span className="text-[9.5px] text-text-secondary pl-3.5 font-medium truncate block">
-                            Route {opt.routeNumber} &bull; {opt.routeName}
+                        {isSelected && (
+                          <span className={`text-[10px] font-bold flex items-center gap-1 shrink-0 ${isRank1 ? 'text-blue-400' : 'text-emerald-400'}`}>
+                            <Check className="w-3.5 h-3.5" /> Selected
                           </span>
                         )}
                       </div>
-                      {isSelected && (
-                        <span className={`text-[10px] font-bold flex items-center gap-1 shrink-0 ml-1 ${isRank1 ? 'text-blue-400' : 'text-emerald-400'}`}>
-                          <Check className="w-3 h-3" /> Selected
+
+                      {/* Clean Route Title: breaks words naturally, never cuts off */}
+                      <div>
+                        <h4 className="font-extrabold text-xs text-text-primary leading-snug break-words">
+                          {opt.routeName || `Route ${opt.routeNumber}`}
+                        </h4>
+                        <span className="text-[10px] text-text-tertiary font-mono">
+                          Candidate Corridor {opt.routeNumber}
                         </span>
-                      )}
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-1 text-[10px] font-mono text-text-secondary">
-                      <div>Predicted ETA: <strong className="text-text-primary">{formatMinutes(opt.predictedEtaMinutes)}</strong></div>
-                      {!isSuggested ? (
-                        <div>
-                          Disruption Risk (Model A):{' '}
-                          <strong
-                            className={
-                              isOptHigh
-                                ? 'text-red-400 font-bold'
-                                : isOptElevated
-                                ? 'text-orange-400 font-bold'
-                                : 'text-emerald-400 font-bold'
-                            }
-                          >
-                            {(optProb * 100).toFixed(0)}%
-                          </strong>
-                        </div>
-                      ) : (
-                        <div>
-                          OSRM Baseline: <strong className="text-text-primary">{formatMinutes(opt.osrmDurationMinutes)}</strong>
-                        </div>
-                      )}
-                      <div>Delay Factor: <strong className="text-amber-400">{opt.predictedDelayFactor.toFixed(2)}×</strong></div>
-                      <div>Distance: <strong className="text-text-primary">{opt.distanceKm} km</strong></div>
+                    {/* Structured Key-Value Metric Cards (No awkward line wrap of 2h 50m) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-2 rounded-xs bg-surface-subtle border border-border/60 text-xs font-mono">
+                      <div className="min-w-0">
+                        <span className="text-[9px] text-text-tertiary uppercase block">Predicted ETA</span>
+                        <span className="font-extrabold text-text-primary text-[11px] whitespace-nowrap block">
+                          {formatMinutes(opt.predictedEtaMinutes)}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[9px] text-text-tertiary uppercase block">OSRM Baseline</span>
+                        <span className="font-semibold text-text-secondary text-[11px] whitespace-nowrap block">
+                          {formatMinutes(opt.osrmDurationMinutes)}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[9px] text-text-tertiary uppercase block">Delay Factor</span>
+                        <span className="font-bold text-amber-400 text-[11px] whitespace-nowrap block">
+                          {opt.predictedDelayFactor.toFixed(2)}×
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[9px] text-text-tertiary uppercase block">Distance</span>
+                        <span className="font-bold text-text-primary text-[11px] whitespace-nowrap block">
+                          {opt.distanceKm} km
+                        </span>
+                      </div>
                     </div>
 
                     {/* 5 Equal-Distance Spatial Model-A Segments (Sections 2, 3, 4, 10) */}
                     {opt.spatialSegments && opt.spatialSegments.length === 5 && (
-                      <div className="mt-2.5 pt-2 border-t border-border/60 space-y-1.5">
+                      <div className="mt-2 pt-2 border-t border-border/60 space-y-1.5">
                         <div className="flex items-center justify-between text-[10px]">
-                          <span className="font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1">
-                            <Layers className="w-3 h-3 text-primary" />
+                          <span className="font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
                             <span>5 Spatial Model-A Slices</span>
-                            <span className="text-[9px] font-mono text-text-tertiary">({(opt.distanceKm / 5).toFixed(1)} km ea)</span>
+                            <span className="text-[9px] font-mono text-text-tertiary lowercase">({(opt.distanceKm / 5).toFixed(1)} km ea)</span>
                           </span>
-                          <span className="text-[9.5px] font-mono text-text-tertiary">
+                          <span className="text-[9.5px] font-mono shrink-0">
                             {opt.highRiskSegmentCount ? (
-                              <span className="text-amber-400 font-bold">{opt.highRiskSegmentCount} Elevated</span>
+                              <span className="px-1.5 py-0.5 rounded font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                {opt.highRiskSegmentCount} Elevated
+                              </span>
                             ) : (
-                              <span className="text-emerald-400 font-bold">5/5 Clear</span>
+                              <span className="px-1.5 py-0.5 rounded font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                5/5 Clear
+                              </span>
                             )}
                           </span>
                         </div>
@@ -495,13 +504,15 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                             handleExecuteReroute(opt);
                           }}
                           disabled={isRerouting}
-                          className={`w-full mt-2 py-1.5 px-2.5 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 text-[11px] shadow-xs btn-press cursor-pointer transition-all disabled:opacity-50 ${
-                            isRank1 ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                          className={`w-full mt-2.5 py-2 px-3 text-white font-bold rounded-sm flex items-center justify-center gap-2 text-xs shadow-sm btn-press cursor-pointer transition-all disabled:opacity-50 ${
+                            isRank1
+                              ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/30'
+                              : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/30'
                           }`}
                         >
                           {isRerouting ? (
                             <>
-                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                               <span>Rerouting Convoy to Corridor...</span>
                             </>
                           ) : (
@@ -512,7 +523,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                           )}
                         </button>
                       ) : (
-                        <div className="w-full mt-2 py-1.5 px-2 bg-blue-500/20 text-blue-300 font-bold rounded-xs flex items-center justify-center gap-1.5 text-[11px] border border-blue-500/40">
+                        <div className="w-full mt-2.5 py-2 px-3 bg-blue-500/15 text-blue-300 font-bold rounded-sm flex items-center justify-center gap-2 text-xs border border-blue-500/30">
                           <Check className="w-3.5 h-3.5 text-blue-400" />
                           <span>Active Main Route (Rerouted & Royal Blue)</span>
                         </div>

@@ -3956,7 +3956,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       {/* ========================================================================= */}
       {/* 1. Right-side Mission Details Panel - Suppressed in compact mobile mode / Field Officer mode */}
       {isMissionDetailsOpen && activeMission && !compactMobileOnly && activeRole !== 'FIELD_OFFICER' && (
-        <div className="w-full lg:w-80 h-auto lg:h-full z-20 shrink-0">
+        <div className="w-full lg:w-[420px] xl:w-[460px] h-auto lg:h-full z-20 shrink-0">
           <MissionDetailsPanel
             mission={activeMission}
             vehicle={vehicles.find((v) => v.mission_id === activeMission.id || (activeMission.assignedVehicleId && v.vehicle_id === activeMission.assignedVehicleId)) || null}
