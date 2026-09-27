@@ -133,9 +133,9 @@ export const DriverNavigateScreen: React.FC<DriverNavigateScreenProps> = ({
     if (!map) return;
     map.flyTo({
       center: toGeoJSONCoords(driverCoords),
-      zoom: 12.5,
+      zoom: 15.8,
       essential: true,
-      pitch: 35,
+      pitch: 0,
     });
     setFollowDriver(true);
   }, [driverCoords]);
@@ -170,11 +170,11 @@ export const DriverNavigateScreen: React.FC<DriverNavigateScreenProps> = ({
         container: mapContainerRef.current,
         style: 'https://tiles.openfreemap.org/styles/liberty',
         center: toGeoJSONCoords(driverCoords),
-        zoom: 12,
+        zoom: 15.8,
         minZoom: 6,
         maxZoom: 18,
         attributionControl: false,
-        pitch: 35,
+        pitch: 0,
       });
     } catch (err) {
       console.warn('[DriverNav] MapLibre init error:', err);

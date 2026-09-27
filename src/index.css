@@ -355,15 +355,16 @@
 
 .fo-desktop-top-bar {
   width: 100%;
-  max-width: 900px;
+  max-width: 980px;
   margin-bottom: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 14px;
   padding: 8px 16px;
-  background: rgba(18, 26, 41, 0.85);
+  background: rgba(18, 26, 41, 0.92);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }

@@ -159,41 +159,41 @@ export const FieldOfficerMobileShell: React.FC = () => {
       <div className="fo-mobile-shell-outer">
         {/* Desktop Top Simulator Navigation Bar (Requirement 3: Role Switcher Remains Accessible) */}
         <div className="fo-desktop-top-bar">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 shrink-0 min-w-0">
             <img
               src={theme === 'dark' ? '/assets/pravah-logo-white.png' : '/assets/pravah-logo.png'}
               alt="PRAVAH"
-              className="h-6 w-6 object-contain"
+              className="h-6 w-6 object-contain shrink-0"
             />
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-black tracking-tight text-white">PRAVAH</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-sm font-black tracking-tight text-white whitespace-nowrap">PRAVAH</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 whitespace-nowrap">
                 FIELD OFFICER SIMULATOR
               </span>
             </div>
-            <span className="text-xs text-slate-400 hidden md:inline ml-2 pl-2 border-l border-slate-700">
+            <span className="text-xs text-slate-400 hidden xl:inline ml-2 pl-2 border-l border-slate-700 whitespace-nowrap">
               Assigned: <strong className="text-slate-200">{community?.name}</strong> ({currentOfficer?.badgeId || 'MZ-04'})
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 shrink-0">
             {/* Offline simulation toggle */}
             <button
               onClick={toggleSimulatedOffline}
               title="Click to toggle simulated mountain dead-zone offline mode"
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 effectiveOnline
                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
                   : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
               }`}
             >
-              {effectiveOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-              <span>{effectiveOnline ? 'Online (Live)' : `Offline Dead-Zone (${offlineQueueCount} queued)`}</span>
+              {effectiveOnline ? <Wifi className="w-3.5 h-3.5 text-emerald-400" /> : <WifiOff className="w-3.5 h-3.5 text-amber-400" />}
+              <span>{effectiveOnline ? 'Online (Live)' : `Offline (${offlineQueueCount} queued)`}</span>
             </button>
 
             {/* Desktop Role Selector Dropdown (Requirement 3) */}
-            <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 px-2 py-1 rounded-lg">
-              <span className="text-[10px] text-slate-400 font-semibold uppercase">Role:</span>
+            <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 px-2 py-1 rounded-lg shrink-0">
+              <span className="text-[10px] text-slate-400 font-semibold uppercase whitespace-nowrap">Role:</span>
               <select
                 aria-label="Desktop Role Switcher"
                 value={`FIELD_OFFICER:${activeOfficerId}`}
@@ -207,7 +207,7 @@ export const FieldOfficerMobileShell: React.FC = () => {
                     switchRole(val as UserRole);
                   }
                 }}
-                className="bg-transparent text-xs font-semibold text-white border-none focus:ring-0 cursor-pointer pr-4"
+                className="bg-transparent text-xs font-semibold text-white border-none focus:ring-0 cursor-pointer pr-4 max-w-[170px] truncate"
               >
                 <option value="SUPER_ADMIN" className="bg-[#1a2332] text-white">
                   Admin (Shri A. Sarma, IAS)
