@@ -341,13 +341,18 @@ CREATE TABLE IF NOT EXISTS public.missions (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Idempotent migrations for missions reroute support
+-- Idempotent migrations for missions reroute and field requisition support
 ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS is_rerouted BOOLEAN DEFAULT false;
 ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS reroute_reason TEXT;
 ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS rerouted_at TIMESTAMPTZ;
 ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS rerouted_from_coords JSONB;
 ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS corridor_segment_ids JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS previous_route_geometry JSONB;
+ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'ENGINE_GENERATED';
+ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS is_field_requisition BOOLEAN DEFAULT false;
+ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS requested_by_officer TEXT;
+ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS resource_request_id TEXT;
+ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS notes TEXT;
 
 ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
 
@@ -775,6 +780,68 @@ CREATE POLICY "Allow public insert to model_a_predictions" ON public.model_a_pre
   FOR INSERT WITH CHECK (true);
 
 -- =========================================================================
+-- 13B. Resource Requests Table (Ground Official Requisitions & Indents)
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.resource_requests (
+  id TEXT PRIMARY KEY,
+  community_id TEXT NOT NULL,
+  community_name TEXT NOT NULL,
+  officer_id TEXT NOT NULL,
+  officer_name TEXT NOT NULL,
+  officer_role TEXT,
+  resource_type TEXT NOT NULL,
+  quantity NUMERIC NOT NULL DEFAULT 1,
+  unit TEXT NOT NULL DEFAULT 'units',
+  urgency TEXT NOT NULL DEFAULT 'CRITICAL',
+  reason TEXT,
+  notes TEXT,
+  evidence_photo TEXT,
+  status TEXT NOT NULL DEFAULT 'PROCESSING',
+  suggested_mission_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_resource_requests_community ON public.resource_requests (community_id);
+CREATE INDEX IF NOT EXISTS idx_resource_requests_officer ON public.resource_requests (officer_id);
+CREATE INDEX IF NOT EXISTS idx_resource_requests_created ON public.resource_requests (created_at DESC);
+
+ALTER TABLE public.resource_requests ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read access to resource_requests" ON public.resource_requests;
+CREATE POLICY "Allow public read access to resource_requests" ON public.resource_requests
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert/update to resource_requests" ON public.resource_requests;
+CREATE POLICY "Allow public insert/update to resource_requests" ON public.resource_requests
+  FOR ALL USING (true);
+
+-- Seed Baseline Ground Requisitions
+INSERT INTO public.resource_requests (id, community_id, community_name, officer_id, officer_name, officer_role, resource_type, quantity, unit, urgency, reason, notes, status, suggested_mission_id, created_at)
+VALUES
+(
+  'REQ-BRO-011',
+  'AS-HAF-008',
+  'Haflong Mountain Township',
+  'fo-saikia',
+  'Maj. S. Saikia',
+  'Field Officer (BRO Setuk)',
+  'Heavy Shoring Rig & Diesel',
+  1200,
+  'litres & kit',
+  'CRITICAL',
+  'Bridge subsidence on NH-27 Barail Range isolating water pump station',
+  'Ground Requisition: Emergency River Shoring Rig & Diesel needed at Haflong Mountain Township following bridge subsidence on NH-27.',
+  'RECOMMENDED',
+  'DEMO-MSN-AS-HAF-SUGG',
+  NOW() - INTERVAL '2 hours'
+)
+ON CONFLICT (id) DO UPDATE SET
+  status = EXCLUDED.status,
+  notes = EXCLUDED.notes,
+  updated_at = NOW();
+
+-- =========================================================================
 -- 14. Realtime Publication Setup (Idempotent & Safe against execution order)
 -- =========================================================================
 DO $$
@@ -852,6 +919,13 @@ BEGIN
     SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'model_a_predictions'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.model_a_predictions;
+  END IF;
+
+  -- resource_requests
+  IF to_regclass('public.resource_requests') IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'resource_requests'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.resource_requests;
   END IF;
 END $$;
 
