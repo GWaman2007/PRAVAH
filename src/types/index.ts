@@ -20,6 +20,78 @@ export interface UserContext {
   activeMissionId?: string;       // e.g. 'MZ-04'
   assignedVehicleId?: string;     // e.g. 'Medic-01'
   jurisdictionState?: string;     // e.g. 'All NER' or 'Mizoram'
+  communityId?: string;           // e.g. 'MZ-KOL-004'
+  communityName?: string;         // e.g. 'Kolasib East Community'
+  officerId?: string;             // e.g. 'hmar'
+  avatar?: string;
+}
+
+export interface FieldOfficerProfile {
+  id: string;
+  name: string;
+  rank?: string;
+  role?: string;
+  department: string;
+  badgeId: string;
+  communityId: string;
+  communityName: string;
+  activeMissionId?: string;
+  assignedVehicleId?: string;
+  jurisdictionState: string;
+  sector?: string;
+  avatar?: string;
+  phone?: string;
+}
+
+export type ResourceUrgency =
+  | 'Low'
+  | 'Medium'
+  | 'High'
+  | 'Critical'
+  | 'LOW'
+  | 'MEDIUM'
+  | 'HIGH'
+  | 'CRITICAL';
+
+export interface ResourceRequirementItem {
+  id?: string;
+  communityId?: string;
+  resourceType: string;
+  unit: string;
+  required: number;
+  available: number;
+  shortage: number;
+  requiredQuantity?: number;
+  availableQuantity?: number;
+  shortageQuantity?: number;
+  urgency?: string;
+  lastUpdated: string;
+}
+
+export interface ResourceRequest {
+  id: string;
+  communityId: string;
+  communityName: string;
+  officerId: string;
+  officerName: string;
+  officerRole?: string;
+  resourceType: string;
+  quantity: number;
+  unit: string;
+  urgency: ResourceUrgency;
+  reason: string;
+  notes?: string;
+  evidencePhoto?: string;
+  status:
+    | 'PENDING_ENGINE'
+    | 'RECOMMENDED'
+    | 'APPROVED'
+    | 'IN_TRANSIT'
+    | 'FULFILLED'
+    | 'PROCESSING'
+    | 'SUBMITTED';
+  suggestedMissionId?: string;
+  createdAt: string;
 }
 
 export type ActiveView =
@@ -32,7 +104,11 @@ export type ActiveView =
   | 'BROADCAST_CENTER'
   | 'MOBILE_COCKPIT'
   | 'HUBS_RESOURCES'
-  | 'MODEL_A_LAB';
+  | 'MODEL_A_LAB'
+  | 'FO_COMMUNITY'
+  | 'FO_MISSIONS'
+  | 'FO_REQUIREMENTS'
+  | 'FO_MY_REPORTS';
 
 // ==========================================
 // 2. Hazard GIS & Weather Layers (Module 1)
@@ -547,6 +623,10 @@ export interface ReliefMission {
   reroutedAt?: string;
   reroutedFromCoords?: [number, number];
   previousRouteGeometry?: [number, number][];
+  source?: 'ENGINE_GENERATED' | 'MANUAL';
+  notes?: string;
+  deadline?: string;
+  resourceRequestId?: string;
 }
 
 export interface MissionRouteOption {

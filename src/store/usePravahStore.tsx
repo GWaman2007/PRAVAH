@@ -31,6 +31,9 @@ import type {
   CandidateHubEvaluation,
   ModelAPrediction,
   MissionRouteOption,
+  ResourceRequirementItem,
+  ResourceRequest,
+  FieldOfficerProfile,
 } from '../types';
 import {
   generateAndRankMissionRoutes,
@@ -61,7 +64,15 @@ import { SUPPORTED_LANGUAGES, PRESET_TRANSLATIONS, PHONETIC_READINGS, generateBr
 import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngine';
 import { calculateCompositePriority } from '../engine/priorityEngine';
 import { stepVehicleSimulation, initRouteDistances } from '../engine/telemetryEngine';
-import { generateDynamicMissionSuggestions, isMissionOngoing, COMMUNITY_ROUTING_PROFILES, generateDeterministicDemoMissions } from '../engine/missionEngine';
+import {
+  generateDynamicMissionSuggestions,
+  isMissionOngoing,
+  COMMUNITY_ROUTING_PROFILES,
+  generateDeterministicDemoMissions,
+  FIELD_OFFICERS,
+  generateMissionFromResourceRequest,
+  createManualReliefMission,
+} from '../engine/missionEngine';
 import { getAuthoritativeHazardPolygons } from '../engine/realtimePolygonService';
 import {
   getOfflineQueue,
@@ -277,8 +288,26 @@ interface PravahStoreContextType {
   // Interactive Walkthrough Demo
   runDemoStep1: () => void;
   runDemoStep2: () => void;
-  runDemoStep3: () => void;
   resetDemoSimulation: () => void;
+  resetCommunityScenario: (communityId?: string) => void;
+
+  // Field Officer Multi-Context & Requisitions
+  activeOfficerId: string;
+  setActiveOfficerId: (officerId: string) => void;
+  resourceRequirements: Record<string, ResourceRequirementItem[]>;
+  resourceRequests: ResourceRequest[];
+  submitResourceRequest: (reqData: Omit<ResourceRequest, 'id' | 'createdAt' | 'status'>) => void;
+  createManualMission: (params: {
+    missionName: string;
+    originWarehouseId: string;
+    destinationCommunityId: string;
+    cargoAllocations: { item: string; quantity: number; unit: string }[];
+    urgency: 'P1_CRITICAL' | 'P2_ELEVATED';
+    assignedVehicleId?: string;
+    assignedDriver?: string;
+    notes?: string;
+    deadline?: string;
+  }) => void;
 
   // 12. Gemini AI Intelligence Pipeline
   draftPlots: DraftIncidentPlot[];
@@ -343,6 +372,48 @@ interface PravahStoreContextType {
   getModelAPrediction: (segmentId: string) => ModelAPrediction | undefined;
 }
 
+const INITIAL_RESOURCE_REQUIREMENTS: Record<string, ResourceRequirementItem[]> = {
+  COMMUNITY_KOLASIB: [
+    { resourceType: 'Food Kits', required: 100, available: 20, shortage: 80, unit: 'kits', urgency: 'CRITICAL', lastUpdated: '12 min ago' },
+    { resourceType: 'Water Units', required: 50, available: 10, shortage: 40, unit: 'cans (20L)', urgency: 'CRITICAL', lastUpdated: '15 min ago' },
+    { resourceType: 'Medical Kits', required: 20, available: 3, shortage: 17, unit: 'trauma kits', urgency: 'CRITICAL', lastUpdated: '10 min ago' },
+    { resourceType: 'Tarpaulins / Shelter Kits', required: 40, available: 15, shortage: 25, unit: 'sets', urgency: 'HIGH', lastUpdated: '35 min ago' },
+  ],
+  COMMUNITY_KOHIMA: [
+    { resourceType: 'Food Kits', required: 80, available: 35, shortage: 45, unit: 'kits', urgency: 'HIGH', lastUpdated: '1 hr ago' },
+    { resourceType: 'Water Units', required: 60, available: 25, shortage: 35, unit: 'cans (20L)', urgency: 'HIGH', lastUpdated: '1 hr ago' },
+    { resourceType: 'Medical Kits', required: 15, available: 5, shortage: 10, unit: 'trauma kits', urgency: 'MEDIUM', lastUpdated: '2 hr ago' },
+  ],
+  COMMUNITY_TEESTA: [
+    { resourceType: 'Food Kits', required: 120, available: 20, shortage: 100, unit: 'kits', urgency: 'CRITICAL', lastUpdated: '25 min ago' },
+    { resourceType: 'Water Units', required: 80, available: 15, shortage: 65, unit: 'cans (20L)', urgency: 'CRITICAL', lastUpdated: '20 min ago' },
+    { resourceType: 'Medical Kits', required: 30, available: 4, shortage: 26, unit: 'trauma kits', urgency: 'CRITICAL', lastUpdated: '18 min ago' },
+  ],
+  COMMUNITY_HAFLONG: [
+    { resourceType: 'Food Kits', required: 50, available: 20, shortage: 30, unit: 'kits', urgency: 'MEDIUM', lastUpdated: '3 hr ago' },
+    { resourceType: 'Water Units', required: 40, available: 15, shortage: 25, unit: 'cans (20L)', urgency: 'MEDIUM', lastUpdated: '3 hr ago' },
+    { resourceType: 'Medical Kits', required: 10, available: 2, shortage: 8, unit: 'trauma kits', urgency: 'HIGH', lastUpdated: '3 hr ago' },
+  ],
+};
+
+const INITIAL_RESOURCE_REQUESTS: ResourceRequest[] = [
+  {
+    id: 'REQ-MZ-001',
+    officerId: 'fo-hmar',
+    officerName: 'Inspector L. Hmar',
+    communityId: 'COMMUNITY_KOLASIB',
+    communityName: 'Kolasib HQ (MZ-04)',
+    resourceType: 'Medical Kits',
+    quantity: 17,
+    unit: 'trauma kits',
+    urgency: 'CRITICAL',
+    reason: 'Medical stock depleted due to flood inundation and trauma cases.',
+    notes: 'Access via Silchar-Kolasib road restricted. Urgent resupply needed.',
+    status: 'PROCESSING',
+    createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+  },
+];
+
 const PravahStoreContext = createContext<PravahStoreContextType | null>(null);
 
 export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -357,6 +428,50 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   useEffect(() => {
     activeRoleRef.current = activeRole;
   }, [activeRole]);
+
+  // Field Officer multi-selection state
+  const [activeOfficerId, setActiveOfficerId] = useState<string>('fo-hmar');
+
+  // Field Officer Multi-Context & Requisitions State
+  const [resourceRequirements, setResourceRequirements] = useState<Record<string, ResourceRequirementItem[]>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('pravah_resource_requirements');
+        if (stored) return JSON.parse(stored);
+      } catch (e) {
+        console.warn('Failed to load stored resource requirements', e);
+      }
+    }
+    return INITIAL_RESOURCE_REQUIREMENTS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('pravah_resource_requirements', JSON.stringify(resourceRequirements));
+    } catch (e) {
+      // ignore
+    }
+  }, [resourceRequirements]);
+
+  const [resourceRequests, setResourceRequests] = useState<ResourceRequest[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('pravah_resource_requests');
+        if (stored) return JSON.parse(stored);
+      } catch (e) {
+        console.warn('Failed to load stored resource requests', e);
+      }
+    }
+    return INITIAL_RESOURCE_REQUESTS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('pravah_resource_requests', JSON.stringify(resourceRequests));
+    } catch (e) {
+      // ignore
+    }
+  }, [resourceRequests]);
 
   const userContext: UserContext = useMemo(() => {
     switch (activeRole) {
@@ -376,16 +491,22 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           badgeId: 'NER-DISP-044',
           jurisdictionState: 'Interstate Corridors',
         };
-      case 'FIELD_OFFICER':
+      case 'FIELD_OFFICER': {
+        const officer = FIELD_OFFICERS.find((o) => o.id === activeOfficerId) || FIELD_OFFICERS[0];
         return {
           role: 'FIELD_OFFICER',
-          name: 'Inspector L. Hmar',
-          department: 'Mizoram Police / Quick Response Team',
-          badgeId: 'MZ-QRT-019',
-          activeMissionId: 'MZ-04',
-          assignedVehicleId: 'Medic-01',
-          jurisdictionState: 'Mizoram (Kolasib Sector)',
+          name: officer.name,
+          department: officer.department,
+          badgeId: officer.badgeId,
+          activeMissionId: officer.activeMissionId,
+          assignedVehicleId: officer.assignedVehicleId,
+          jurisdictionState: officer.jurisdictionState,
+          communityId: officer.communityId,
+          communityName: officer.communityName,
+          officerId: officer.id,
+          avatar: officer.avatar,
         };
+      }
       case 'DRIVER':
         return {
           role: 'DRIVER',
@@ -397,14 +518,16 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           jurisdictionState: 'Corridor NH-306',
         };
     }
-  }, [activeRole]);
+  }, [activeRole, activeOfficerId]);
 
   const switchRole = useCallback((role: UserRole) => {
     setActiveRole(role);
-    if (role === 'DRIVER' || role === 'FIELD_OFFICER') {
+    if (role === 'DRIVER') {
       setActiveView('MOBILE_COCKPIT');
+    } else if (role === 'FIELD_OFFICER') {
+      setActiveView('FO_COMMUNITY');
     } else {
-      setActiveView((current) => (current === 'MOBILE_COCKPIT' ? 'GIS_COMMAND' : current));
+      setActiveView((current) => (current === 'MOBILE_COCKPIT' || current.startsWith('FO_') ? 'GIS_COMMAND' : current));
     }
   }, []);
 
@@ -423,6 +546,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           'BROADCAST_CENTER',
           'MOBILE_COCKPIT',
           'HUBS_RESOURCES',
+          'FO_COMMUNITY',
+          'FO_MISSIONS',
+          'FO_REQUIREMENTS',
+          'FO_MY_REPORTS',
         ];
         if (stored && validViews.includes(stored as ActiveView)) {
           return stored as ActiveView;
@@ -4466,6 +4593,200 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
       };
     }, [rainfallMmHr, fetchModelAPredictionsForSegments]);
 
+    // Field Officer Multi-Context, Requisitions & Manual Missions
+    const submitResourceRequest = useCallback(
+      (reqData: Omit<ResourceRequest, 'id' | 'createdAt' | 'status'>) => {
+        const newReqId = `REQ-${Date.now().toString(36).toUpperCase()}`;
+        const newRequest: ResourceRequest = {
+          ...reqData,
+          id: newReqId,
+          status: 'PROCESSING',
+          createdAt: new Date().toISOString(),
+        };
+
+        setResourceRequests((prev) => [newRequest, ...prev]);
+
+        // Update community resource requirements
+        setResourceRequirements((prev) => {
+          const commReqs = prev[reqData.communityId] ? [...prev[reqData.communityId]] : [];
+          const idx = commReqs.findIndex(
+            (r) => r.resourceType.toLowerCase() === reqData.resourceType.toLowerCase()
+          );
+          if (idx >= 0) {
+            commReqs[idx] = {
+              ...commReqs[idx],
+              required: Math.max(commReqs[idx].required, commReqs[idx].available + reqData.quantity),
+              shortage: Math.max(0, (commReqs[idx].required || reqData.quantity) - commReqs[idx].available),
+              urgency: reqData.urgency,
+              lastUpdated: 'Just now',
+            };
+          } else {
+            commReqs.push({
+              resourceType: reqData.resourceType,
+              required: reqData.quantity,
+              available: 0,
+              shortage: reqData.quantity,
+              unit: reqData.unit || 'units',
+              urgency: reqData.urgency,
+              lastUpdated: 'Just now',
+            });
+          }
+          return { ...prev, [reqData.communityId]: commReqs };
+        });
+
+        // PRAVAH ENGINE: Generate a mission recommendation
+        const recommendedMission = generateMissionFromResourceRequest(newRequest, rawCommunities);
+        if (recommendedMission) {
+          setActiveMissions((prev) => {
+            const exists = prev.some((m) => m.id === recommendedMission.id);
+            if (exists) {
+              return prev.map((m) => (m.id === recommendedMission.id ? recommendedMission : m));
+            }
+            return [recommendedMission, ...prev];
+          });
+          persistMissions([recommendedMission, ...activeMissions]);
+        }
+
+        // Add to incident / field intel feed
+        addIncident({
+          title: `Resource Requisition: ${reqData.resourceType} (${reqData.urgency})`,
+          category: 'SUPPLY_SHORTAGE',
+          severity: 'Caution',
+          location: {
+            placeName: reqData.communityName,
+            lat: 24.22,
+            lng: 92.68,
+          },
+          description: `Resource Requisition: ${reqData.quantity} ${reqData.unit || 'units'} of ${reqData.resourceType} requested for ${reqData.communityName}. Urgency: ${reqData.urgency}. Reason: ${reqData.reason}${reqData.notes ? ` Notes: ${reqData.notes}` : ''}`,
+          verified: true,
+          timestamp: new Date().toISOString(),
+          source: 'OFFICER',
+          officerBadge: userContext.badgeId,
+          imageUri: reqData.evidencePhoto,
+        });
+      },
+      [rawCommunities, activeMissions, addIncident, userContext.badgeId]
+    );
+
+    const createManualMission = useCallback(
+      (params: {
+        missionName: string;
+        originWarehouseId: string;
+        destinationCommunityId: string;
+        cargoAllocations: { item: string; quantity: number; unit: string }[];
+        urgency: 'P1_CRITICAL' | 'P2_ELEVATED';
+        assignedVehicleId?: string;
+        assignedDriver?: string;
+        notes?: string;
+        deadline?: string;
+      }) => {
+        const newMission = createManualReliefMission({
+          ...params,
+          communities: rawCommunities,
+        });
+        setActiveMissions((prev) => [newMission, ...prev]);
+        persistMissions([newMission, ...activeMissions]);
+
+        // Attempt inventory reservation
+        const allocations = params.cargoAllocations.map((c) => ({
+          resourceName: c.item,
+          quantity: c.quantity,
+        }));
+        reserveInventoryForMission(params.originWarehouseId, allocations, newMission.id).catch((e) => {
+          console.warn('Inventory reservation warning:', e);
+        });
+      },
+      [activeMissions, rawCommunities, reserveInventoryForMission]
+    );
+
+    const resetCommunityScenario = useCallback(
+      (targetCommunityId?: string) => {
+        const commId = targetCommunityId || (activeRole === 'FIELD_OFFICER' ? (FIELD_OFFICERS.find((o) => o.id === activeOfficerId)?.communityId || 'COMMUNITY_KOLASIB') : 'COMMUNITY_KOLASIB');
+
+        // Reset resource requirements to baseline
+        setResourceRequirements((prev) => ({
+          ...prev,
+          [commId]: INITIAL_RESOURCE_REQUIREMENTS[commId] || [
+            { resourceType: 'Food Kits', required: 100, available: 20, shortage: 80, unit: 'kits', urgency: 'CRITICAL', lastUpdated: 'Just now' },
+            { resourceType: 'Water Units', required: 50, available: 10, shortage: 40, unit: 'cans (20L)', urgency: 'CRITICAL', lastUpdated: 'Just now' },
+            { resourceType: 'Medical Kits', required: 20, available: 3, shortage: 17, unit: 'trauma kits', urgency: 'CRITICAL', lastUpdated: 'Just now' },
+          ],
+        }));
+
+        // Reset resource requests for this community
+        setResourceRequests((prev) =>
+          prev.filter((r) => r.communityId !== commId).concat(
+            INITIAL_RESOURCE_REQUESTS.filter((r) => r.communityId === commId)
+          )
+        );
+
+        if (commId === 'COMMUNITY_KOLASIB') {
+          // Reset Kolasib road disruption
+          setActiveDisruptions((prev) => ({
+            ...prev,
+            'SEG-SIL-KOL': {
+              status: 'SINGLE_LANE_PASSABLE',
+              cause: 'Road_Subsidence',
+              description: 'Bilkhawthlir silt collapse - 18T load restriction',
+              reportedBy: 'Insp. L. Hmar',
+            },
+          }));
+
+          // Reset vehicle Medic-01
+          setVehicles((prev) =>
+            prev.map((v) =>
+              v.vehicle_id === 'Medic-01'
+                ? {
+                    ...v,
+                    status: 'ON_ROUTE',
+                    currentSpeedKmph: 34,
+                    latitude: 24.582,
+                    longitude: 92.798,
+                    fuelPercent: 88,
+                    currentBearingDeg: 165,
+                    progressPercent: 18,
+                    etaMinutes: 42,
+                    assignedMissionId: 'MZ-04',
+                    diverted: false,
+                    halted: false,
+                  }
+                : v
+            )
+          );
+
+          // Reset mission MZ-04
+          setActiveMissions((prev) =>
+            prev.map((m) =>
+              m.id === 'MZ-04'
+                ? {
+                    ...m,
+                    status: 'IN_TRANSIT',
+                    statusProgress: 18,
+                    etaMinutes: 42,
+                    deliveryConfirmedByField: false,
+                    deliveryConfirmedAt: undefined,
+                  }
+                : m
+            )
+          );
+
+          clearModelCache();
+        }
+
+        // Reset community metrics
+        setRawCommunities((prev) =>
+          prev.map((c) => {
+            if (c.id === commId) {
+              const orig = INITIAL_COMMUNITIES.find((ic) => ic.id === commId);
+              return orig ? { ...orig } : c;
+            }
+            return c;
+          })
+        );
+      },
+      [activeOfficerId, activeRole]
+    );
+
     const value = {
       userContext,
       activeRole,
@@ -4564,6 +4885,13 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
       runDemoStep2,
       runDemoStep3,
       resetDemoSimulation,
+      resetCommunityScenario,
+      activeOfficerId,
+      setActiveOfficerId,
+      resourceRequirements,
+      resourceRequests,
+      submitResourceRequest,
+      createManualMission,
       // 12. Gemini AI Intelligence Pipeline
       draftPlots,
       approvedDraftPlots,

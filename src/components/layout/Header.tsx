@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { usePravahStore } from '../../store/usePravahStore';
 import type { UserRole } from '../../types';
+import { FIELD_OFFICERS } from '../../engine/missionEngine';
 import { DataStalenessChip } from './DataStalenessChip';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useTranslation } from '../../data/uiTranslations';
@@ -27,6 +28,9 @@ export const Header: React.FC = () => {
     userContext,
     activeRole,
     switchRole,
+    activeOfficerId,
+    setActiveOfficerId,
+    resetCommunityScenario,
     theme,
     toggleTheme,
     isOnline,
@@ -134,22 +138,39 @@ export const Header: React.FC = () => {
               <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-text-secondary shrink-0" />
               <select
                 aria-label="Select User Role Simulator"
-                value={activeRole}
-                onChange={(e) => switchRole(e.target.value as UserRole)}
+                value={activeRole === 'FIELD_OFFICER' ? `FIELD_OFFICER:${activeOfficerId}` : activeRole}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val.startsWith('FIELD_OFFICER:')) {
+                    const officerId = val.split(':')[1];
+                    setActiveOfficerId(officerId);
+                    switchRole('FIELD_OFFICER');
+                  } else {
+                    switchRole(val as UserRole);
+                  }
+                }}
                 style={{ colorScheme: theme === 'dark' ? 'dark' : 'light' }}
-                className="bg-transparent text-[10px] sm:text-xs font-medium text-text-primary border-none focus:ring-0 cursor-pointer pl-0.5 pr-2 sm:pr-6 py-0.5 sm:py-1 truncate max-w-[85px] sm:max-w-none"
+                className="bg-transparent text-[10px] sm:text-xs font-semibold text-text-primary border-none focus:ring-0 cursor-pointer pl-0.5 pr-2 sm:pr-6 py-0.5 sm:py-1 truncate max-w-[130px] sm:max-w-none"
               >
                 <option value="SUPER_ADMIN" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
-                  {t('roleAdmin')}
+                  Admin (Shri A. Sarma, IAS)
                 </option>
                 <option value="FLEET_DISPATCHER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
-                  {t('roleDispatcher')}
+                  Dispatcher (Major P.K. Baruah)
                 </option>
-                <option value="FIELD_OFFICER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
-                  {t('roleFieldOfficer')}
-                </option>
+                <optgroup label="Field Officers (Ground Intelligence)">
+                  {FIELD_OFFICERS.map((officer) => (
+                    <option
+                      key={officer.id}
+                      value={`FIELD_OFFICER:${officer.id}`}
+                      className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]"
+                    >
+                      Field Officer ({officer.name} — {officer.communityName.split(' ')[0]})
+                    </option>
+                  ))}
+                </optgroup>
                 <option value="DRIVER" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
-                  {t('roleDriver')}
+                  Driver (Rajesh Mech — Medic-01)
                 </option>
               </select>
             </div>
@@ -170,14 +191,19 @@ export const Header: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Bar: Macro Network Telemetry */}
+      {/* KPI Bar: Macro Network Telemetry / Field Officer Sector Status */}
       <div className="bg-surface-subtle border-t border-border py-1.5 sm:py-2 px-3 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 text-xs">
           {/* User Badge Info */}
           <div className="flex flex-wrap items-center gap-1.5 text-text-secondary text-[10px] sm:text-xs">
             <span className="font-semibold text-text-primary">{userContext.name}</span>
             <span className="text-text-tertiary hidden sm:inline">|</span>
-            <span className="hidden sm:inline truncate max-w-[180px] lg:max-w-none">{userContext.department}</span>
+            <span className="hidden sm:inline truncate max-w-[220px] lg:max-w-none">{userContext.department}</span>
+            {userContext.communityName && (
+              <span className="px-1.5 py-0.2 rounded-sm bg-blue-500/10 text-blue-500 border border-blue-500/20 font-bold text-[9px] sm:text-[10px]">
+                {userContext.communityName}
+              </span>
+            )}
             {userContext.activeMissionId && (
               <span className="px-1.5 py-0.2 rounded-sm bg-primary-tint text-primary font-mono font-medium text-[9px] sm:text-[10px]">
                 {t('missionBadge')} {userContext.activeMissionId}
@@ -185,34 +211,49 @@ export const Header: React.FC = () => {
             )}
           </div>
 
-          {/* Macro KPI Counters */}
-          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-4 text-[10px] sm:text-xs pt-1 sm:pt-0 border-t sm:border-t-0 border-border/50">
-            <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
-              <AlertTriangle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-blocked-solid shrink-0" />
-              <span className="text-text-secondary truncate">{t('kpiBlockages')}</span>
-              <span className="font-bold text-status-blocked-text ml-auto sm:ml-0">{totalBlockages}</span>
-            </div>
-
-            <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
-              <Flame className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-highrisk-solid shrink-0" />
-              <span className="text-text-secondary truncate">{t('kpiP1Hubs')}</span>
-              <span className="font-bold text-status-highrisk-text ml-auto sm:ml-0">{p1Communities}</span>
-            </div>
-
-            <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
-              <Truck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-open-solid shrink-0" />
-              <span className="text-text-secondary truncate">{t('kpiConvoys')}</span>
-              <span className="font-bold text-status-open-text ml-auto sm:ml-0">{activeConvoys}</span>
-            </div>
-
-            <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
-              <Radio className={`w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 ${overdueWatchdogs > 0 ? 'text-status-blocked-solid animate-ping' : 'text-text-tertiary'}`} />
-              <span className="text-text-secondary truncate">{t('kpiOverdue')}</span>
-              <span className={`font-bold ml-auto sm:ml-0 ${overdueWatchdogs > 0 ? 'text-status-blocked-text' : 'text-text-primary'}`}>
-                {overdueWatchdogs}
+          {/* Conditional Right Bar: Field Officer Scenario Reset vs Macro KPI Counters */}
+          {activeRole === 'FIELD_OFFICER' ? (
+            <div className="flex items-center gap-2 text-[10px] sm:text-xs">
+              <span className="hidden md:inline text-text-tertiary">
+                Sector: {userContext.jurisdictionState || 'Active Sector'}
               </span>
+              <button
+                onClick={() => resetCommunityScenario(userContext.communityId)}
+                className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[11px] font-semibold transition-colors btn-press cursor-pointer flex items-center gap-1"
+                title="Reset this community's baseline requirements, requests, road status and active mission"
+              >
+                <span>↺ Reset Community Scenario</span>
+              </button>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-4 text-[10px] sm:text-xs pt-1 sm:pt-0 border-t sm:border-t-0 border-border/50">
+              <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
+                <AlertTriangle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-blocked-solid shrink-0" />
+                <span className="text-text-secondary truncate">{t('kpiBlockages')}</span>
+                <span className="font-bold text-status-blocked-text ml-auto sm:ml-0">{totalBlockages}</span>
+              </div>
+
+              <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
+                <Flame className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-highrisk-solid shrink-0" />
+                <span className="text-text-secondary truncate">{t('kpiP1Hubs')}</span>
+                <span className="font-bold text-status-highrisk-text ml-auto sm:ml-0">{p1Communities}</span>
+              </div>
+
+              <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
+                <Truck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-status-open-solid shrink-0" />
+                <span className="text-text-secondary truncate">{t('kpiConvoys')}</span>
+                <span className="font-bold text-status-open-text ml-auto sm:ml-0">{activeConvoys}</span>
+              </div>
+
+              <div className="flex items-center space-x-1.5 bg-surface sm:bg-transparent p-1 sm:p-0 rounded-xs border sm:border-0 border-border/40">
+                <Radio className={`w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 ${overdueWatchdogs > 0 ? 'text-status-blocked-solid animate-ping' : 'text-text-tertiary'}`} />
+                <span className="text-text-secondary truncate">{t('kpiOverdue')}</span>
+                <span className={`font-bold ml-auto sm:ml-0 ${overdueWatchdogs > 0 ? 'text-status-blocked-text' : 'text-text-primary'}`}>
+                  {overdueWatchdogs}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

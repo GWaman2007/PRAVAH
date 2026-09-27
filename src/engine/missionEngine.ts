@@ -7,10 +7,13 @@
 import type {
   ReliefMission,
   CommunityBase,
+  CommunityWithCalculation,
   VehicleTelemetry,
   CommodityType,
   CurrentMissionRouteResolved,
   MissionRouteOption,
+  ResourceRequest,
+  FieldOfficerProfile,
 } from '../types';
 import { calculateCompositePriority, COMMODITY_CONFIG } from './priorityEngine';
 import { FLEET_ROUTES } from '../data/fleetData';
@@ -816,4 +819,204 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     deliveredImphal,
     deliveredAgartala,
   ];
+}
+
+export const FIELD_OFFICERS: FieldOfficerProfile[] = [
+  {
+    id: 'hmar',
+    name: 'Inspector L. Hmar',
+    rank: 'Inspector',
+    department: 'Mizoram Police / Quick Response Team',
+    badgeId: 'MZ-QRT-019',
+    communityId: 'MZ-KOL-004',
+    communityName: 'Kolasib East Community',
+    activeMissionId: 'MSN-ONGOING-MZ01',
+    assignedVehicleId: 'Medic-01',
+    jurisdictionState: 'Mizoram (Kolasib Sector)',
+    phone: '+91 94361 22891',
+  },
+  {
+    id: 'sema',
+    name: 'Subedar K. Sema',
+    rank: 'Subedar',
+    department: 'Nagaland Police / Sector Command',
+    badgeId: 'NL-QRT-008',
+    communityId: 'NL-KOH-009',
+    communityName: 'Kohima South Sector (Phesama)',
+    activeMissionId: 'MSN-ONGOING-NL01',
+    assignedVehicleId: 'Ration-Convoy-07',
+    jurisdictionState: 'Nagaland (Kohima Sector)',
+    phone: '+91 94360 41102',
+  },
+  {
+    id: 'bhutia',
+    name: 'Capt. P. Bhutia',
+    rank: 'Captain',
+    department: 'BRO Project Swastik / Liaison Unit',
+    badgeId: 'SK-QRT-012',
+    communityId: 'SK-MAN-002',
+    communityName: 'Teesta Canyon 29th Mile Hub',
+    activeMissionId: 'MSN-ONGOING-SK01',
+    assignedVehicleId: 'Eng-03',
+    jurisdictionState: 'Sikkim (Mangan Sector)',
+    phone: '+91 94340 78219',
+  },
+  {
+    id: 'sharma',
+    name: 'Havildar B. Sharma',
+    rank: 'Havildar',
+    department: 'Assam State Disaster Management Authority',
+    badgeId: 'AS-QRT-031',
+    communityId: 'AS-HAF-001',
+    communityName: 'Haflong Hill Station Post',
+    activeMissionId: 'SUGG-ASDH011',
+    assignedVehicleId: 'Cargo-04',
+    jurisdictionState: 'Assam (Dima Hasao Sector)',
+    phone: '+91 94350 99403',
+  },
+];
+
+/**
+ * Connected PRAVAH Engine Workflow:
+ * Evaluates a Field Officer Resource Request against community priority,
+ * nearest depot stock, vehicle capacity, and corridor risk to generate
+ * an authoritative Suggested Mission for Central Command approval.
+ */
+export function generateMissionFromResourceRequest(
+  request: ResourceRequest,
+  communities: (CommunityBase | CommunityWithCalculation)[]
+): ReliefMission {
+  const comm = communities.find((c) => c.id === request.communityId) || communities[0];
+  const depot = resolveNearestDepot(comm.coordinates);
+
+  const routeConfig = COMMUNITY_LOGISTICS_REGISTRY[comm.id] || {
+    depotId: depot.id,
+    depotName: depot.name,
+    depotCoords: depot.coords,
+    routeId: depot.primaryRouteId,
+    detour: 'Direct Clearance Priority Corridor',
+    preferredVehicleId: 'Medic-01',
+  };
+
+  const fleetRoute = FLEET_ROUTES[routeConfig.routeId] || Object.values(FLEET_ROUTES)[0];
+  const reqLower = request.resourceType.toLowerCase();
+  const isMedical = reqLower.includes('medic') || reqLower.includes('anti') || reqLower.includes('iv') || reqLower.includes('first aid');
+  const isLiquid = reqLower.includes('water') || reqLower.includes('fuel') || reqLower.includes('diesel');
+
+  let vehicleType = 'Ration-07 (Heavy 6x6 Freight Truck)';
+  let vehicleId = 'Ration-Convoy-07';
+  let driver = 'Temsu Ao';
+
+  if (isMedical) {
+    vehicleType = 'Medic-01 (4x4 Emergency Medical Van)';
+    vehicleId = 'Medic-01';
+    driver = 'Lalrinsanga';
+  } else if (isLiquid) {
+    vehicleType = 'Tanker-01 (6x6 Bulk Liquid Tanker)';
+    vehicleId = 'Tanker-01';
+    driver = 'Rajesh Mech';
+  }
+
+  const missionId = `MSN-REQ-${Date.now().toString().slice(-6)}`;
+
+  return {
+    id: missionId,
+    communityId: comm.id,
+    communityName: comm.name,
+    recommendedVehicleType: vehicleType,
+    cargoAllocations: [
+      {
+        item: request.resourceType,
+        quantity: request.quantity,
+        unit: request.unit,
+      },
+    ],
+    assignedRouteId: routeConfig.routeId,
+    suggestedDetour: routeConfig.detour,
+    status: 'SUGGESTED',
+    urgency: request.urgency === 'Critical' ? 'P1_CRITICAL' : 'P2_ELEVATED',
+    createdAt: new Date().toISOString(),
+    assignedDriver: driver,
+    assignedOfficer: `${request.officerName} (${request.officerRole})`,
+    originWarehouseId: routeConfig.depotId,
+    originWarehouseName: routeConfig.depotName,
+    originCoords: routeConfig.depotCoords,
+    disasterZoneId: `HZ-${comm.id}`,
+    disasterZoneName: `${comm.name} Priority Sector`,
+    destinationEndpoint: comm.coordinates,
+    destinationName: `${comm.name} Community Depot`,
+    assignedVehicleId: vehicleId,
+    routeGeometry: fleetRoute?.coordinates || [],
+    routeDistanceKm: fleetRoute?.distanceKm || 85.0,
+    routeDurationMinutes: fleetRoute?.expectedDurationMinutes || 120,
+    routeStatus: 'OPTIMAL',
+    corridorSegmentIds: [comm.primaryCorridor || 'SEG-SIL-KOL'],
+    isRerouted: false,
+    source: 'ENGINE_GENERATED',
+    notes: `Generated by PRAVAH Engine for ${request.officerName}'s requisition: "${request.reason}"`,
+    resourceRequestId: request.id,
+  };
+}
+
+/**
+ * Manual Mission Creation:
+ * Allows authorized operational dispatchers or admins to manually configure
+ * and dispatch real mission sorties within the operational fleet network.
+ */
+export function createManualReliefMission(params: {
+  missionName: string;
+  originWarehouseId: string;
+  destinationCommunityId: string;
+  cargoAllocations: { item: string; quantity: number; unit: string }[];
+  urgency: 'P1_CRITICAL' | 'P2_ELEVATED';
+  assignedVehicleId?: string;
+  assignedDriver?: string;
+  notes?: string;
+  deadline?: string;
+  communities: (CommunityBase | CommunityWithCalculation)[];
+}): ReliefMission {
+  const comm = params.communities.find((c) => c.id === params.destinationCommunityId) || params.communities[0];
+  const depot = STRATEGIC_DEPOTS[params.originWarehouseId] || STRATEGIC_DEPOTS.silchar;
+  const routeConfig = COMMUNITY_LOGISTICS_REGISTRY[comm.id] || {
+    depotId: depot.id,
+    depotName: depot.name,
+    depotCoords: depot.coords,
+    routeId: depot.primaryRouteId,
+    detour: 'Direct Clearance Priority Corridor',
+    preferredVehicleId: 'Medic-01',
+  };
+  const fleetRoute = FLEET_ROUTES[routeConfig.routeId] || Object.values(FLEET_ROUTES)[0];
+  const missionId = `MSN-MANUAL-${Date.now().toString().slice(-6)}`;
+
+  return {
+    id: missionId,
+    communityId: comm.id,
+    communityName: comm.name,
+    recommendedVehicleType: params.assignedVehicleId ? `${params.assignedVehicleId} (Manual Assignment)` : 'General Relief Transport',
+    cargoAllocations: params.cargoAllocations,
+    assignedRouteId: routeConfig.routeId,
+    suggestedDetour: routeConfig.detour,
+    status: 'APPROVED',
+    urgency: params.urgency,
+    createdAt: new Date().toISOString(),
+    assignedDriver: params.assignedDriver || 'Assigned Logistics Driver',
+    assignedOfficer: 'Central Operations Command',
+    originWarehouseId: depot.id,
+    originWarehouseName: depot.name,
+    originCoords: depot.coords,
+    disasterZoneId: `HZ-${comm.id}`,
+    disasterZoneName: `${params.missionName} Delivery Zone`,
+    destinationEndpoint: comm.coordinates,
+    destinationName: `${comm.name} Community Depot`,
+    assignedVehicleId: params.assignedVehicleId || 'Medic-01',
+    routeGeometry: fleetRoute?.coordinates || [],
+    routeDistanceKm: fleetRoute?.distanceKm || 75.0,
+    routeDurationMinutes: fleetRoute?.expectedDurationMinutes || 110,
+    routeStatus: 'OPTIMAL',
+    corridorSegmentIds: [comm.primaryCorridor || 'SEG-SIL-KOL'],
+    isRerouted: false,
+    source: 'MANUAL',
+    notes: params.notes || `Manually dispatched: ${params.missionName}`,
+    deadline: params.deadline,
+  };
 }

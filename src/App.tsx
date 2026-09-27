@@ -14,6 +14,11 @@ import { MobileMissionCockpit } from './components/cockpit/MobileMissionCockpit'
 import { ModelATestingDeck } from './components/modelA/ModelATestingDeck';
 import { GlobalSOSInterceptModal } from './components/admin/GlobalSOSInterceptModal';
 import { InteractiveWalkthroughToolbar } from './components/layout/InteractiveWalkthroughToolbar';
+import { FieldOfficerCommunityView } from './components/fieldOfficer/FieldOfficerCommunityView';
+import { FieldOfficerMissionsView } from './components/fieldOfficer/FieldOfficerMissionsView';
+import { FieldOfficerRequirementsView } from './components/fieldOfficer/FieldOfficerRequirementsView';
+import { FieldOfficerMyReportsView } from './components/fieldOfficer/FieldOfficerMyReportsView';
+import { FieldOfficerFloatingActionMenu } from './components/fieldOfficer/FieldOfficerFloatingActionMenu';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Analytics } from '@vercel/analytics/react';
 import { AlertOctagon, X } from 'lucide-react';
@@ -22,6 +27,7 @@ const AppContent: React.FC = () => {
   const { t } = useTranslation();
   const {
     activeView,
+    setActiveView,
     activeRole,
     alerts,
     vehicles,
@@ -29,6 +35,16 @@ const AppContent: React.FC = () => {
     pendingSOSAlert,
     setPendingSOSAlert,
   } = usePravahStore();
+
+  // Strict Role-Based Access Control (RBAC Guard)
+  React.useEffect(() => {
+    const adminOnlyViews = ['HUBS_RESOURCES', 'EXECUTIVE_INFRA', 'BROADCAST_CENTER', 'MODEL_A_LAB'];
+    if (activeRole === 'FIELD_OFFICER' && adminOnlyViews.includes(activeView)) {
+      setActiveView('FO_COMMUNITY');
+    } else if (activeRole === 'DRIVER' && activeView !== 'MOBILE_COCKPIT') {
+      setActiveView('MOBILE_COCKPIT');
+    }
+  }, [activeRole, activeView, setActiveView]);
 
   const unacknowledgedCriticalAlert = alerts.find(
     (a) => !a.acknowledged && (a.severity === 'CRITICAL' || a.severity === 'HIGH RISK')
@@ -110,6 +126,26 @@ const AppContent: React.FC = () => {
             <ModelATestingDeck />
           </div>
         )}
+        {activeView === 'FO_COMMUNITY' && (
+          <div className="h-full overflow-y-auto pb-24">
+            <FieldOfficerCommunityView />
+          </div>
+        )}
+        {activeView === 'FO_MISSIONS' && (
+          <div className="h-full overflow-y-auto pb-24">
+            <FieldOfficerMissionsView />
+          </div>
+        )}
+        {activeView === 'FO_REQUIREMENTS' && (
+          <div className="h-full overflow-y-auto pb-24">
+            <FieldOfficerRequirementsView />
+          </div>
+        )}
+        {activeView === 'FO_MY_REPORTS' && (
+          <div className="h-full overflow-y-auto pb-24">
+            <FieldOfficerMyReportsView />
+          </div>
+        )}
       </main>
 
       {/* Global SOS Distress Signal Intercept Modal - Command Roles (Super Admin / Dispatcher) Only */}
@@ -124,6 +160,9 @@ const AppContent: React.FC = () => {
 
       {/* Persistent 1-Click Interactive Resilience Walkthrough Bar */}
       <InteractiveWalkthroughToolbar />
+
+      {/* Floating Action Menu for Field Officer */}
+      {activeRole === 'FIELD_OFFICER' && <FieldOfficerFloatingActionMenu />}
     </div>
   );
 };

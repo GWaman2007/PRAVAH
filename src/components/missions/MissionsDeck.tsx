@@ -19,7 +19,9 @@ import {
   Route,
   RefreshCw,
   ShieldAlert,
+  Plus,
 } from 'lucide-react';
+import { CreateMissionModal } from './CreateMissionModal';
 
 export const MissionsDeck: React.FC = () => {
   const {
@@ -48,6 +50,7 @@ export const MissionsDeck: React.FC = () => {
   const [activeCustomizeMission, setActiveCustomizeMission] = useState<ReliefMission | null>(null);
   const [isReroutingId, setIsReroutingId] = useState<string | null>(null);
   const [rerouteNotice, setRerouteNotice] = useState<{ missionId: string; message: string } | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const handleReroute = async (missionId: string) => {
     setIsReroutingId(missionId);
@@ -123,6 +126,14 @@ export const MissionsDeck: React.FC = () => {
                 {ongoingMissions.filter((m) => m.status === 'DELIVERED').length}
               </span>
             </div>
+
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-3.5 py-2 rounded-sm bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center gap-1.5 btn-press cursor-pointer shadow-xs ml-1"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ CREATE MISSION</span>
+            </button>
           </div>
         </div>
       </div>
@@ -204,6 +215,17 @@ export const MissionsDeck: React.FC = () => {
                         <h3 className="font-bold text-sm text-text-primary">
                           {mission.communityName}
                         </h3>
+                        {mission.source && (
+                          <span
+                            className={`px-1.5 py-0.2 rounded font-mono font-bold text-[9px] uppercase tracking-wider ${
+                              mission.source === 'ENGINE_GENERATED'
+                                ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
+                                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                            }`}
+                          >
+                            {mission.source === 'ENGINE_GENERATED' ? 'Engine Generated' : 'Manual'}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] text-text-secondary mt-0.5 flex items-center gap-1">
                         <AlertTriangle className="w-3.5 h-3.5 text-status-blocked-text shrink-0" />
@@ -411,6 +433,17 @@ export const MissionsDeck: React.FC = () => {
                           <h3 className="font-bold text-text-primary text-xs truncate max-w-[160px]">
                             {mission.destinationName || mission.communityName}
                           </h3>
+                          {mission.source && (
+                            <span
+                              className={`px-1.5 py-0.2 rounded font-mono font-bold text-[9px] uppercase tracking-wider ${
+                                mission.source === 'ENGINE_GENERATED'
+                                  ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
+                                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                              }`}
+                            >
+                              {mission.source === 'ENGINE_GENERATED' ? 'Engine' : 'Manual'}
+                            </span>
+                          )}
                         </div>
                         <span className="text-[10px] text-text-secondary block mt-0.5">
                           Origin: <strong>{mission.originWarehouseName || 'Regional Depot'}</strong>
@@ -645,6 +678,12 @@ export const MissionsDeck: React.FC = () => {
           }}
         />
       )}
+
+      {/* Manual Create Mission Modal */}
+      <CreateMissionModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+      />
     </div>
   );
 };

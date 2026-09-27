@@ -16,6 +16,9 @@ import {
   Menu,
   X,
   ChevronDown,
+  Home,
+  ClipboardList,
+  FileText,
 } from 'lucide-react';
 
 interface NavItem {
@@ -27,7 +30,17 @@ interface NavItem {
 }
 
 export const Navigation: React.FC = () => {
-  const { activeView, setActiveView, activeRole, communities, alerts, incidents, activeMissions, inventory } = usePravahStore();
+  const {
+    activeView,
+    setActiveView,
+    activeRole,
+    userContext,
+    communities,
+    alerts,
+    incidents,
+    activeMissions,
+    inventory,
+  } = usePravahStore();
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -35,7 +48,55 @@ export const Navigation: React.FC = () => {
   const suggestedCount = activeMissions.filter((m) => m.status === 'SUGGESTED').length;
   const lowStockCount = inventory.filter((i) => (i.quantity - i.reservedQuantity) <= (i.lowStockThreshold ?? i.minimumStock ?? 0)).length;
 
-  const navItems: NavItem[] = [
+  // Field Officer Navigation (Strictly 5 items: Missions, Community, Ground Intel, Requirements, My Reports)
+  const fieldOfficerNavItems: NavItem[] = [
+    {
+      id: 'FO_MISSIONS',
+      label: 'Missions',
+      shortLabel: 'Missions',
+      icon: Truck,
+      badge: activeMissions.filter((m) => m.communityId === userContext.communityId && m.status !== 'DELIVERED').length || undefined,
+    },
+    {
+      id: 'FO_COMMUNITY',
+      label: 'Community',
+      shortLabel: 'Community',
+      icon: Home,
+    },
+    {
+      id: 'GROUND_FEED',
+      label: 'Ground Intel',
+      shortLabel: 'Intel',
+      icon: MessageSquare,
+      badge: incidents.length > 0 ? incidents.length : undefined,
+    },
+    {
+      id: 'FO_REQUIREMENTS',
+      label: 'Requirements',
+      shortLabel: 'Reqs',
+      icon: ClipboardList,
+    },
+    {
+      id: 'FO_MY_REPORTS',
+      label: 'My Reports',
+      shortLabel: 'Reports',
+      icon: FileText,
+    },
+  ];
+
+  // Driver Navigation
+  const driverNavItems: NavItem[] = [
+    {
+      id: 'MOBILE_COCKPIT',
+      label: t('navCockpit'),
+      shortLabel: t('navCockpitShort'),
+      icon: Smartphone,
+      badge: 'Active',
+    },
+  ];
+
+  // Central Command Admin Navigation
+  const adminNavItems: NavItem[] = [
     {
       id: 'GIS_COMMAND',
       label: t('navGis'),
@@ -83,13 +144,6 @@ export const Navigation: React.FC = () => {
       icon: Radio,
     },
     {
-      id: 'MOBILE_COCKPIT',
-      label: t('navCockpit'),
-      shortLabel: t('navCockpitShort'),
-      icon: Smartphone,
-      badge: activeRole === 'DRIVER' || activeRole === 'FIELD_OFFICER' ? t('badgeActive') : undefined,
-    },
-    {
       id: 'MODEL_A_LAB',
       label: 'Model A Lab',
       shortLabel: 'AI Test',
@@ -98,24 +152,12 @@ export const Navigation: React.FC = () => {
     },
   ];
 
-  const filteredNavItems = navItems.filter((item) => {
-    if (activeRole === 'DRIVER') {
-      return item.id === 'MOBILE_COCKPIT';
-    }
-    if (activeRole === 'FIELD_OFFICER') {
-      return (
-        item.id === 'MOBILE_COCKPIT' ||
-        item.id === 'GROUND_FEED' ||
-        item.id === 'GIS_COMMAND' ||
-        item.id === 'COMMUNITIES' ||
-        item.id === 'MISSIONS' ||
-        item.id === 'HUBS_RESOURCES' ||
-        item.id === 'MODEL_A_LAB'
-      );
-    }
-    // SUPER_ADMIN & FLEET_DISPATCHER have full central command access; cockpit is dedicated to field roles
-    return item.id !== 'MOBILE_COCKPIT';
-  });
+  const filteredNavItems =
+    activeRole === 'FIELD_OFFICER'
+      ? fieldOfficerNavItems
+      : activeRole === 'DRIVER'
+      ? driverNavItems
+      : adminNavItems;
 
   const currentItem = filteredNavItems.find((item) => item.id === activeView) || filteredNavItems[0];
   const CurrentIcon = currentItem?.icon || Map;
@@ -251,6 +293,37 @@ export const Navigation: React.FC = () => {
           })}
         </div>
       </div>
+
+      {/* Field Officer Mobile Bottom Navigation (< md) */}
+      {activeRole === 'FIELD_OFFICER' && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface/95 backdrop-blur-md border-t border-border px-1 py-1.5 flex items-center justify-around shadow-lg">
+          {fieldOfficerNavItems.slice(0, 4).map((item) => {
+            const Icon = item.icon;
+            const isActive = activeView === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveView(item.id)}
+                className={`flex flex-col items-center justify-center py-1 px-3 rounded-md transition-colors btn-press cursor-pointer ${
+                  isActive
+                    ? 'text-primary font-bold bg-primary/10'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <div className="relative">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-primary' : 'text-text-secondary'}`} />
+                  {item.badge && (
+                    <span className="absolute -top-1 -right-2 px-1 text-[8px] font-bold rounded-full bg-red-600 text-white leading-tight">
+                      {item.badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] mt-0.5 tracking-tight">{item.shortLabel || item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </nav>
   );
 };

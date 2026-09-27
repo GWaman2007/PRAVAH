@@ -40,6 +40,8 @@ export const GroundIntelligenceFeed: React.FC = () => {
     offlineQueueCount,
     flushOfflineQueue,
     isSupabaseConfigured,
+    focusMapOnCoords,
+    setActiveView,
   } = usePravahStore();
 
   const { t } = useTranslation();
@@ -287,13 +289,21 @@ export const GroundIntelligenceFeed: React.FC = () => {
                     {/* Metadata Header */}
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                       <div className="flex items-center space-x-2">
-                        <span className="font-mono font-semibold px-2 py-0.5 rounded-sm bg-surface-subtle border border-border text-text-primary">
+                        {/* Officer Avatar */}
+                        <div className="w-6 h-6 rounded-full bg-blue-600/20 text-blue-600 dark:text-blue-400 font-bold text-[10px] flex items-center justify-center border border-blue-500/30 shrink-0">
+                          {inc.author.name
+                            .split(' ')
+                            .map((p) => p[0])
+                            .slice(0, 2)
+                            .join('')}
+                        </div>
+                        <span className="font-semibold text-text-primary">{inc.author.name}</span>
+                        <span className="text-text-tertiary">({inc.author.role})</span>
+                        <span className="text-text-secondary">•</span>
+                        <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-surface-subtle border border-border text-text-secondary">
                           {inc.corridorFlair}
                         </span>
                         <span className="text-text-secondary">•</span>
-                        <span className="text-text-secondary">
-                          Posted by <strong className="text-text-primary">{inc.author.name}</strong> ({inc.author.role})
-                        </span>
                         <span className="text-text-tertiary">{formatTimeAgo(inc.timestamp)}</span>
                       </div>
 
@@ -316,12 +326,30 @@ export const GroundIntelligenceFeed: React.FC = () => {
                     </div>
 
                     {/* Title & Severity */}
-                    <div>
-                      <h2 className="text-sm font-semibold text-text-primary">
-                        {inc.title}
-                      </h2>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2 py-0.5 text-[10px] font-bold rounded-sm border ${
+                            inc.severity === 'Total Blockage'
+                              ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
+                              : 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
+                          }`}
+                        >
+                          ⚠ {inc.severity.toUpperCase()}
+                        </span>
+                        <h2 className="text-sm font-bold text-text-primary">
+                          {inc.title}
+                        </h2>
+                      </div>
+
+                      {inc.description && (
+                        <p className="text-xs text-text-secondary italic bg-surface-subtle/60 border-l-2 border-primary/40 pl-2.5 py-1">
+                          "{inc.description}"
+                        </p>
+                      )}
+
                       <div className="flex flex-wrap items-center gap-2 mt-1 text-xs">
-                        <span className="flex items-center space-x-1 text-text-secondary">
+                        <span className="flex items-center space-x-1 text-text-secondary font-medium">
                           <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                           <span>{inc.location.placeName}</span>
                         </span>
@@ -330,15 +358,6 @@ export const GroundIntelligenceFeed: React.FC = () => {
                             <span>GPS: {inc.location.lat.toFixed(4)}°N, {inc.location.lng.toFixed(4)}°E</span>
                           </span>
                         )}
-                        <span
-                          className={`px-2 py-0.5 text-[10px] font-bold rounded-sm border ${
-                            inc.severity === 'Total Blockage'
-                              ? 'bg-status-blocked-tint text-status-blocked-text border-status-blocked-solid'
-                              : 'bg-status-highrisk-tint text-status-highrisk-text border-status-highrisk-solid'
-                          }`}
-                        >
-                          {inc.severity}
-                        </span>
                       </div>
                     </div>
 
@@ -382,35 +401,61 @@ export const GroundIntelligenceFeed: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Comment CTA */}
-                    <div className="pt-2 flex items-center space-x-3 text-xs">
-                      {commentingIncidentId === inc.id ? (
-                        <div className="w-full flex space-x-2">
-                          <input
-                            type="text"
-                            value={commentText}
-                            onChange={(e) => setCommentText(e.target.value)}
-                            placeholder="Provide verified clearance update or field observation..."
-                            className="flex-1 px-3 py-1.5 text-xs bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
-                          />
-                          <button
-                            onClick={() => handleAddComment(inc.id)}
-                            className="px-3 py-1.5 bg-[#1B4B73] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold btn-press flex items-center space-x-1 cursor-pointer"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>Post</span>
-                          </button>
-                        </div>
-                      ) : (
+                    {/* Operational Thread Actions: View on Map, Acknowledge, Reply / Update */}
+                    <div className="pt-2 flex flex-wrap items-center gap-2 text-xs border-t border-border/50">
+                      {inc.location.lat && inc.location.lng && (
                         <button
-                          onClick={() => setCommentingIncidentId(inc.id)}
-                          className="text-primary hover:underline font-medium flex items-center space-x-1 cursor-pointer"
+                          onClick={() => {
+                            focusMapOnCoords(inc.location.lat, inc.location.lng);
+                            setActiveView('GIS_COMMAND');
+                          }}
+                          className="px-2.5 py-1 rounded bg-surface-subtle hover:bg-surface border border-border text-primary font-semibold text-[11px] flex items-center gap-1 transition-colors btn-press cursor-pointer"
                         >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Add Ground Clearance Update</span>
+                          <MapPin className="w-3 h-3" />
+                          <span>View on Map</span>
                         </button>
                       )}
+
+                      <button
+                        onClick={() => handleVote(inc.id, 'up')}
+                        className={`px-2.5 py-1 rounded border text-[11px] font-semibold flex items-center gap-1 transition-colors btn-press cursor-pointer ${
+                          inc.votes.userVote === 'up'
+                            ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+                            : 'bg-surface-subtle hover:bg-surface border-border text-text-secondary'
+                        }`}
+                      >
+                        <ShieldCheck className="w-3 h-3" />
+                        <span>Acknowledge ({confidence.score})</span>
+                      </button>
+
+                      <button
+                        onClick={() => setCommentingIncidentId(commentingIncidentId === inc.id ? null : inc.id)}
+                        className="px-2.5 py-1 rounded bg-surface-subtle hover:bg-surface border border-border text-text-primary font-semibold text-[11px] flex items-center gap-1 transition-colors btn-press cursor-pointer"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        <span>Reply / Update</span>
+                      </button>
                     </div>
+
+                    {/* Inline Comment Composer */}
+                    {commentingIncidentId === inc.id && (
+                      <div className="pt-2 flex space-x-2">
+                        <input
+                          type="text"
+                          value={commentText}
+                          onChange={(e) => setCommentText(e.target.value)}
+                          placeholder="Provide verified clearance update or field observation..."
+                          className="flex-1 px-3 py-1.5 text-xs bg-surface border border-border rounded-sm text-text-primary focus:outline-none"
+                        />
+                        <button
+                          onClick={() => handleAddComment(inc.id)}
+                          className="px-3 py-1.5 bg-[#1B4B73] dark:bg-[#2E6B9E] text-white rounded-sm text-xs font-semibold btn-press flex items-center space-x-1 cursor-pointer"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Post</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </article>
