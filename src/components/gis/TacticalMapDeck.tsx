@@ -1938,14 +1938,15 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       selRouteSource.setData(createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES, modelAPredictions));
     }
 
-    // Update Model B route options for mission
+    // Update Model B route options for mission (STRICTLY for SUGGESTED missions awaiting initial dispatch)
     const modelBSource = map.getSource('model-b-route-options') as maplibregl.GeoJSONSource;
     if (modelBSource) {
-      const opts = activeMission
-        ? (activeMission.isRerouted ? [] : (activeMission.routeOptions || missionRouteOptionsByMissionId[activeMission.id] || []))
+      const isSuggested = activeMission?.status === 'SUGGESTED';
+      const opts = (isSuggested && !activeMission?.isRerouted)
+        ? (activeMission.routeOptions || missionRouteOptionsByMissionId[activeMission.id] || [])
         : [];
       const selOptId = selectedRouteOptionByMissionId[activeMission?.id || ''] || activeMission?.selectedRouteOptionId;
-      modelBSource.setData(createModelBRouteOptionsGeoJSON(opts, selOptId, modelAPredictions, Boolean(activeMission?.isRerouted)));
+      modelBSource.setData(createModelBRouteOptionsGeoJSON(opts, selOptId, modelAPredictions, false));
     }
 
     // Update mission endpoints

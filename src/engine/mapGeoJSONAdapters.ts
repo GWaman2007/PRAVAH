@@ -570,30 +570,8 @@ export function createSelectedMissionRouteGeoJSON(
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
   if (selectedMission.isRerouted) {
-    // 1. Original Route before detour -> BLUE (#2563EB)
-    if (selectedMission.previousRouteGeometry && selectedMission.previousRouteGeometry.length > 1) {
-      features.push({
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: toGeoJSONLineString(selectedMission.previousRouteGeometry),
-        },
-        properties: {
-          mission_id: `${selectedMission.id}-original`,
-          community_name: selectedMission.communityName,
-          destination_name: selectedMission.destinationName,
-          status: selectedMission.status,
-          corridor_name: 'Original Route (NH-306)',
-          distance_km: selectedMission.routeDistanceKm || 0,
-          is_rerouted: false,
-          color: '#2563EB', // Original route: BLUE
-          glowColor: '#3B82F6',
-          disruption_probability: selectedMission.initialDisruptionProbability ?? 0.85,
-        },
-      });
-    }
-
-    // 2. Active Alternate Route -> GREEN (#10B981) starting from driver GPS position
+    // When rerouted, only ONE active detour path is rendered on the map.
+    // Previous route is not drawn, preventing dual-route clutter on ongoing missions.
     features.push({
       type: 'Feature',
       geometry: {
@@ -605,12 +583,12 @@ export function createSelectedMissionRouteGeoJSON(
         community_name: selectedMission.communityName,
         destination_name: selectedMission.destinationName,
         status: selectedMission.status,
-        corridor_name: selectedMission.suggestedDetour || 'Bhairabi SH-42 Alternate Bypass',
+        corridor_name: selectedMission.suggestedDetour || 'Rerouted Bypass Corridor',
         distance_km: selectedMission.routeDistanceKm || 0,
         is_rerouted: true,
-        color: '#10B981', // Alternate route: GREEN
-        glowColor: '#34D399',
-        disruption_probability: selectedMission.reroutedDisruptionProbability ?? 0.12,
+        color: '#2563EB', // Active route: Royal Blue (#2563EB)
+        glowColor: '#3B82F6',
+        disruption_probability: selectedMission.reroutedDisruptionProbability ?? selectedMission.disruptionProbability ?? 0.08,
       },
     });
   } else {

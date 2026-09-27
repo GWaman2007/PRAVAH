@@ -236,8 +236,8 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
           </div>
         )}
 
-        {/* Model B Route Options & Dynamic Reroutes */}
-        {routeOptions.length > 0 && (
+        {/* Model B Route Options & Candidate Paths - Only for SUGGESTED missions awaiting initial dispatch */}
+        {isSuggested && !mission.isRerouted && routeOptions.length > 0 && (
           <div className="p-3 rounded-sm bg-surface-subtle border border-border space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-bold text-xs uppercase tracking-wider text-text-primary flex items-center gap-1.5">
@@ -429,6 +429,39 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
             <p className="text-[11px] text-text-secondary">
               Convoy is actively following the designated road corridor. GPS pings synchronized every 2 seconds.
             </p>
+            {mission.isRerouted ? (
+              <div className="mt-2 p-2 rounded bg-blue-500/10 border border-blue-500/30 text-[11px] text-blue-300 space-y-1">
+                <div className="font-bold flex items-center gap-1 text-blue-400">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Convoy Rerouted to Bypass Corridor</span>
+                </div>
+                <div className="text-[10px] text-text-secondary font-mono">
+                  {mission.suggestedDetour || mission.destinationName} &bull; {mission.routeDistanceKm} km &bull; ETA {formatMinutes(mission.routeDurationMinutes || 0)}
+                </div>
+                {mission.rerouteReason && (
+                  <p className="text-[10px] text-text-tertiary italic">{mission.rerouteReason}</p>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleExecuteReroute()}
+                disabled={isRerouting}
+                className="w-full mt-2 py-1.5 px-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 text-[11px] shadow-xs btn-press cursor-pointer transition-all disabled:opacity-50"
+              >
+                {isRerouting ? (
+                  <>
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <span>Calculating Safe Bypass...</span>
+                  </>
+                ) : (
+                  <>
+                    <Route className="w-3.5 h-3.5" />
+                    <span>Reroute Convoy (Evade Hazard)</span>
+                  </>
+                )}
+              </button>
+            )}
             {vehicle && onInspectVehicle && (
               <button
                 onClick={() => onInspectVehicle(vehicle.vehicle_id)}

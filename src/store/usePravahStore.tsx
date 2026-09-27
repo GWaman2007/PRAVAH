@@ -42,6 +42,7 @@ import {
   resolveCorridorBypassSegments,
   spliceRouteFromVehicleCoords,
   computePolylineDistanceKm,
+  haversineDistanceKm,
 } from '../engine/modelBRouteRankingService';
 import {
   verifyAndStructureCitizenReport,
@@ -2284,10 +2285,26 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         let chosenOption = customOption;
         let rerouteReason = customReason;
-        const isVehicleInTransit = targetMission.status === 'IN_TRANSIT' && Boolean(assignedVeh?.current_coords);
-        let reroutedFrom = (isVehicleInTransit && assignedVeh?.current_coords)
-          ? assignedVeh.current_coords
-          : targetMission.originCoords || [24.8333, 92.7789];
+
+        const originCoords = targetMission.originCoords || [25.9064, 93.7275];
+        const currentVehCoords = assignedVeh?.current_coords;
+        const distFromOriginKm = currentVehCoords ? haversineDistanceKm(currentVehCoords, originCoords) : 0;
+
+        // Vehicle has ONLY left the source if it is IN_TRANSIT and has made genuine physical progress along road
+        const vehicleHasLeftSource = Boolean(
+          assignedVeh &&
+          targetMission.status === 'IN_TRANSIT' &&
+          currentVehCoords &&
+          (
+            (assignedVeh.route_progress_pct !== undefined && assignedVeh.route_progress_pct > 2) ||
+            (assignedVeh.traveled_distance_km !== undefined && assignedVeh.traveled_distance_km > 1.5) ||
+            distFromOriginKm > 3.0
+          )
+        );
+
+        let reroutedFrom = vehicleHasLeftSource && currentVehCoords
+          ? currentVehCoords
+          : originCoords;
 
         // If no custom option was explicitly passed, check if user pre-selected a route option card
         if (!chosenOption) {
@@ -2299,9 +2316,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
 
         if (chosenOption) {
-          // Keep track of driver's location: splice route from vehicle's live GPS point forward to destination
-          if (isVehicleInTransit && assignedVeh?.current_coords) {
-            const splicedCoords = spliceRouteFromVehicleCoords(chosenOption.geometry, assignedVeh.current_coords);
+          // If vehicle has physically departed source, splice remaining route from vehicle's live GPS point forward to destination
+          if (vehicleHasLeftSource && currentVehCoords) {
+            const splicedCoords = spliceRouteFromVehicleCoords(chosenOption.geometry, currentVehCoords);
             const splicedDist = computePolylineDistanceKm(splicedCoords);
             const ratio = chosenOption.distanceKm > 0 ? splicedDist / chosenOption.distanceKm : 1;
             chosenOption = {
@@ -2313,8 +2330,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             };
           }
         } else {
+          // Calculate fresh route: if vehicle has not departed, compute full route from origin to destination
           const rerouteResult = await calculateMissionReroute(targetMission, {
-            vehicle: assignedVeh,
+            vehicle: vehicleHasLeftSource ? assignedVeh : undefined,
             allSegments: NER_SEGMENTS,
             rainfallMmHr,
             disruptions: activeDisruptions,
@@ -2378,16 +2396,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           rerouteReason: rerouteReason || 'Model B Predictive Hazard Detour Applied',
           reroutedAt: new Date().toISOString(),
           reroutedFromCoords: reroutedFrom,
-          previousRouteGeometry: targetMission.routeGeometry || targetMission.previousRouteGeometry,
           routeGeometry: newGeom,
           routeDistanceKm: newDist,
           routeDurationMinutes: newEta,
           assignedRouteId: newRouteId,
           selectedRouteOptionId: updatedChosenOption.id,
           corridorSegmentIds: newCorridorSegmentIds,
-          routeOptions: targetMission.routeOptions
-            ? [updatedChosenOption, ...targetMission.routeOptions.filter((o) => o.id !== updatedChosenOption.id)]
-            : [updatedChosenOption],
+          routeOptions: [updatedChosenOption],
         };
 
         setActiveMissions((prev) => {
@@ -2403,10 +2418,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }));
         setMissionRouteOptionsByMissionId((prev) => ({
           ...prev,
-          [missionId]: updatedMission.routeOptions || [chosenOption!],
+          [missionId]: [updatedChosenOption],
         }));
 
-        // Keep vehicle at exact current coordinates and reset telemetry progress to beginning of new route
+        // Keep vehicle at exact current coordinates if in transit, or at origin if not yet departed
         if (assignedVeh) {
           setVehicles((prev) =>
             prev.map((v) =>
@@ -2414,8 +2429,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 ? {
                     ...v,
                     assigned_route_id: newRouteId,
-                    traveled_distance_km: 0,
-                    route_progress_pct: 0,
+                    traveled_distance_km: vehicleHasLeftSource ? v.traveled_distance_km : 0,
+                    route_progress_pct: vehicleHasLeftSource ? 0 : 0,
+                    current_coords: vehicleHasLeftSource ? v.current_coords : originCoords,
                   }
                 : v
             )

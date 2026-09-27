@@ -22,6 +22,7 @@ import { predictAndRankCandidateRoutes, type ModelBMultiRouteResult } from './mo
 import { fetchOSRMRouteAlternatives, fetchOSRMRouteMetrics } from './osrmRoutingService';
 import { fetchBhuvanShortestPath } from './bhuvanRoutingService';
 import { haversineDistanceKm } from './gisMath';
+export { haversineDistanceKm };
 import { SHILLONG_PRIMARY_ROUTE_COORDS, SHILLONG_BYPASS_ROUTE_COORDS } from '../data/shillongRoadRoutes';
 import { FLEET_ROUTES } from '../data/fleetData';
 import { OSRM_PRECOMPUTED_ALTERNATIVES } from '../data/osrmPrecomputedAlternatives';
@@ -898,24 +899,30 @@ export async function calculateMissionReroute(
   const vehicle = options?.vehicleProfile || resolveVehicleProfile(mission.recommendedVehicleType);
 
   // 1. Vehicle location awareness:
-  // If convoy is currently in transit, the reroute MUST initiate from its live GPS position
-  // Ensure the vehicle's position is geographically relevant to this mission's corridor or origin
+  // If convoy has physically departed the origin depot and is on the road, reroute from its live GPS position.
+  // If convoy has not yet left the origin depot, reroute full corridor from origin source to destination.
   const rawVehCoords = options?.vehicle?.current_coords;
   const missionOrigin = mission.originCoords || [25.9064, 93.7275];
-  const isVehNearMission = Boolean(
+  const distFromOrigin = (rawVehCoords && missionOrigin)
+    ? haversineDistanceKm(rawVehCoords, missionOrigin)
+    : 0;
+
+  const vehicleHasLeftSource = Boolean(
+    options?.vehicle &&
+    mission.status === 'IN_TRANSIT' &&
     rawVehCoords &&
     Array.isArray(rawVehCoords) &&
     rawVehCoords.length === 2 &&
-    (haversineDistanceKm(rawVehCoords, missionOrigin) < 120.0 ||
-      (mission.routeGeometry && mission.routeGeometry.some((pt) => haversineDistanceKm(rawVehCoords, pt) < 30.0)))
+    (
+      (options.vehicle.route_progress_pct !== undefined && options.vehicle.route_progress_pct > 2) ||
+      (options.vehicle.traveled_distance_km !== undefined && options.vehicle.traveled_distance_km > 1.5) ||
+      distFromOrigin > 3.0
+    )
   );
 
-  const isVehicleInTransit =
-    mission.status === 'IN_TRANSIT' &&
-    Boolean(rawVehCoords) &&
-    isVehNearMission;
+  const isVehicleInTransit = vehicleHasLeftSource;
 
-  const vehicleCoords: [number, number] = isVehicleInTransit
+  const vehicleCoords: [number, number] = vehicleHasLeftSource
     ? rawVehCoords!
     : missionOrigin;
 
