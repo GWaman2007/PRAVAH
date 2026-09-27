@@ -29,8 +29,6 @@ export const FieldOfficerMyReportsView: React.FC = () => {
   // Filter incidents reported by this officer
   const myIncidents = incidents.filter(
     (i) =>
-      i.source === 'OFFICER' ||
-      (i.officerBadge && i.officerBadge === userContext.badgeId) ||
       i.author?.name?.toLowerCase().includes(userContext.name.toLowerCase().split(' ')[1] || 'hmar')
   );
 
@@ -172,13 +170,13 @@ export const FieldOfficerMyReportsView: React.FC = () => {
                 </div>
 
                 <p className="text-[11px] text-text-secondary leading-snug">
-                  "{inc.description}"
+                  "{inc.title}"
                 </p>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-text-tertiary pt-1 border-t border-border/50">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-3 h-3 text-primary" />
-                    <span>{inc.location.placeName || inc.location.name}</span>
+                    <span>{inc.location.placeName}</span>
                     <span>•</span>
                     <Clock className="w-3 h-3" />
                     <span>{formatTimeAgo(inc.timestamp)}</span>

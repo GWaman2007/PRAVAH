@@ -342,11 +342,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
                         </h2>
                       </div>
 
-                      {inc.description && (
-                        <p className="text-xs text-text-secondary italic bg-surface-subtle/60 border-l-2 border-primary/40 pl-2.5 py-1">
-                          "{inc.description}"
-                        </p>
-                      )}
+
 
                       <div className="flex flex-wrap items-center gap-2 mt-1 text-xs">
                         <span className="flex items-center space-x-1 text-text-secondary font-medium">
@@ -406,7 +402,7 @@ export const GroundIntelligenceFeed: React.FC = () => {
                       {inc.location.lat && inc.location.lng && (
                         <button
                           onClick={() => {
-                            focusMapOnCoords(inc.location.lat, inc.location.lng);
+                            focusMapOnCoords([inc.location.lat, inc.location.lng]);
                             setActiveView('GIS_COMMAND');
                           }}
                           className="px-2.5 py-1 rounded bg-surface-subtle hover:bg-surface border border-border text-primary font-semibold text-[11px] flex items-center gap-1 transition-colors btn-press cursor-pointer"

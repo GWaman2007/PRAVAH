@@ -889,7 +889,7 @@ export function generateMissionFromResourceRequest(
   const comm = communities.find((c) => c.id === request.communityId) || communities[0];
   const depot = resolveNearestDepot(comm.coordinates);
 
-  const routeConfig = COMMUNITY_LOGISTICS_REGISTRY[comm.id] || {
+  const routeConfig = COMMUNITY_ROUTING_PROFILES[comm.id] || {
     depotId: depot.id,
     depotName: depot.name,
     depotCoords: depot.coords,
@@ -977,7 +977,7 @@ export function createManualReliefMission(params: {
 }): ReliefMission {
   const comm = params.communities.find((c) => c.id === params.destinationCommunityId) || params.communities[0];
   const depot = STRATEGIC_DEPOTS[params.originWarehouseId] || STRATEGIC_DEPOTS.silchar;
-  const routeConfig = COMMUNITY_LOGISTICS_REGISTRY[comm.id] || {
+  const routeConfig = COMMUNITY_ROUTING_PROFILES[comm.id] || {
     depotId: depot.id,
     depotName: depot.name,
     depotCoords: depot.coords,

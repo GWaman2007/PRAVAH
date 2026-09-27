@@ -136,27 +136,33 @@ export const QuickFieldReportModal: React.FC<QuickFieldReportModalProps> = ({
 
         addIncident({
           title: reportTitle,
-          category:
-            incidentType === 'Road Blockage' || incidentType === 'Bridge Blockage' || incidentType === 'Landslide'
-              ? 'ROAD_HAZARD'
-              : 'COMMUNITY_NEED',
+          corridorFlair: selectedCommunity.primaryCorridor || 'NH-306',
+          incidentType:
+            incidentType === 'Road Blockage' || incidentType === 'Landslide'
+              ? 'Landslide'
+              : incidentType === 'Bridge Blockage'
+              ? 'Bridge Washout'
+              : incidentType === 'Flood'
+              ? 'Flash Flood'
+              : 'Tree Fall',
           severity:
             severity === 'CRITICAL'
               ? 'Total Blockage'
               : severity === 'HIGH'
-              ? 'Single Lane'
-              : 'Caution',
+              ? 'Single Lane Passable'
+              : 'Caution/Hazard',
           location: {
-            name: locationName || selectedCommunity.name,
-            lat: selectedCommunity.coords[0],
-            lng: selectedCommunity.coords[1],
+            placeName: locationName || selectedCommunity.name,
+            lat: selectedCommunity.coordinates[0],
+            lng: selectedCommunity.coordinates[1],
           },
-          description: description.trim() || `Field Report filed by ${userContext.name} (${userContext.badgeId}).`,
-          verified: true,
+          author: {
+            name: userContext.name,
+            role: 'Field Officer (BRO/Police)',
+          },
           timestamp: new Date().toISOString(),
-          source: 'OFFICER',
-          officerBadge: userContext.badgeId,
-          imageUri: photos[0] || (incidentType === 'Bridge Blockage' ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80' : undefined),
+          mediaUrl: photos[0] || (incidentType === 'Bridge Blockage' ? 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=800&q=80' : ''),
+          hasOfficerVerified: true,
         });
 
         // If it's a road or bridge blockage, update the network segment disruption in real-time

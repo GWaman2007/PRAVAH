@@ -175,7 +175,7 @@ export const CreateMissionModal: React.FC<CreateMissionModalProps> = ({
               >
                 {vehicles.map((v) => (
                   <option key={v.vehicle_id} value={v.vehicle_id}>
-                    {v.vehicle_id} ({v.type || '4x4 Convoy'})
+                    {v.vehicle_id} ({v.vehicle_type || '4x4 Convoy'})
                   </option>
                 ))}
               </select>

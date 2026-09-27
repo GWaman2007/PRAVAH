@@ -67,9 +67,8 @@ export const FieldOfficerCommunityView: React.FC = () => {
   const communityIncidents = useMemo(() => {
     return incidents.filter(
       (i) =>
-        i.location.name.toLowerCase().includes(community.name.toLowerCase().split(' ')[0]) ||
-        i.title.toLowerCase().includes(community.name.toLowerCase().split(' ')[0]) ||
-        i.description.toLowerCase().includes(community.name.toLowerCase().split(' ')[0])
+        i.location.placeName.toLowerCase().includes(community.name.toLowerCase().split(' ')[0]) ||
+        i.title.toLowerCase().includes(community.name.toLowerCase().split(' ')[0])
     );
   }, [incidents, community]);
 
@@ -77,7 +76,7 @@ export const FieldOfficerCommunityView: React.FC = () => {
   const hasDisruption = Object.entries(activeDisruptions).some(
     ([segId, d]) =>
       (segId.includes('KOL') || segId.includes('KOH') || segId.includes('TEESTA')) &&
-      d.status !== 'NORMAL'
+      d.status !== 'SINGLE_LANE_PASSABLE'
   );
 
   const openAction = (tab: QuickReportTab) => {
@@ -150,7 +149,7 @@ export const FieldOfficerCommunityView: React.FC = () => {
             <div>
               <span className="text-text-secondary block text-[11px]">Current Risk</span>
               <span className="text-base font-bold text-amber-500 font-mono">
-                {community.metrics.compositePriority >= 70 ? 'HIGH RISK' : 'ELEVATED'}
+                {community.metrics.finalScore >= 70 ? 'HIGH RISK' : 'ELEVATED'}
               </span>
             </div>
             <AlertTriangle className="w-6 h-6 text-amber-500/60" />
@@ -277,11 +276,11 @@ export const FieldOfficerCommunityView: React.FC = () => {
                       {activeMission.id}
                     </span>
                     <span className="font-bold text-xs text-text-primary">
-                      {activeMission.missionName || `${activeMission.assignedHubName} → ${activeMission.communityName}`}
+                      {`${activeMission.originWarehouseName} → ${activeMission.communityName}`}
                     </span>
                   </div>
                   <span className="text-[11px] text-text-tertiary block mt-0.5">
-                    Hub Origin: {activeMission.assignedHubName}
+                    Hub Origin: {activeMission.originWarehouseName}
                   </span>
                 </div>
                 <span className="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/30">
@@ -294,13 +293,13 @@ export const FieldOfficerCommunityView: React.FC = () => {
                 <div>
                   <span className="text-text-tertiary block text-[10px]">Vehicle &amp; Driver</span>
                   <span className="font-semibold text-text-primary">
-                    {activeMission.assignedVehicleId || 'Medic-01'} ({activeMission.assignedDriverName || 'Rajesh Mech'})
+                    {activeMission.assignedVehicleId || 'Medic-01'} ({activeMission.assignedDriver || 'Rajesh Mech'})
                   </span>
                 </div>
                 <div>
                   <span className="text-text-tertiary block text-[10px]">Estimated Transit ETA</span>
                   <span className="font-mono font-bold text-primary">
-                    {activeMission.etaMinutes ? `${activeMission.etaMinutes} min` : '42 min'}
+                    {activeMission.routeDurationMinutes ? `${activeMission.routeDurationMinutes} min` : '42 min'}
                   </span>
                 </div>
               </div>
@@ -379,7 +378,7 @@ export const FieldOfficerCommunityView: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-[11px] text-text-secondary leading-snug">
-                    "{inc.description}"
+                    "{inc.title}"
                   </p>
                   <span className="text-[10px] text-text-tertiary block">
                     Reported by {inc.author.name} • {formatTimeAgo(inc.timestamp)}

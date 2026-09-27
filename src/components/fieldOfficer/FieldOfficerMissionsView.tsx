@@ -80,11 +80,10 @@ export const FieldOfficerMissionsView: React.FC = () => {
       ) : (
         <div className="space-y-4">
           {relevantMissions.map((mission) => {
-            const isConfirmed = confirmedMissions[mission.id] || mission.deliveryConfirmedByField;
+            const isConfirmed = confirmedMissions[mission.id];
             const isArrived =
               mission.status === 'PENDING_ADMIN_CLOSEOUT' ||
-              mission.status === 'DELIVERED' ||
-              (mission.statusProgress && mission.statusProgress >= 90);
+              mission.status === 'DELIVERED';
 
             return (
               <div
@@ -103,7 +102,7 @@ export const FieldOfficerMissionsView: React.FC = () => {
                         {mission.id}
                       </span>
                       <h2 className="text-sm sm:text-base font-bold text-text-primary">
-                        {mission.missionName || `${mission.assignedHubName} → ${mission.communityName}`}
+                        {`${mission.originWarehouseName} → ${mission.communityName}`}
                       </h2>
                       {mission.source && (
                         <span
@@ -118,7 +117,7 @@ export const FieldOfficerMissionsView: React.FC = () => {
                       )}
                     </div>
                     <span className="text-[11px] text-text-secondary mt-0.5 block">
-                      Target Destination: <strong>{mission.communityName}</strong> • Origin Hub: {mission.assignedHubName}
+                      Target Destination: <strong>{mission.communityName}</strong> • Origin Hub: {mission.originWarehouseName}
                     </span>
                   </div>
 
@@ -150,19 +149,19 @@ export const FieldOfficerMissionsView: React.FC = () => {
                   <div>
                     <span className="text-text-tertiary block text-[10px]">Assigned Driver</span>
                     <span className="font-semibold text-text-primary">
-                      {mission.assignedDriverName || 'Rajesh Mech'}
+                      {mission.assignedDriver || 'Rajesh Mech'}
                     </span>
                   </div>
                   <div>
                     <span className="text-text-tertiary block text-[10px]">Transit Route</span>
                     <span className="font-mono text-text-primary truncate block">
-                      {mission.recommendedRouteId || 'NH-306 Corridor'}
+                      {mission.assignedRouteId || 'NH-306 Corridor'}
                     </span>
                   </div>
                   <div>
                     <span className="text-text-tertiary block text-[10px]">Estimated Arrival</span>
                     <span className="font-mono font-bold text-primary">
-                      {mission.etaMinutes ? `${mission.etaMinutes} min` : '42 min'}
+                      {mission.routeDurationMinutes ? `${mission.routeDurationMinutes} min` : '42 min'}
                     </span>
                   </div>
                 </div>

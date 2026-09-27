@@ -288,6 +288,7 @@ interface PravahStoreContextType {
   // Interactive Walkthrough Demo
   runDemoStep1: () => void;
   runDemoStep2: () => void;
+  runDemoStep3: () => void;
   resetDemoSimulation: () => void;
   resetCommunityScenario: (communityId?: string) => void;
 
@@ -4650,19 +4651,21 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
         // Add to incident / field intel feed
         addIncident({
           title: `Resource Requisition: ${reqData.resourceType} (${reqData.urgency})`,
-          category: 'SUPPLY_SHORTAGE',
-          severity: 'Caution',
+          corridorFlair: 'NH-306',
+          incidentType: 'Road Subsidence',
+          severity: 'Caution/Hazard',
           location: {
             placeName: reqData.communityName,
             lat: 24.22,
             lng: 92.68,
           },
-          description: `Resource Requisition: ${reqData.quantity} ${reqData.unit || 'units'} of ${reqData.resourceType} requested for ${reqData.communityName}. Urgency: ${reqData.urgency}. Reason: ${reqData.reason}${reqData.notes ? ` Notes: ${reqData.notes}` : ''}`,
-          verified: true,
+          author: {
+            name: userContext.name || 'Field Officer',
+            role: 'Field Officer (BRO/Police)',
+          },
           timestamp: new Date().toISOString(),
-          source: 'OFFICER',
-          officerBadge: userContext.badgeId,
-          imageUri: reqData.evidencePhoto,
+          mediaUrl: reqData.evidencePhoto || '',
+          hasOfficerVerified: true,
         });
       },
       [rawCommunities, activeMissions, addIncident, userContext.badgeId]
