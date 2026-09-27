@@ -290,6 +290,8 @@ interface PravahStoreContextType {
   setPendingSOSAlert: (alert: AlertEvent | null) => void;
 
   // Interactive Walkthrough Demo
+  isDemoToolbarOpen: boolean;
+  setIsDemoToolbarOpen: React.Dispatch<React.SetStateAction<boolean>>;
   runDemoStep1: () => void;
   runDemoStep2: () => void;
   runDemoStep3: () => void;
@@ -579,6 +581,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
   }, [activeView]);
+
+  // Interactive Walkthrough Demo State
+  const [isDemoToolbarOpen, setIsDemoToolbarOpen] = useState(false);
 
   // Map Camera Focus Queue (for automatic zoom & centering when plots/incidents are approved)
   const [pendingMapFocus, setPendingMapFocus] = useState<{
@@ -5222,6 +5227,8 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
       refreshHazardPolygons,
       pendingSOSAlert,
       setPendingSOSAlert,
+      isDemoToolbarOpen,
+      setIsDemoToolbarOpen,
       runDemoStep1,
       runDemoStep2,
       runDemoStep3,

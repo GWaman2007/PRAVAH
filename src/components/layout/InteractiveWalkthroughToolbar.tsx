@@ -22,6 +22,8 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
   const {
     activeRole,
     switchRole,
+    isDemoToolbarOpen,
+    setIsDemoToolbarOpen,
     runDemoStep1,
     runDemoStep2,
     runDemoStep3,
@@ -34,7 +36,8 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
 
   const { t } = useTranslation();
 
-  const [isExpanded, setIsExpanded] = useState(false);
+  const isExpanded = isDemoToolbarOpen;
+  const setIsExpanded = setIsDemoToolbarOpen;
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isActionRunning, setIsActionRunning] = useState(false);
 
@@ -191,12 +194,14 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
             }
             setIsExpanded(true);
           }}
-          className="drag-handle flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#1B4B73] hover:bg-[#123A5A] text-white font-semibold text-xs shadow-2xl border border-white/20 backdrop-blur-md transition-all duration-200 hover:scale-105 cursor-grab active:cursor-grabbing ring-2 ring-primary/30 animate-pulse max-w-[95vw]"
+          className="drag-handle flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-[#1B4B73] hover:bg-[#123A5A] text-white font-semibold text-xs shadow-2xl border-2 border-white/30 backdrop-blur-md transition-all duration-200 hover:scale-105 cursor-grab active:cursor-grabbing ring-4 ring-cyan-500/30 animate-pulse max-w-[95vw]"
+          title="Click to open 1-Click Interactive Resilience Demo & Reset Scenario Controls"
         >
-          <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 shrink-0" />
-          <span className="tracking-wide font-medium truncate max-w-[135px] sm:max-w-none text-[11px] sm:text-xs">
-            {t('resilienceDemo')}
+          <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+          <span className="tracking-wide font-bold truncate text-[11px] sm:text-xs">
+            Demo & Reset Controls
           </span>
+          <RotateCcw className="w-3.5 h-3.5 text-cyan-200 shrink-0 opacity-80" />
           {isP1 && (
             <span className="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-mono font-bold shrink-0">
               P1 ACTIVE

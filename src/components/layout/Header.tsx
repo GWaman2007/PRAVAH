@@ -21,6 +21,7 @@ import {
   Flame,
   CheckCircle,
   Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -38,6 +39,8 @@ export const Header: React.FC = () => {
     offlineQueueCount,
     toggleSimulatedOffline,
     isSupabaseConfigured,
+    isDemoToolbarOpen,
+    setIsDemoToolbarOpen,
     incidents,
     communities,
     vehicles,
@@ -131,6 +134,22 @@ export const Header: React.FC = () => {
              >
                <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
                <span className="hidden sm:inline">AI Copilot</span>
+             </button>
+
+             {/* Interactive Demo & Scenario Reset Controls Trigger */}
+             <button
+               id="header-demo-reset-btn"
+               onClick={() => setIsDemoToolbarOpen((prev) => !prev)}
+               title="Open 1-Click Interactive Resilience Demo & Reset Scenario Controls"
+               className={`shrink-0 flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-semibold border transition-all btn-press cursor-pointer shadow-xs ${
+                 isDemoToolbarOpen
+                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-400/40'
+                   : 'bg-gradient-to-r from-blue-600/20 to-cyan-600/20 text-cyan-300 border-cyan-500/40 hover:from-blue-600/30 hover:to-cyan-600/30'
+               }`}
+             >
+               <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+               <span className="font-semibold text-[11px] sm:text-xs">Demo / Reset</span>
+               <RotateCcw className="w-3 h-3 text-cyan-400 opacity-90 hidden xs:inline" />
              </button>
 
             {/* Admin Profile Pill / Role Switcher: Collapse label on mobile */}
