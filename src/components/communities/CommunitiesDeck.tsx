@@ -346,7 +346,7 @@ export const CommunitiesDeck: React.FC = () => {
                       </div>
 
                       <div>
-                        <span className="text-[10px] text-text-secondary block">Cutoff (T_c):</span>
+                        <span className="text-[10px] text-text-secondary block">Cutoff Time:</span>
                         <span className="font-semibold text-text-primary font-mono">
                           {(community.cutoffTimeHours ?? 48).toFixed(1)}h
                         </span>
@@ -420,9 +420,9 @@ export const CommunitiesDeck: React.FC = () => {
                 <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider">
                   {t('basicLogisticsProfile')}
                 </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                   <div className="p-2.5 rounded-sm bg-surface-subtle border border-border">
-                    <span className="text-[10px] text-text-secondary block">Final Score:</span>
+                    <span className="text-[10px] text-text-secondary block">Priority Score:</span>
                     <span className="text-base font-bold text-text-primary font-mono mt-0.5 block">
                       {selectedCommunity.metrics.finalScore.toFixed(3)}
                     </span>
@@ -432,13 +432,6 @@ export const CommunitiesDeck: React.FC = () => {
                     <span className="text-[10px] text-text-secondary block">{t('nearestDepot')}:</span>
                     <span className="font-semibold text-text-primary text-[11px] mt-0.5 block truncate" title={selectedCommunity.nearestDepotName}>
                       {selectedCommunity.nearestDepotName}
-                    </span>
-                  </div>
-
-                  <div className="p-2.5 rounded-sm bg-surface-subtle border border-border">
-                    <span className="text-[10px] text-text-secondary block">{t('activeRequisitionIndent')}:</span>
-                    <span className={`font-semibold text-[11px] mt-0.5 block ${selectedCommunity.hasActiveIndent ? 'text-amber-500' : 'text-text-secondary'}`}>
-                      {selectedCommunity.hasActiveIndent ? 'YES (High Urgency)' : 'NO (Standard)'}
                     </span>
                   </div>
 
@@ -492,25 +485,25 @@ export const CommunitiesDeck: React.FC = () => {
                     <span className="font-mono font-bold text-text-primary text-sm mt-0.5 block">
                       {selectedCommunity.metrics.isolationRisk.toFixed(2)}
                     </span>
-                    <span className="text-[9px] text-text-secondary">Ingress: {selectedCommunity.ingressRouteCount} path(s)</span>
+                    <span className="text-[9px] text-text-secondary">Open Routes: {selectedCommunity.ingressRouteCount}</span>
                   </div>
 
                   <div className="p-2.5 rounded-sm bg-surface-subtle border border-border">
-                    <span className="text-[10px] text-text-secondary block">Disruption Prob P(disrupt):</span>
+                    <span className="text-[10px] text-text-secondary block">Disruption Risk:</span>
                     <span className="font-mono font-bold text-text-primary text-sm mt-0.5 block">
                       {(selectedCommunity.disruptionProbMax * 100).toFixed(0)}%
                     </span>
                   </div>
 
                   <div className="p-2.5 rounded-sm bg-surface-subtle border border-border">
-                    <span className="text-[10px] text-text-secondary block">Vulnerability Index (I_vuln):</span>
+                    <span className="text-[10px] text-text-secondary block">Vulnerability Level:</span>
                     <span className="font-mono font-bold text-text-primary text-sm mt-0.5 block">
                       {selectedCommunity.metrics.vulnerabilityIndex.toFixed(2)}
                     </span>
                   </div>
 
                   <div className="p-2.5 rounded-sm bg-surface-subtle border border-border">
-                    <span className="text-[10px] text-text-secondary block">Supply Deficit (S_def):</span>
+                    <span className="text-[10px] text-text-secondary block">Supply Shortage:</span>
                     <span className="font-mono font-bold text-status-blocked-text text-sm mt-0.5 block">
                       {selectedCommunity.metrics.supplyDeficitFactor.toFixed(2)}
                     </span>
@@ -520,12 +513,12 @@ export const CommunitiesDeck: React.FC = () => {
                 {/* Reason for Urgency banner */}
                 <div className="p-2.5 rounded-sm bg-surface-subtle border border-border/80 text-xs">
                   <span className="text-[10px] font-bold text-text-secondary uppercase block mb-0.5">
-                    Calculated Operational Reason:
+                    Operational Advisory:
                   </span>
                   <p className="text-text-primary text-[11px] leading-relaxed">
                     {selectedCommunity.metrics.actionableDispatchWindow <= 0
-                      ? `Dispatch window is CLOSED because Cutoff Time (${selectedCommunity.cutoffTimeHours.toFixed(1)}h) is less than or equal to Transit Duration (${selectedCommunity.transitTimeHours.toFixed(1)}h). Mountain convoys departing now cannot safely reach the PHC before corridor severance.`
-                      : `Actionable dispatch window of ${selectedCommunity.metrics.actionableDispatchWindow.toFixed(1)}h remains before corridor failure. Ground convoy departure required within this window.`}
+                      ? `Dispatch window is CLOSED because the road cutoff time (${selectedCommunity.cutoffTimeHours.toFixed(1)}h) is less than the travel duration (${selectedCommunity.transitTimeHours.toFixed(1)}h). Relief convoys departing now cannot safely reach the healthcare facilities before roads are cut off.`
+                      : `A safe dispatch window of ${selectedCommunity.metrics.actionableDispatchWindow.toFixed(1)}h remains before roads are expected to close. Convoys must depart within this window to reach the community safely.`}
                   </p>
                 </div>
               </div>

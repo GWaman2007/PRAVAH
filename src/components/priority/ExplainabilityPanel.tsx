@@ -83,7 +83,7 @@ export const ExplainabilityPanel: React.FC<ExplainabilityPanelProps> = ({
             <div className="flex items-center justify-between text-text-primary">
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-xs bg-indigo-500" />
-                <span>0.45 × Isolation Risk (R_iso):</span>
+                <span>0.45 × Isolation Risk:</span>
               </span>
               <span className="font-bold text-indigo-600 dark:text-indigo-400">
                 {(0.45 * isolationRisk).toFixed(3)}{' '}
@@ -97,7 +97,7 @@ export const ExplainabilityPanel: React.FC<ExplainabilityPanelProps> = ({
             <div className="flex items-center justify-between text-text-primary">
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-xs bg-status-blocked-solid" />
-                <span>0.35 × Supply Deficit (S_def):</span>
+                <span>0.35 × Supply Shortage:</span>
               </span>
               <span className="font-bold text-status-blocked-text">
                 {(0.35 * supplyDeficitFactor).toFixed(3)}{' '}
@@ -111,7 +111,7 @@ export const ExplainabilityPanel: React.FC<ExplainabilityPanelProps> = ({
             <div className="flex items-center justify-between text-text-primary">
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-xs bg-amber-500" />
-                <span>0.20 × Vulnerability (I_vuln):</span>
+                <span>0.20 × Vulnerability Level:</span>
               </span>
               <span className="font-bold text-amber-600 dark:text-amber-400">
                 {(0.2 * vulnerabilityIndex).toFixed(3)}{' '}
@@ -208,11 +208,11 @@ export const ExplainabilityPanel: React.FC<ExplainabilityPanelProps> = ({
             <span className="font-bold text-text-primary">{community.elapsedTimeHours} hours</span>
           </div>
           <div className="flex justify-between font-mono text-[11px]">
-            <span className="text-text-secondary">Road Failure Window (T_cutoff):</span>
+            <span className="text-text-secondary">Road Cutoff Time:</span>
             <span className="font-bold text-status-blocked-text">{cutoffTimeHours.toFixed(1)} hours</span>
           </div>
           <div className="flex justify-between font-mono text-[11px]">
-            <span className="text-text-secondary">Convoy Transit Duration (T_transit):</span>
+            <span className="text-text-secondary">Convoy Transit Time:</span>
             <span className="font-bold text-text-primary">{effectiveTransitHours.toFixed(1)} hours</span>
           </div>
 

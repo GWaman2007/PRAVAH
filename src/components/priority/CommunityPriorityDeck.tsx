@@ -116,9 +116,9 @@ export const CommunityPriorityDeck: React.FC = () => {
               </h1>
             </div>
             <p className="mt-1 text-xs text-text-secondary max-w-3xl leading-relaxed">
-              Anticipatory commodity depletion model evaluating closing road failure windows (T_cutoff),
-              transit durations (T_transit), isolation risks (R_iso), and vulnerability indices (I_vuln)
-              to prioritize life-saving relief convoys before mountain corridors cleave.
+              Anticipatory relief model tracking road cutoff times, travel durations,
+              isolation risks, and community vulnerability to prioritize life-saving
+              relief convoys before mountain roads are blocked.
             </p>
           </div>
 
@@ -223,7 +223,7 @@ export const CommunityPriorityDeck: React.FC = () => {
                     </div>
 
                     <div>
-                      <span className="text-[10px] text-text-secondary block">Cutoff (T_c):</span>
+                      <span className="text-[10px] text-text-secondary block">Cutoff Time:</span>
                       <span className="font-semibold text-text-primary font-mono">
                         {(c.cutoffTimeHours ?? 48).toFixed(1)}h
                       </span>
@@ -297,15 +297,15 @@ export const CommunityPriorityDeck: React.FC = () => {
                   </div>
 
                   <div className="p-2.5 rounded-sm bg-surface-subtle border border-border">
-                    <div className="text-[11px] text-text-secondary">Isolation Risk (R_iso)</div>
+                    <div className="text-[11px] text-text-secondary">Isolation Risk</div>
                     <div className="text-base font-bold text-text-primary mt-0.5">
                       {selectedCommunity.metrics.isolationRisk.toFixed(2)}
                     </div>
-                    <div className="text-[10px] text-text-tertiary">Ingress count: {selectedCommunity.ingressRouteCount}</div>
+                    <div className="text-[10px] text-text-tertiary">Open Routes: {selectedCommunity.ingressRouteCount}</div>
                   </div>
 
                   <div className="p-2.5 rounded-sm bg-surface-subtle border border-border">
-                    <div className="text-[11px] text-text-secondary">Supply Deficit (S_def)</div>
+                    <div className="text-[11px] text-text-secondary">Supply Shortage</div>
                     <div className="text-base font-bold text-status-blocked-text mt-0.5">
                       {selectedCommunity.metrics.supplyDeficitFactor.toFixed(2)}
                     </div>
@@ -313,7 +313,7 @@ export const CommunityPriorityDeck: React.FC = () => {
                   </div>
 
                   <div className="p-2.5 rounded-sm bg-surface-subtle border border-border">
-                    <div className="text-[11px] text-text-secondary">Vulnerability (I_vuln)</div>
+                    <div className="text-[11px] text-text-secondary">Vulnerability Level</div>
                     <div className="text-base font-bold text-text-primary mt-0.5">
                       {selectedCommunity.metrics.vulnerabilityIndex.toFixed(2)}
                     </div>

@@ -214,34 +214,34 @@ export function calculateCompositePriority(
       level: actionableDispatchWindow <= 0 ? 'critical' : actionableDispatchWindow <= 3.0 ? 'warning' : 'positive',
       headline: actionableDispatchWindow <= 0
         ? 'Dispatch Window CLOSED (Transit exceeds cutoff)'
-        : `Actionable Dispatch Window: ${actionableDispatchWindow.toFixed(1)} Hours Remaining`,
-      detail: `Cutoff in ${community.cutoffTimeHours.toFixed(1)}h minus ${community.transitTimeHours.toFixed(1)}h transit time leaves ${actionableDispatchWindow.toFixed(1)}h to initiate ground convoy departure.`,
-      factorImpact: `T_window = ${actionableDispatchWindow.toFixed(1)}h`,
+        : `Safe Dispatch Window: ${actionableDispatchWindow.toFixed(1)} Hours Remaining`,
+      detail: `Road cutoff in ${community.cutoffTimeHours.toFixed(1)}h minus ${community.transitTimeHours.toFixed(1)}h travel time leaves ${actionableDispatchWindow.toFixed(1)}h to dispatch relief convoys safely.`,
+      factorImpact: `Dispatch Window: ${actionableDispatchWindow.toFixed(1)}h`,
     },
     {
       id: 'supply-audit',
       category: 'SUPPLY',
       level: supplyDeficitFactor >= 0.75 ? 'critical' : supplyDeficitFactor >= 0.4 ? 'warning' : 'positive',
-      headline: `Critical Deficit: ${COMMODITY_CONFIG[criticalCommodity].label}`,
-      detail: `Current stock (${commodityDepletions[criticalCommodity].currentStock} ${COMMODITY_CONFIG[criticalCommodity].unit}) exhausts in ${minExhaustHours.toFixed(1)}h under ${commodityDepletions[criticalCommodity].surgeMultiplier}x monsoon burn rate.`,
-      factorImpact: `S_def = ${supplyDeficitFactor.toFixed(2)} (${commodityDepletions[criticalCommodity].deficitReason})`,
+      headline: `Critical Shortage: ${COMMODITY_CONFIG[criticalCommodity].label}`,
+      detail: `Current stock (${commodityDepletions[criticalCommodity].currentStock} ${COMMODITY_CONFIG[criticalCommodity].unit}) runs out in ${minExhaustHours.toFixed(1)}h under ${commodityDepletions[criticalCommodity].surgeMultiplier}x emergency consumption rate.`,
+      factorImpact: `Supply Shortage: ${(supplyDeficitFactor * 100).toFixed(0)}% (${commodityDepletions[criticalCommodity].deficitReason})`,
     },
     {
       id: 'isolation-audit',
       category: 'ISOLATION',
       level: isolationRisk >= 0.7 ? 'critical' : 'warning',
-      headline: community.ingressRouteCount <= 1 ? 'Single Point of Failure Corridor' : 'Multiple Alternate Corridors',
-      detail: `Disruption probability P(disrupt) = ${(community.disruptionProbMax * 100).toFixed(0)}% with ${community.ingressRouteCount} ingress path(s).`,
-      factorImpact: `R_iso = ${isolationRisk.toFixed(2)}`,
+      headline: community.ingressRouteCount <= 1 ? 'Single Mountain Access Road' : 'Multiple Redundant Access Routes',
+      detail: `Road disruption risk estimated at ${(community.disruptionProbMax * 100).toFixed(0)}% with ${community.ingressRouteCount} access route(s).`,
+      factorImpact: `Isolation Risk: ${isolationRisk.toFixed(2)}`,
     },
     {
       id: 'formula-audit',
       category: 'FORMULA',
       level: emergencyUrgencyBoost > 0 ? 'critical' : 'neutral',
-      headline: emergencyUrgencyBoost > 0 ? 'Urgency Boost Triggered (+0.20)' : 'Standard Composite Scoring',
+      headline: emergencyUrgencyBoost > 0 ? 'Emergency Priority Boost (+0.20)' : 'Standard Priority Assessment',
       detail: emergencyUrgencyBoost > 0
-        ? `Base Score (${baseScore.toFixed(3)}) received +0.20 emergency boost because S_def >= 0.75 and T_window <= 3.0h.`
-        : `Base Score = (0.45 * ${isolationRisk.toFixed(2)}) + (0.35 * ${supplyDeficitFactor.toFixed(2)}) + (0.20 * ${vulnerabilityIndex.toFixed(2)}) = ${baseScore.toFixed(3)}.`,
+        ? `Base Score (${baseScore.toFixed(3)}) received an emergency +0.20 boost due to severe supply shortages and under 3 hours to road closure.`
+        : `Base Score = (45% Isolation) + (35% Supply Shortage) + (20% Community Vulnerability) = ${baseScore.toFixed(3)}.`,
       factorImpact: `Final Priority Score: ${finalScore.toFixed(3)} [${priorityTier}]`,
     },
   ];

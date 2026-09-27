@@ -1507,59 +1507,7 @@ export function createSelectedDraftRouteGeoJSON(
   }
 
   const [dLat, dLon] = draftPlot.coordinates;
-  const lowerCorridor = (draftPlot.corridor || '').toLowerCase();
-
-  // Find matching corridor or nearest segment
-  let matchedSegment: Segment | undefined;
-
-  // 1. Direct corridor name / highway match
-  if (lowerCorridor.includes('nh-29') || lowerCorridor.includes('dimapur') || lowerCorridor.includes('kohima') || lowerCorridor.includes('pagla')) {
-    matchedSegment = segments.find((s) => s.id === 'SEG-DIM-KOH-MAIN') || segments.find((s) => s.highway === 'NH-29');
-  } else if (lowerCorridor.includes('nh-306') || lowerCorridor.includes('silchar') || lowerCorridor.includes('kolasib') || lowerCorridor.includes('vairengte')) {
-    matchedSegment = segments.find((s) => s.id === 'SEG-SIL-KOL') || segments.find((s) => s.highway === 'NH-306');
-  } else if (lowerCorridor.includes('nh-10') || lowerCorridor.includes('teesta') || lowerCorridor.includes('gangtok') || lowerCorridor.includes('siliguri')) {
-    matchedSegment = segments.find((s) => s.id === 'SEG-SILI-GANGTOK') || segments.find((s) => s.highway === 'NH-10');
-  } else if (lowerCorridor.includes('nh-6') || lowerCorridor.includes('shillong') || lowerCorridor.includes('jowai') || lowerCorridor.includes('sonapur')) {
-    matchedSegment = segments.find((s) => s.id === 'SEG-JOW-SIL') || segments.find((s) => s.highway === 'NH-6');
-  } else if (lowerCorridor.includes('nh-08') || lowerCorridor.includes('nh-8') || lowerCorridor.includes('agartala')) {
-    matchedSegment = segments.find((s) => s.id === 'SEG-KOL-AIZ') || segments[0];
-  }
-
-  // 2. Proximity fallback: find segment with minimum distance to draft coordinates
-  if (!matchedSegment) {
-    let minDistance = Infinity;
-    for (const seg of segments) {
-      if (seg.coordinates && seg.coordinates.length > 0) {
-        for (const pt of seg.coordinates) {
-          const dist = haversineDistanceKm([dLat, dLon], [pt[0], pt[1]]);
-          if (dist < minDistance) {
-            minDistance = dist;
-            matchedSegment = seg;
-          }
-        }
-      }
-    }
-  }
-
   const features: GeoJSON.Feature<GeoJSON.LineString | GeoJSON.Point>[] = [];
-
-  // Line feature for affected road segment
-  if (matchedSegment && matchedSegment.coordinates && matchedSegment.coordinates.length >= 2) {
-    features.push({
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: toGeoJSONLineString(matchedSegment.coordinates),
-      },
-      properties: {
-        id: `expected-route-${matchedSegment.id}`,
-        title: `Affected Corridor: ${matchedSegment.name}`,
-        highway: matchedSegment.highway,
-        severity: draftPlot.severity,
-        color: draftPlot.severity === 'TOTAL_BLOCKAGE' ? '#EF4444' : '#F59E0B',
-      },
-    });
-  }
 
   // Point feature for expected hazard pin
   features.push({

@@ -1164,18 +1164,6 @@ export const TacticalMapDeck: React.FC = () => {
         },
       });
 
-      // Dashed corridor line along expected road route
-      map.addLayer({
-        id: 'selected-draft-route-line',
-        type: 'line',
-        source: 'selected-draft-route',
-        filter: ['==', '$type', 'LineString'],
-        paint: {
-          'line-color': ['get', 'color'],
-          'line-width': 4.5,
-          'line-dasharray': [2, 1.5],
-        },
-      });
 
       // Expected pin pulse ring (Red Blinker)
       map.addLayer({

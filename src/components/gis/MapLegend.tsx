@@ -274,16 +274,6 @@ export const MapLegend: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Total Blockage */}
-                <div className="flex items-center gap-2.5">
-                  <div className="w-6 flex items-center justify-center shrink-0">
-                    <div className="w-6 h-1 border-b-2 border-dashed border-red-500" />
-                  </div>
-                  <div>
-                    <span className="font-medium text-red-400">Total Blockage / Impassable Cutoff</span>
-                    <span className="text-slate-400 block text-[9.5px]">Landslide debris or bridge breach; mandatory reroute</span>
-                  </div>
-                </div>
 
                 {/* Road Breakdown Point */}
                 <div className="flex items-center gap-2.5 pt-1 border-t border-slate-800/60">
