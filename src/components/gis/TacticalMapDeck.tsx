@@ -1319,8 +1319,16 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       map.on('click', 'vehicles-unclustered', (e: any) => {
         const feat = e.features?.[0];
         if (feat && feat.properties?.vehicle_id) {
-          setSelectedVehicleId(feat.properties.vehicle_id);
+          const vId = feat.properties.vehicle_id;
+          setSelectedVehicleId(vId);
           setIsInspectorOpen(true);
+          const currentMissions = activeMissionsRef.current;
+          const matchedMission = currentMissions.find(
+            (m) => m.assignedVehicleId === vId || m.id === feat.properties.mission_id
+          );
+          if (matchedMission) {
+            setSelectedMissionId(matchedMission.id);
+          }
         }
       });
 
@@ -1374,11 +1382,11 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       };
 
       map.on('click', 'mission-routes-line', handleMissionRouteClick);
-      map.on('click', 'mission-selected-route-line', handleMissionRouteClick);
+      map.on('click', 'selected-mission-line', handleMissionRouteClick);
       map.on('mouseenter', 'mission-routes-line', () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', 'mission-routes-line', () => { map.getCanvas().style.cursor = ''; });
-      map.on('mouseenter', 'mission-selected-route-line', () => { map.getCanvas().style.cursor = 'pointer'; });
-      map.on('mouseleave', 'mission-selected-route-line', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseenter', 'selected-mission-line', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'selected-mission-line', () => { map.getCanvas().style.cursor = ''; });
 
       // Click road segment
       map.on('click', 'road-status-line', (e: any) => {

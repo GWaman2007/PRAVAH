@@ -2966,6 +2966,9 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         // 4. Vehicle Telemetry: Medic-01 stopped before debris obstruction on NH-306 (NOT rerouted)
         const vehicleCoords: [number, number] = [24.5015, 92.76491];
         setSelectedVehicleId('Medic-01');
+        setSelectedMissionId('MSN-ONGOING-MZ01');
+        setSelectedCommunityId('MZ-KOL-004');
+        focusMapOnCoords([24.40, 92.73], 10);
         setVehicles((prev) =>
           prev.map((v) =>
             v.vehicle_id === 'Medic-01'
@@ -3096,9 +3099,12 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setRawCommunities(INITIAL_COMMUNITIES);
         setDistrictsHealth(INITIAL_DISTRICTS_HEALTH);
 
-        // 4. Vehicles reset
+        // 4. Vehicles reset & clear selection
         setVehicles(INITIAL_VEHICLES);
-        setSelectedVehicleId('Medic-01');
+        setSelectedVehicleId(null);
+        setSelectedMissionId(null);
+        setSelectedCommunityId(null);
+        focusMapOnCoords([26.2006, 92.9376], 7);
 
         // 5. Missions reset to clean baseline
         const freshMissions = generateDeterministicDemoMissions();
@@ -3136,7 +3142,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       return nextMode;
     });
-  }, []);
+  }, [focusMapOnCoords]);
 
   // 15. Real-Time Socket Synchronization
   useEffect(() => {

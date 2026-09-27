@@ -73,30 +73,11 @@ export function ensureRouteGeometryEndpoints(
     return coords;
   }
 
-  // 1. Vehicle Live Position or Origin Snapping
-  if (vehicleCoords && Number.isFinite(vehicleCoords[0]) && Number.isFinite(vehicleCoords[1])) {
-    const vNorm = ensureLatLng(vehicleCoords);
-    // Find closest vertex along the path to the vehicle's live position
-    let bestDist = Infinity;
-    let bestIdx = 0;
-    for (let i = 0; i < coords.length; i++) {
-      const d = haversineDistanceKm(vNorm, coords[i]);
-      if (d < bestDist) {
-        bestDist = d;
-        bestIdx = i;
-      }
-    }
-    // If vehicle is reasonably near the route (within 25 km), trace forward from vehicle
-    if (bestDist <= 25.0) {
-      coords = [vNorm, ...coords.slice(bestIdx)];
-    } else {
-      coords = [vNorm, ...coords];
-    }
-  } else if (originCoords && Number.isFinite(originCoords[0]) && Number.isFinite(originCoords[1])) {
+  // 1. Clean Origin Snapping (preserve entire route corridor from depot to destination)
+  if (originCoords && Number.isFinite(originCoords[0]) && Number.isFinite(originCoords[1])) {
     const origNorm = ensureLatLng(originCoords);
     const dStart = haversineDistanceKm(origNorm, coords[0]);
     if (dStart > 0.05) {
-      // If start is more than 50m away from origin depot, anchor to origin
       if (dStart <= 2.0) {
         coords[0] = origNorm;
       } else {
@@ -536,8 +517,8 @@ export function createMissionRoutesGeoJSON(
       }
     }
 
-    const lineWeight = selectedMissionId ? 2.2 : 3.8;
-    const opacity = selectedMissionId ? 0.35 : 0.85;
+    const lineWeight = selectedMissionId ? 3.2 : 4.0;
+    const opacity = selectedMissionId ? 0.70 : 0.90;
 
     features.push({
       type: 'Feature',
