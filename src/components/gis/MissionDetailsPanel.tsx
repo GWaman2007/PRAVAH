@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import type { ReliefMission, VehicleTelemetry, RouteDefinition, SegmentIncident, MissionRouteOption } from '../../types';
+import type { ReliefMission, VehicleTelemetry, RouteDefinition, SegmentIncident, MissionRouteOption, RouteSpatialSegment } from '../../types';
 import { useTranslation } from '../../data/uiTranslations';
 import { usePravahStore } from '../../store/usePravahStore';
 import { NER_SEGMENTS } from '../../data/routingNetwork';
@@ -25,6 +25,9 @@ import {
   Check,
   RefreshCw,
   ClipboardList,
+  Layers,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 function formatMinutes(mins: number): string {
@@ -47,6 +50,7 @@ interface MissionDetailsPanelProps {
   onDispatch: (missionId: string, vehicleId?: string) => void;
   onInspectVehicle?: (vehicleId: string) => void;
   onSelectSegment?: (segmentId: string) => void;
+  onSelectSpatialSegment?: (segment: RouteSpatialSegment, routeName?: string) => void;
 }
 
 export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
@@ -61,6 +65,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
   onDispatch,
   onInspectVehicle,
   onSelectSegment,
+  onSelectSpatialSegment,
 }) => {
   const {
     modelAPredictions,
@@ -72,6 +77,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
   const { t } = useTranslation();
 
   const [isRerouting, setIsRerouting] = useState(false);
+  const [expandedSegmentId, setExpandedSegmentId] = useState<string | null>(null);
 
   const handleExecuteReroute = async (targetOpt?: MissionRouteOption) => {
     setIsRerouting(true);
@@ -353,6 +359,104 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                       <div>Delay Factor: <strong className="text-amber-400">{opt.predictedDelayFactor.toFixed(2)}×</strong></div>
                       <div>Distance: <strong className="text-text-primary">{opt.distanceKm} km</strong></div>
                     </div>
+
+                    {/* 5 Equal-Distance Spatial Model-A Segments (Sections 2, 3, 4, 10) */}
+                    {opt.spatialSegments && opt.spatialSegments.length === 5 && (
+                      <div className="mt-2.5 pt-2 border-t border-border/60 space-y-1.5">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1">
+                            <Layers className="w-3 h-3 text-primary" />
+                            <span>5 Spatial Model-A Slices</span>
+                            <span className="text-[9px] font-mono text-text-tertiary">({(opt.distanceKm / 5).toFixed(1)} km ea)</span>
+                          </span>
+                          <span className="text-[9.5px] font-mono text-text-tertiary">
+                            {opt.highRiskSegmentCount ? (
+                              <span className="text-amber-400 font-bold">{opt.highRiskSegmentCount} Elevated</span>
+                            ) : (
+                              <span className="text-emerald-400 font-bold">5/5 Clear</span>
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-5 gap-1">
+                          {opt.spatialSegments.map((seg) => {
+                            const isHigh = seg.modelA.probability >= 0.50;
+                            const isBlocked = seg.operationalStatus.isBlocked;
+                            const isRestricted = seg.operationalStatus.isRestricted;
+
+                            let bgBorder = 'bg-surface border-border text-text-primary hover:border-primary/50';
+                            let chipColor = 'text-emerald-400';
+                            if (isBlocked) {
+                              bgBorder = 'bg-red-500/15 border-red-500/40 text-red-300';
+                              chipColor = 'text-red-400 font-bold';
+                            } else if (isRestricted || isHigh) {
+                              bgBorder = 'bg-amber-500/15 border-amber-500/40 text-amber-300';
+                              chipColor = 'text-amber-400 font-bold';
+                            }
+
+                            const isExpanded = expandedSegmentId === seg.id;
+
+                            return (
+                              <button
+                                key={seg.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectSpatialSegment?.(seg, opt.routeName);
+                                  setExpandedSegmentId(isExpanded ? null : seg.id);
+                                }}
+                                className={`p-1 rounded-xs border text-center transition-all cursor-pointer ${bgBorder} ${
+                                  isExpanded ? 'ring-1 ring-primary' : ''
+                                }`}
+                                title={`Segment S${seg.order} (${seg.percentageRange}) - ${seg.distanceKm} km. Disruption Risk: ${(seg.modelA.probability * 100).toFixed(0)}%. Click to inspect 17 features.`}
+                              >
+                                <span className="block text-[9px] font-mono font-bold">S{seg.order}</span>
+                                <span className={`block text-[9.5px] font-mono ${chipColor}`}>
+                                  {(seg.modelA.probability * 100).toFixed(0)}%
+                                </span>
+                                <span className="block text-[8px] text-text-tertiary truncate">
+                                  {seg.distanceKm}k
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Expanded Spatial Segment Detail Drawer */}
+                        {expandedSegmentId && opt.spatialSegments.some((s) => s.id === expandedSegmentId) && (() => {
+                          const activeSeg = opt.spatialSegments.find((s) => s.id === expandedSegmentId)!;
+                          const feat = activeSeg.modelA.features;
+                          return (
+                            <div className="p-2 mt-1 rounded bg-surface border border-primary/40 space-y-1.5 animate-fadeIn">
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="font-bold text-primary flex items-center gap-1">
+                                  <span>Segment S{activeSeg.order} ({activeSeg.percentageRange})</span>
+                                  <span className="text-text-secondary font-mono">&bull; {activeSeg.distanceKm} km</span>
+                                </span>
+                                <span className={`font-mono text-[9.5px] px-1 py-0.2 rounded font-bold border ${
+                                  activeSeg.modelA.probability >= 0.50
+                                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                                    : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                                }`}>
+                                  Risk: {(activeSeg.modelA.probability * 100).toFixed(1)}%
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1 text-[9px] font-mono text-text-secondary">
+                                <div>24h Rain: <strong className="text-text-primary">{feat.rainfall_24h} mm</strong></div>
+                                <div>Mean Elev: <strong className="text-text-primary">{feat.elevation_m} m</strong></div>
+                                <div>Slope: <strong className="text-text-primary">{feat.slope_degrees}°</strong></div>
+                                <div>Landslides: <strong className="text-text-primary">{feat.historical_road_landslide_count}</strong></div>
+                                <div>BT Pavement: <strong className="text-text-primary">{feat.bt_road_km} km ({(feat.bt_road_ratio * 100).toFixed(0)}%)</strong></div>
+                                <div>ICBP/CC: <strong className="text-text-primary">{(feat.icbp_km + feat.cement_concrete_km).toFixed(1)} km</strong></div>
+                              </div>
+                              <div className="text-[9px] text-text-tertiary italic">
+                                Status: {activeSeg.operationalStatus.incidentDescription || 'Clear and passable for convoy.'}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
 
                     {isSelected && (
                       !mission.isRerouted || (mission.assignedRouteId !== opt.routeId && mission.selectedRouteOptionId !== opt.id) ? (

@@ -631,6 +631,35 @@ export interface ReliefMission {
   resourceRequestId?: string;
 }
 
+export interface RouteSpatialSegment {
+  id: string;
+  routeId: string;
+  order: number; // 1 to 5
+  percentageRange: string; // e.g. '0–20%', '20–40%', etc.
+  startKm: number;
+  endKm: number;
+  distanceKm: number;
+  startCoords: [number, number];
+  endCoords: [number, number];
+  geometry: [number, number][];
+  modelA: {
+    probability: number;
+    prediction: 0 | 1;
+    threshold: number;
+    riskBand: 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH';
+    features: ModelAFeatures;
+    status: 'INFERRED' | 'CACHED' | 'FALLBACK';
+    interpretation?: string;
+  };
+  operationalStatus: {
+    isBlocked: boolean;
+    isRestricted: boolean;
+    incidentType?: string;
+    incidentDescription?: string;
+    incidentLocation?: [number, number];
+  };
+}
+
 export interface MissionRouteOption {
   id: string;
   missionId: string;
@@ -649,6 +678,14 @@ export interface MissionRouteOption {
   modelVersion: string;
   corridorSegmentIds?: string[];
   disruptionProbability?: number;
+  spatialSegments?: RouteSpatialSegment[];
+  selectedSpatialSegmentOrder?: number | null;
+  highRiskSegmentCount?: number;
+  restrictedSegmentCount?: number;
+  blockedSegmentCount?: number;
+  meanDisruptionProbability?: number;
+  isFeasible?: boolean;
+  restrictionReason?: string;
 }
 
 export interface CurrentMissionRouteResolved {

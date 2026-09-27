@@ -21,6 +21,10 @@ import { SHILLONG_PRIMARY_ROUTE_COORDS, SHILLONG_BYPASS_ROUTE_COORDS } from '../
 import { OSRM_PRECOMPUTED_ALTERNATIVES } from '../data/osrmPrecomputedAlternatives';
 import { haversineDistanceKm } from './gisMath';
 import { ROUTE_SEGMENT_MAPPING } from '../data/routingNetwork';
+import {
+  buildSynchronousSpatialSegments,
+  calculateSpatialRouteExposure,
+} from './spatialSegmentService';
 
 export interface DepotDefinition {
   id: string;
@@ -211,6 +215,23 @@ export function isMissionDelivered(mission: ReliefMission): boolean {
   return mission.status === 'DELIVERED';
 }
 
+/**
+ * Helper to attach 5 equal-distance spatial Model-A segments and exposure metrics
+ */
+function attachSpatialSegmentsToOption(opt: any, rainfall = 24.0): MissionRouteOption {
+  const segs = buildSynchronousSpatialSegments(opt.routeId || opt.id, opt.geometry, rainfall);
+  const exp = calculateSpatialRouteExposure(segs);
+  return {
+    ...opt,
+    spatialSegments: segs,
+    highRiskSegmentCount: exp.highRiskSegmentCount,
+    restrictedSegmentCount: exp.restrictedSegmentCount,
+    blockedSegmentCount: exp.blockedSegmentCount,
+    meanDisruptionProbability: exp.meanProbability,
+    isFeasible: exp.blockedSegmentCount === 0,
+  };
+}
+
 export const SHILLONG_MODEL_B_ROUTE_OPTIONS: MissionRouteOption[] = [
   {
     id: 'SUGG-MLSHL003-OPT-1',
@@ -250,7 +271,7 @@ export const SHILLONG_MODEL_B_ROUTE_OPTIONS: MissionRouteOption[] = [
     corridorSegmentIds: ['SEG-GHY-SHL'],
     disruptionProbability: 0.81,
   },
-];
+].map((opt) => attachSpatialSegmentsToOption(opt, 18.0));
 
 export const HAFLONG_MODEL_B_ROUTE_OPTIONS: MissionRouteOption[] = [
   {
@@ -291,7 +312,7 @@ export const HAFLONG_MODEL_B_ROUTE_OPTIONS: MissionRouteOption[] = [
     corridorSegmentIds: ['SEG-HAF-SIL'],
     disruptionProbability: 0.78,
   },
-];
+].map((opt) => attachSpatialSegmentsToOption(opt, 22.0));
 
 export const KOLASIB_MODEL_B_ROUTE_OPTIONS: MissionRouteOption[] = [
   {
@@ -332,7 +353,7 @@ export const KOLASIB_MODEL_B_ROUTE_OPTIONS: MissionRouteOption[] = [
     corridorSegmentIds: ['SEG-SIL-KOL'],
     disruptionProbability: 0.82,
   },
-];
+].map((opt) => attachSpatialSegmentsToOption(opt, 20.0));
 
 export const TAWANG_MODEL_B_ROUTE_OPTIONS: MissionRouteOption[] = [
   {
@@ -373,7 +394,7 @@ export const TAWANG_MODEL_B_ROUTE_OPTIONS: MissionRouteOption[] = [
     corridorSegmentIds: ['SEG-GHY-TAW'],
     disruptionProbability: 0.79,
   },
-];
+].map((opt) => attachSpatialSegmentsToOption(opt, 25.0));
 
 /**
  * Generates dynamic mission suggestions based on evaluated community depletion & cutoff countdowns.

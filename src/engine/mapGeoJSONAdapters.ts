@@ -13,6 +13,7 @@ import type {
   HubInventory,
   ModelAPrediction,
   MissionRouteOption,
+  RouteSpatialSegment,
 } from '../types';
 import { NER_NODES, NER_SEGMENTS } from '../data/routingNetwork';
 import { DESTINATION_PIN_DATA_URL } from '../assets/destinationPinBase64';
@@ -550,12 +551,12 @@ export function createMissionRoutesGeoJSON(
 
 /**
  * 4B. Model B Route Options GeoJSON (LineStrings)
- * Displays Model B route options for a relief mission.
- * Colored dynamically by Model A disruption risk:
- * High risk (P >= 80%): Vibrant Red (#DC2626)
- * Elevated risk (50% <= P < 80%): Tactical Orange (#EA580C)
- * Low risk (P < 50%): Authoritative Royal Blue (#2563EB)
- * When rerouted, the selected bypass route is Royal Blue (#2563EB) as the main route.
+ * Displays Model B route options for a relief mission divided into 5 equal-distance Model-A segments (Section 10 GIS rules):
+ * BLUE: Original/Bhuvan baseline route (Rank 1 / Best Feasible Path)
+ * GREEN: Selected recommended/alternate route (Rank 2)
+ * YELLOW: Restricted or high-risk portion (P >= 0.50)
+ * RED: Confirmed blocked road/bridge/incident
+ * Does NOT paint the entire route red if only one segment is blocked.
  */
 export function createModelBRouteOptionsGeoJSON(
   options: MissionRouteOption[] = [],
@@ -563,7 +564,8 @@ export function createModelBRouteOptionsGeoJSON(
   modelAPredictions: Record<string, ModelAPrediction> = {},
   isMissionRerouted: boolean = false,
   originCoords?: [number, number] | null,
-  destinationCoords?: [number, number] | null
+  destinationCoords?: [number, number] | null,
+  selectedSegmentOrder?: number | null
 ): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
@@ -580,27 +582,86 @@ export function createModelBRouteOptionsGeoJSON(
 
   const isRank1 = activeOption.routeRank === 1 || activeOption.predictedPreferredRoute || activeOption.routeNumber === 1;
 
-  // Best Feasible Path (Rank 1 / Blue #2563EB) vs 2nd Best Feasible Path (Rank 2 / Green #10B981)
-  let baseColor = isRank1 ? '#2563EB' : '#10B981';
-  let glowColor = isRank1 ? '#3B82F6' : '#34D399';
+  // Base theme: Blue for Rank 1 / Bhuvan baseline, Green for Rank 2 / alternate
+  const nominalBaseColor = isRank1 ? '#2563EB' : '#10B981';
+  const nominalGlowColor = isRank1 ? '#3B82F6' : '#34D399';
 
-  if (isMissionRerouted) {
-    baseColor = '#2563EB';
-    glowColor = '#3B82F6';
+  // If spatial segments (5 equal-distance 20% segments) exist on this option (Section 10 GIS rules):
+  if (activeOption.spatialSegments && activeOption.spatialSegments.length === 5) {
+    for (const seg of activeOption.spatialSegments) {
+      if (!seg.geometry || seg.geometry.length < 2) continue;
+
+      let segColor = nominalBaseColor;
+      let segGlowColor = nominalGlowColor;
+
+      if (seg.operationalStatus.isBlocked) {
+        segColor = '#DC2626'; // RED: Confirmed Blocked
+        segGlowColor = '#EF4444';
+      } else if (seg.operationalStatus.isRestricted || seg.modelA.probability >= 0.50) {
+        segColor = '#F59E0B'; // YELLOW: Restricted or High-Risk Model A
+        segGlowColor = '#FBBF24';
+      }
+
+      const isSegSelected = selectedSegmentOrder === seg.order;
+      const lineWidth = isSegSelected ? 10.0 : 7.5;
+      const glowWidth = isSegSelected ? 22 : 18;
+
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: toGeoJSONLineString(seg.geometry),
+        },
+        properties: {
+          option_id: activeOption.id,
+          mission_id: activeOption.missionId,
+          route_name: activeOption.routeName || (isRank1 ? 'Primary Best Feasible Route' : '2nd Best Feasible Alternative Route'),
+          tier_label: isRank1 ? 'Best Feasible Path' : '2nd Best Feasible Path',
+          route_number: activeOption.routeNumber,
+          route_rank: activeOption.routeRank,
+          is_selected: true,
+          is_rank_1: isRank1,
+          color: segColor,
+          glow_color: segGlowColor,
+          casing_color: '#0f172a',
+          casing_width: lineWidth + 3.0,
+          disruption_probability: seg.modelA.probability,
+          line_width: lineWidth,
+          line_opacity: 1.0,
+          glow_width: glowWidth,
+          glow_opacity: 0.45,
+          predicted_delay_factor: activeOption.predictedDelayFactor,
+          predicted_eta_minutes: activeOption.predictedEtaMinutes,
+          osrm_duration_minutes: activeOption.osrmDurationMinutes,
+          distance_km: activeOption.distanceKm,
+          route_source: activeOption.routeSource || 'GRAPH',
+
+          // Spatial segment inspection metadata
+          segment_order: seg.order,
+          segment_id: seg.id,
+          percentage_range: seg.percentageRange,
+          segment_distance_km: seg.distanceKm,
+          start_km: seg.startKm,
+          end_km: seg.endKm,
+          probability: seg.modelA.probability,
+          risk_band: seg.modelA.riskBand,
+          is_blocked: seg.operationalStatus.isBlocked,
+          is_restricted: seg.operationalStatus.isRestricted,
+          incident_type: seg.operationalStatus.incidentType,
+          incident_description: seg.operationalStatus.incidentDescription,
+          is_segment_selected: isSegSelected,
+          feature_snapshot: JSON.stringify(seg.modelA.features),
+        },
+      });
+    }
+
+    return {
+      type: 'FeatureCollection',
+      features,
+    };
   }
 
-  const lineWidth = 7.5;
-  const lineOpacity = 1.0;
-  const glowWidth = 18;
-  const glowOpacity = 0.45;
-
-  let prob = activeOption.disruptionProbability;
-  if (prob === undefined && activeOption.corridorSegmentIds && activeOption.corridorSegmentIds.length > 0) {
-    const exp = calculateRouteModelAExposureFromCache(activeOption.corridorSegmentIds, modelAPredictions);
-    prob = exp.max_probability;
-  }
-  prob = prob ?? 0;
-
+  // Fallback if 5 spatial segments are not yet generated
   const alignedCoords = ensureRouteGeometryEndpoints(
     activeOption.geometry,
     originCoords,
@@ -623,15 +684,15 @@ export function createModelBRouteOptionsGeoJSON(
       route_rank: activeOption.routeRank,
       is_selected: true,
       is_rank_1: isRank1,
-      color: baseColor,
-      glow_color: glowColor,
+      color: nominalBaseColor,
+      glow_color: nominalGlowColor,
       casing_color: '#0f172a',
-      casing_width: lineWidth + 3.0,
-      disruption_probability: prob,
-      line_width: lineWidth,
-      line_opacity: lineOpacity,
-      glow_width: glowWidth,
-      glow_opacity: glowOpacity,
+      casing_width: 10.5,
+      disruption_probability: activeOption.disruptionProbability ?? 0,
+      line_width: 7.5,
+      line_opacity: 1.0,
+      glow_width: 18,
+      glow_opacity: 0.45,
       predicted_delay_factor: activeOption.predictedDelayFactor,
       predicted_eta_minutes: activeOption.predictedEtaMinutes,
       osrm_duration_minutes: activeOption.osrmDurationMinutes,
@@ -644,6 +705,96 @@ export function createModelBRouteOptionsGeoJSON(
     type: 'FeatureCollection',
     features,
   };
+}
+
+/**
+ * 4C. Model A Spatial Segment Milestone Markers & Localized Incidents (Points)
+ * Renders S1, S2, S3, S4, S5 markers along the candidate route,
+ * plus precise incident pins for confirmed BLOCKED bridges/roads without coloring the entire route.
+ */
+export function createSpatialSegmentMarkersGeoJSON(
+  options: MissionRouteOption[] = [],
+  selectedOptionId?: string | null,
+  selectedSegmentOrder?: number | null
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+
+  const activeOption =
+    options.find((opt) => opt.id === selectedOptionId) ||
+    options.find((opt) => opt.predictedPreferredRoute) ||
+    options[0];
+
+  if (!activeOption || !activeOption.spatialSegments) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+
+  const isRank1 = activeOption.routeRank === 1 || activeOption.predictedPreferredRoute || activeOption.routeNumber === 1;
+
+  for (const seg of activeOption.spatialSegments) {
+    if (!seg.geometry || seg.geometry.length === 0) continue;
+
+    // Pick midpoint coordinate for marker
+    const midIdx = Math.floor(seg.geometry.length / 2);
+    const midCoord = seg.geometry[midIdx] || seg.startCoords;
+
+    let markerColor = isRank1 ? '#2563EB' : '#10B981';
+    if (seg.operationalStatus.isBlocked) {
+      markerColor = '#DC2626';
+    } else if (seg.operationalStatus.isRestricted || seg.modelA.probability >= 0.50) {
+      markerColor = '#F59E0B';
+    }
+
+    const isSegSelected = selectedSegmentOrder === seg.order;
+
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: ensureLngLat(midCoord),
+      },
+      properties: {
+        type: 'SEGMENT_MARKER',
+        segment_id: seg.id,
+        order: seg.order,
+        label: `S${seg.order}`,
+        title: `Segment ${seg.order} (${seg.percentageRange})`,
+        distance_km: seg.distanceKm,
+        probability: seg.modelA.probability,
+        probability_pct: `${Math.round(seg.modelA.probability * 100)}%`,
+        risk_band: seg.modelA.riskBand,
+        is_blocked: seg.operationalStatus.isBlocked,
+        is_restricted: seg.operationalStatus.isRestricted,
+        is_selected: isSegSelected,
+        color: markerColor,
+        feature_snapshot: JSON.stringify(seg.modelA.features),
+      },
+    });
+
+    // If there is an authentic confirmed incident location (e.g. bridge blockage at exact km),
+    // add a precise incident point marker!
+    if (seg.operationalStatus.incidentLocation && Number.isFinite(seg.operationalStatus.incidentLocation[0])) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: ensureLngLat(seg.operationalStatus.incidentLocation),
+        },
+        properties: {
+          type: 'CONFIRMED_INCIDENT',
+          segment_id: seg.id,
+          order: seg.order,
+          label: '!',
+          title: seg.operationalStatus.incidentType || 'Confirmed Road Blockage',
+          description: seg.operationalStatus.incidentDescription || 'Confirmed road blockage reported by authority',
+          is_blocked: seg.operationalStatus.isBlocked,
+          is_restricted: seg.operationalStatus.isRestricted,
+          color: '#DC2626',
+        },
+      });
+    }
+  }
+
+  return { type: 'FeatureCollection', features };
 }
 
 /**

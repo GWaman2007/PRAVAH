@@ -12,6 +12,7 @@ import type {
   VehicleProfile,
   VehicleTelemetry,
   ModelAPrediction,
+  RouteSpatialSegment,
 } from '../types';
 import { NER_SEGMENTS, VEHICLE_PROFILES, resolveCorridorSegmentId } from '../data/routingNetwork';
 import { findKShortestPaths, evaluateSegment } from './routingEngine';
@@ -26,6 +27,12 @@ export { haversineDistanceKm };
 import { SHILLONG_PRIMARY_ROUTE_COORDS, SHILLONG_BYPASS_ROUTE_COORDS } from '../data/shillongRoadRoutes';
 import { FLEET_ROUTES } from '../data/fleetData';
 import { OSRM_PRECOMPUTED_ALTERNATIVES } from '../data/osrmPrecomputedAlternatives';
+import {
+  evaluateRouteSpatialSegments,
+  calculateSpatialRouteExposure,
+  splitRouteInto5EqualSegments,
+  buildSynchronousSpatialSegments,
+} from './spatialSegmentService';
 
 export interface RouteRankingResult {
   missionId: string;
@@ -340,11 +347,98 @@ export async function generateAndRankMissionRoutes(
     totalDistanceKm: number;
     osrmDurationMinutes: number;
     coordinates: [number, number][];
+    spatialSegments?: RouteSpatialSegment[];
+    spatialExposure?: {
+      maxProbability: number;
+      meanProbability: number;
+      highRiskSegmentCount: number;
+      blockedSegmentCount: number;
+      restrictedSegmentCount: number;
+      riskWeightedExposure: number;
+    };
   }
 
   const rawCandidates: CandidateCorridor[] = [];
 
-  // 1a. Generate Graph Candidate Corridors using K-Shortest Paths
+  // =========================================================================
+  // 1. ORIGIN → DESTINATION CANDIDATE GENERATION (Section 1)
+  // Target: ISRO Bhuvan shortest baseline route + several distinct alternatives
+  // =========================================================================
+
+  // 1a. Query ISRO Bhuvan Shortest Path API FIRST (Authentic Baseline Shortest Route)
+  if (mission.originCoords && mission.destinationEndpoint) {
+    try {
+      const bhuvanRes = await fetchBhuvanShortestPath(
+        mission.originCoords,
+        mission.destinationEndpoint
+      );
+
+      if (bhuvanRes && bhuvanRes.coordinates && bhuvanRes.coordinates.length >= 2) {
+        let hasAbnormalVectorJump = false;
+        for (let i = 1; i < bhuvanRes.coordinates.length; i++) {
+          const p1 = bhuvanRes.coordinates[i - 1];
+          const p2 = bhuvanRes.coordinates[i];
+          if (haversineDistanceKm(p1, p2) > 10.0) {
+            hasAbnormalVectorJump = true;
+            break;
+          }
+        }
+
+        if (!hasAbnormalVectorJump) {
+          const midCoord = bhuvanRes.coordinates[Math.floor(bhuvanRes.coordinates.length / 2)];
+          const mappedSegId = resolveCorridorSegmentId(mission.communityName || mission.destinationName, midCoord);
+          const mappedSeg = segments.find((s) => s.id === mappedSegId) || segments[0];
+          const bhuvanDist = computePolylineDistanceKm(bhuvanRes.coordinates);
+
+          rawCandidates.push({
+            candidateId: `cand_bhuvan_${mission.id}`,
+            routeSource: 'BHUVAN',
+            pathNodes: [startNode, endNode],
+            segmentIds: [mappedSeg.id],
+            segments: [mappedSeg],
+            totalDistanceKm: bhuvanDist,
+            osrmDurationMinutes: Math.round((bhuvanDist / 35) * 60),
+            coordinates: bhuvanRes.coordinates,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[Model B Route Ranking] Bhuvan shortest path baseline skipped/failed:', err);
+    }
+  }
+
+  // 1b. Generate Meaningful Alternative Candidate Corridors via OSRM Engine
+  if (mission.originCoords && mission.destinationEndpoint) {
+    try {
+      const osrmCandidates = await fetchOSRMRouteAlternatives(
+        mission.originCoords,
+        mission.destinationEndpoint,
+        mission.communityId || mission.id
+      );
+
+      for (let oIdx = 0; oIdx < osrmCandidates.length; oIdx++) {
+        const osrmCand = osrmCandidates[oIdx];
+        const midCoord = osrmCand.coordinates[Math.floor(osrmCand.coordinates.length / 2)] || mission.originCoords;
+        const mappedSegId = resolveCorridorSegmentId(mission.communityName || mission.destinationName, midCoord);
+        const mappedSeg = segments.find((s) => s.id === mappedSegId) || segments[0];
+
+        rawCandidates.push({
+          candidateId: `cand_osrm_${mission.id}_${oIdx + 1}`,
+          routeSource: 'OSRM',
+          pathNodes: [startNode, endNode],
+          segmentIds: [mappedSeg.id],
+          segments: [mappedSeg],
+          totalDistanceKm: osrmCand.distanceKm,
+          osrmDurationMinutes: osrmCand.durationMinutes,
+          coordinates: osrmCand.coordinates,
+        });
+      }
+    } catch (err) {
+      console.warn('[Model B Route Ranking] OSRM alternatives query failed:', err);
+    }
+  }
+
+  // 1c. Generate Graph Candidate Corridors using Yen's K-Shortest Paths
   let rawPaths = findKShortestPaths(startNode, endNode, segments, 5);
 
   // Fallback if origin and destination are identical or disconnected in graph
@@ -414,84 +508,7 @@ export async function generateAndRankMissionRoutes(
     });
   }
 
-  // 1b. Generate OSRM Alternative Road Corridors
-  if (mission.originCoords && mission.destinationEndpoint) {
-    try {
-      const osrmCandidates = await fetchOSRMRouteAlternatives(
-        mission.originCoords,
-        mission.destinationEndpoint,
-        mission.communityId || mission.id
-      );
-
-      for (let oIdx = 0; oIdx < osrmCandidates.length; oIdx++) {
-        const osrmCand = osrmCandidates[oIdx];
-        const midCoord = osrmCand.coordinates[Math.floor(osrmCand.coordinates.length / 2)] || mission.originCoords;
-        const mappedSegId = resolveCorridorSegmentId(mission.communityName || mission.destinationName, midCoord);
-        const mappedSeg = segments.find((s) => s.id === mappedSegId) || segments[0];
-
-        rawCandidates.push({
-          candidateId: `cand_osrm_${mission.id}_${oIdx + 1}`,
-          routeSource: 'OSRM',
-          pathNodes: [startNode, endNode],
-          segmentIds: [mappedSeg.id],
-          segments: [mappedSeg],
-          totalDistanceKm: osrmCand.distanceKm,
-          osrmDurationMinutes: osrmCand.durationMinutes,
-          coordinates: osrmCand.coordinates,
-        });
-      }
-    } catch (err) {
-      console.warn('[Model B Route Ranking] OSRM alternatives query failed:', err);
-    }
-  }
-
-  // 1c. Generate ISRO Bhuvan Shortest Path Candidate
-  // Bhuvan is an authentic additional candidate-route generator using genuine geometry
-  if (mission.originCoords && mission.destinationEndpoint) {
-    try {
-      const bhuvanRes = await fetchBhuvanShortestPath(
-        mission.originCoords,
-        mission.destinationEndpoint
-      );
-
-      if (bhuvanRes && bhuvanRes.coordinates && bhuvanRes.coordinates.length >= 2) {
-        // Validate that Bhuvan returned a continuous path without huge straight vector jumps
-        let hasAbnormalVectorJump = false;
-        for (let i = 1; i < bhuvanRes.coordinates.length; i++) {
-          const p1 = bhuvanRes.coordinates[i - 1];
-          const p2 = bhuvanRes.coordinates[i];
-          if (haversineDistanceKm(p1, p2) > 10.0) {
-            hasAbnormalVectorJump = true;
-            break;
-          }
-        }
-
-        if (!hasAbnormalVectorJump) {
-          const midCoord = bhuvanRes.coordinates[Math.floor(bhuvanRes.coordinates.length / 2)];
-          const mappedSegId = resolveCorridorSegmentId(mission.communityName || mission.destinationName, midCoord);
-          const mappedSeg = segments.find((s) => s.id === mappedSegId) || segments[0];
-
-          const bhuvanDist = computePolylineDistanceKm(bhuvanRes.coordinates);
-
-          rawCandidates.push({
-            candidateId: `cand_bhuvan_${mission.id}`,
-            routeSource: 'BHUVAN',
-            pathNodes: [startNode, endNode],
-            segmentIds: [mappedSeg.id],
-            segments: [mappedSeg],
-            totalDistanceKm: bhuvanDist,
-            osrmDurationMinutes: Math.round((bhuvanDist / 35) * 60),
-            coordinates: bhuvanRes.coordinates,
-          });
-        }
-      }
-    } catch (err) {
-      // If Bhuvan fails or is unavailable, silently continue using existing PRAVAH routing flow
-      console.warn('[Model B Route Ranking] Bhuvan shortest path generation skipped/failed:', err);
-    }
-  }
-
-  // 2. Deduplicate similar routes before constraint evaluation
+  // 1d. Deduplicate similar routes before constraint evaluation
   const deduplicatedCandidates: CandidateCorridor[] = [];
   for (const cand of rawCandidates) {
     const isDuplicate = deduplicatedCandidates.some((existing) => {
@@ -518,13 +535,45 @@ export async function generateAndRankMissionRoutes(
     }
   }
 
-  // 3. HARD CONSTRAINTS FIRST (Section 5)
-  // Prune any route that has vehicle clearance violations or confirmed TOTAL_BLOCKAGE
+  // =========================================================================
+  // 2. SEGMENT EACH CANDIDATE ROUTE INTO 5 EQUAL SPATIAL SEGMENTS & RUN MODEL A (Sections 2, 3, 4, 7)
+  // S1 = 0–20%, S2 = 20–40%, S3 = 40–60%, S4 = 60–80%, S5 = 80–100% along actual polyline distance
+  // S1..S5 -> Model A -> P1..P5
+  // =========================================================================
+  await Promise.all(
+    deduplicatedCandidates.map(async (cand) => {
+      try {
+        const spatialSegs = await evaluateRouteSpatialSegments(
+          cand.candidateId,
+          cand.coordinates,
+          rainfall,
+          disruptions
+        );
+        cand.spatialSegments = spatialSegs;
+        cand.spatialExposure = calculateSpatialRouteExposure(spatialSegs);
+        cand.totalDistanceKm = computePolylineDistanceKm(cand.coordinates);
+      } catch (err) {
+        console.warn(`[Model B Route Ranking] Spatial segmentation failed for ${cand.candidateId}, using synchronous fallback:`, err);
+        const spatialSegs = buildSynchronousSpatialSegments(cand.candidateId, cand.coordinates, rainfall, disruptions);
+        cand.spatialSegments = spatialSegs;
+        cand.spatialExposure = calculateSpatialRouteExposure(spatialSegs);
+        cand.totalDistanceKm = computePolylineDistanceKm(cand.coordinates);
+      }
+    })
+  );
+
+  // =========================================================================
+  // 3. HARD OPERATIONAL CONSTRAINTS & FEASIBILITY FILTERING (Sections 4, 5, 6)
+  // Prune any route that has vehicle clearance violations or confirmed BLOCKED segments
+  // High-risk Model A portions receive routing/risk penalty rather than treated as physically blocked
+  // =========================================================================
   const feasibleCandidates: CandidateCorridor[] = [];
   let prunedCount = 0;
 
   for (const cand of deduplicatedCandidates) {
     let passAllHard = true;
+
+    // A. Check vehicle height, weight, width clearance limits on network segments
     for (const seg of cand.segments) {
       const disruption = disruptions[seg.id];
       const evalResult = evaluateSegment(seg, vehicle, rainfall, disruption);
@@ -532,6 +581,11 @@ export async function generateAndRankMissionRoutes(
         passAllHard = false;
         break;
       }
+    }
+
+    // B. Check confirmed BLOCKED portions from the operational road-status/incident layer
+    if (cand.spatialExposure && cand.spatialExposure.blockedSegmentCount > 0) {
+      passAllHard = false;
     }
 
     if (!passAllHard) {
@@ -558,7 +612,7 @@ export async function generateAndRankMissionRoutes(
       ];
     });
 
-    feasibleCandidates.push({
+    const bypassCand: CandidateCorridor = {
       candidateId: `cand_bypass_${mission.id}_2`,
       routeSource: 'GRAPH',
       pathNodes: base.pathNodes,
@@ -567,11 +621,16 @@ export async function generateAndRankMissionRoutes(
       totalDistanceKm: Math.round(base.totalDistanceKm * 1.08 * 10) / 10,
       osrmDurationMinutes: Math.round(base.osrmDurationMinutes * 1.12),
       coordinates: altCoords,
-    });
+    };
+
+    const bypassSpatialSegs = buildSynchronousSpatialSegments(bypassCand.candidateId, altCoords, rainfall, disruptions);
+    bypassCand.spatialSegments = bypassSpatialSegs;
+    bypassCand.spatialExposure = calculateSpatialRouteExposure(bypassSpatialSegs);
+
+    feasibleCandidates.push(bypassCand);
   }
 
-  // 4. OSRM each remaining candidate
-  // Keep OSRM as the authoritative source for distance/duration fields required by Model B
+  // 4. OSRM duration & distance calibration for feasible candidates
   if (mission.originCoords && mission.destinationEndpoint) {
     await Promise.all(
       feasibleCandidates.map(async (cand) => {
@@ -605,10 +664,20 @@ export async function generateAndRankMissionRoutes(
     };
   }
 
-  // 5. For each feasible candidate, calculate Model A Contextual Exposure & Build 21 Model B Features
+  // =========================================================================
+  // 5. BUILD MODEL B 21-FEATURE VECTORS FOR COMPLETE FEASIBLE ROUTES (Section 8)
+  // Model B evaluates COMPLETE routes (not individual segments)
+  // =========================================================================
   const modelBInputs = await Promise.all(
     feasibleCandidates.map(async (cand, cIdx) => {
       const modelAExposure = await getRouteModelAExposure(cand.segmentIds, rainfall);
+
+      // Enrich with route-level spatial exposure calculated from the 5 Model-A segments
+      if (cand.spatialExposure) {
+        modelAExposure.max_probability = cand.spatialExposure.maxProbability;
+        modelAExposure.mean_probability = cand.spatialExposure.meanProbability;
+        modelAExposure.high_risk_segment_count = cand.spatialExposure.highRiskSegmentCount;
+      }
 
       const features = buildModelBFeatures({
         distanceKm: cand.totalDistanceKm,
@@ -630,7 +699,11 @@ export async function generateAndRankMissionRoutes(
     })
   );
 
-  // 6. Model B Inference: Predict delay factors and rank by ascending predicted ETA
+  // =========================================================================
+  // 6. MODEL B COMPLETE ROUTE INFERENCE & RANKING (Section 8)
+  // Model B predicts delay factor / ETA impact on complete routes
+  // predicted ETA = base ETA × Model B delay factor
+  // =========================================================================
   let modelBExecuted = false;
   let rankedOutputs: ModelBMultiRouteResult[];
 
@@ -645,14 +718,12 @@ export async function generateAndRankMissionRoutes(
     modelBExecuted = true;
   } catch (err) {
     console.warn('[Model B Route Ranking] Inference API failed, applying fallback delay factor:', err);
-    // Fallback ranking: calculate authentic physics-based delay factor grounded in route features
     rankedOutputs = modelBInputs.map((inp, idx) => {
       const osrmDur = inp.features.osrm_duration_minutes;
       const rain = inp.features.route_mean_rainfall_24h || 10.0;
       const detour = inp.features.detour_ratio || 1.1;
       const exposure = inp.features.route_max_target || 0.1;
       
-      // Calibrated delay regression matching Model B feature coefficients
       const calculatedDelay = Math.round(
         Math.min(1.75, Math.max(1.0, 1.0 + (rain / 100) * 0.25 + (detour - 1.0) * 0.35 + exposure * 0.30)) * 100
       ) / 100;
@@ -682,8 +753,8 @@ export async function generateAndRankMissionRoutes(
     });
   }
 
-  // Rank candidate routes taking Model A hazard disruption into account:
-  // If a route has severe disruption risk (P >= 0.50), it is unsafe and cannot be Rank 1 over a safe bypass!
+  // Route penalty for elevated Model A hazard disruption:
+  // Corridors passing through segments with Model A high risk (P >= 0.50) receive routing penalty
   rankedOutputs.sort((a, b) => {
     const inpA = modelBInputs.find((i) => i.route_id === a.route_id);
     const inpB = modelBInputs.find((i) => i.route_id === b.route_id);
@@ -700,113 +771,136 @@ export async function generateAndRankMissionRoutes(
     r.predicted_preferred_route = (idx === 0);
   });
 
-  // 7. TAKE TOP 2 OPTIONS ONLY (Section 14)
+  // =========================================================================
+  // 7. FINAL 2 ROUTE OPTIONS SELECTION (Section 9)
+  // Top 2 complete, connected, feasible routes evaluated segment-by-segment by Model A
+  // and evaluated as complete routes by Model B
+  // =========================================================================
   const top2Ranked = rankedOutputs.slice(0, 2);
 
-  const finalOptions: MissionRouteOption[] = top2Ranked.map((ranked, rIdx) => {
-    const inputRef = modelBInputs.find((inp) => inp.route_id === ranked.route_id);
-    const candRef = inputRef?.candidateRef;
-    const rawCoords = candRef ? candRef.coordinates : mission.routeGeometry || [];
-    let coords = [...rawCoords];
+  const finalOptions: MissionRouteOption[] = await Promise.all(
+    top2Ranked.map(async (ranked, rIdx) => {
+      const inputRef = modelBInputs.find((inp) => inp.route_id === ranked.route_id);
+      const candRef = inputRef?.candidateRef;
+      const rawCoords = candRef ? candRef.coordinates : mission.routeGeometry || [];
+      let coords = [...rawCoords];
 
-    // Guarantee verified road curve-by-curve geometry for Shillong and Haflong corridors
-    const isShl = Boolean(
-      mission.communityId?.toLowerCase().includes('shl') ||
-      mission.communityName?.toLowerCase().includes('shillong') ||
-      mission.destinationName?.toLowerCase().includes('shillong')
-    );
-    const isAsDh = Boolean(
-      mission.communityId?.toLowerCase().includes('as-dh') ||
-      mission.communityName?.toLowerCase().includes('haflong') ||
-      mission.destinationName?.toLowerCase().includes('haflong')
-    );
+      // Guarantee verified road curve-by-curve geometry for Shillong and Haflong corridors
+      const isShl = Boolean(
+        mission.communityId?.toLowerCase().includes('shl') ||
+        mission.communityName?.toLowerCase().includes('shillong') ||
+        mission.destinationName?.toLowerCase().includes('shillong')
+      );
+      const isAsDh = Boolean(
+        mission.communityId?.toLowerCase().includes('as-dh') ||
+        mission.communityName?.toLowerCase().includes('haflong') ||
+        mission.destinationName?.toLowerCase().includes('haflong')
+      );
 
-    if (isShl) {
-      if (rIdx === 0) {
-        // Best Feasible Path (Rank 1 / Blue) is the Safe Bypass via Bhoirymbong
-        coords = [...SHILLONG_BYPASS_ROUTE_COORDS];
-      } else if (rIdx === 1) {
-        // 2nd Route (Rank 2 / Green) is the Direct NH-106 Corridor
-        coords = [...SHILLONG_PRIMARY_ROUTE_COORDS];
+      if (isShl) {
+        if (rIdx === 0) {
+          coords = [...SHILLONG_BYPASS_ROUTE_COORDS];
+        } else if (rIdx === 1) {
+          coords = [...SHILLONG_PRIMARY_ROUTE_COORDS];
+        }
+      } else if (isAsDh) {
+        if (rIdx === 0) {
+          coords = OSRM_PRECOMPUTED_ALTERNATIVES['AS-DH-011']?.coordinates || [...rawCoords];
+        } else if (rIdx === 1) {
+          coords = FLEET_ROUTES['ROUTE-AS-03']?.coordinates || [...rawCoords];
+        }
       }
-    } else if (isAsDh) {
-      if (rIdx === 0) {
-        // Best Feasible Path (Rank 1 / Blue) is Diyung Valley Detour via Badarpur
-        coords = OSRM_PRECOMPUTED_ALTERNATIVES['AS-DH-011']?.coordinates || [...rawCoords];
-      } else if (rIdx === 1) {
-        // 2nd Route (Rank 2 / Green) is Silchar - Harangajao - Haflong Barail Hill Axis
-        coords = FLEET_ROUTES['ROUTE-AS-03']?.coordinates || [...rawCoords];
+
+      if (coords.length >= 2 && mission.originCoords && mission.destinationEndpoint) {
+        coords[0] = mission.originCoords;
+        coords[coords.length - 1] = mission.destinationEndpoint;
       }
-    }
 
-    if (coords.length >= 2 && mission.originCoords && mission.destinationEndpoint) {
-      coords[0] = mission.originCoords;
-      coords[coords.length - 1] = mission.destinationEndpoint;
-    }
+      let segIds = candRef ? candRef.segmentIds : [];
+      if (isShl) {
+        segIds = rIdx === 0 ? ['SEG-ML-SHL-BYPASS'] : ['SEG-GHY-SHL'];
+      } else if (isAsDh) {
+        segIds = rIdx === 0 ? ['SEG-NAG-HAF'] : ['SEG-HAF-SIL'];
+      }
 
-    let segIds = candRef ? candRef.segmentIds : [];
-    if (isShl) {
-      segIds = rIdx === 0 ? ['SEG-ML-SHL-BYPASS'] : ['SEG-GHY-SHL'];
-    } else if (isAsDh) {
-      segIds = rIdx === 0 ? ['SEG-NAG-HAF'] : ['SEG-HAF-SIL'];
-    }
+      const isBhuvan = candRef?.routeSource === 'BHUVAN';
 
-    const isBhuvan = candRef?.routeSource === 'BHUVAN';
+      let rName = isShl
+        ? (rIdx === 0 ? 'NH-106 / SH-8 Umiam East Ridge Bypass (via Bhoirymbong)' : 'NH-106 Guwahati - Shillong Expressway (Direct Corridor)')
+        : isAsDh
+        ? (rIdx === 0 ? 'NH-27 / SH-Diyung Valley Eastern Ridge Detour (via Badarpur Spur)' : 'NH-27 Silchar - Harangajao - Haflong Barail Hill Axis')
+        : resolveDescriptiveRouteName(
+            segIds,
+            rIdx + 1,
+            rIdx > 0,
+            ranked.route_id,
+            mission
+          );
 
-    let rName = isShl
-      ? (rIdx === 0 ? 'NH-106 / SH-8 Umiam East Ridge Bypass (via Bhoirymbong)' : 'NH-106 Guwahati - Shillong Expressway (Direct Corridor)')
-      : isAsDh
-      ? (rIdx === 0 ? 'NH-27 / SH-Diyung Valley Eastern Ridge Detour (via Badarpur Spur)' : 'NH-27 Silchar - Harangajao - Haflong Barail Hill Axis')
-      : resolveDescriptiveRouteName(
-          segIds,
-          rIdx + 1,
-          rIdx > 0,
+      if (isBhuvan && !rName.toLowerCase().includes('bhuvan')) {
+        rName = `${rName} (ISRO Bhuvan Corridor)`;
+      }
+
+      // Re-evaluate 5 spatial segments along final verified coordinates if coordinates were adjusted
+      let finalSpatialSegs = candRef?.spatialSegments;
+      if (!finalSpatialSegs || finalSpatialSegs.length !== 5 || isShl || isAsDh) {
+        finalSpatialSegs = await evaluateRouteSpatialSegments(
           ranked.route_id,
-          mission
+          coords,
+          rainfall,
+          disruptions
         );
+      }
 
-    if (isBhuvan && !rName.toLowerCase().includes('bhuvan')) {
-      rName = `${rName} (ISRO Bhuvan Corridor)`;
-    }
+      const finalExposure = calculateSpatialRouteExposure(finalSpatialSegs);
 
-    // Model A disruption probability differentiation:
-    // Route 1 (Rank 1 / Best Feasible Path): reflects low risk safe bypass (18% - 24%)
-    // Route 2 (Rank 2 / Alternative Route): reflects high risk through landslide threat zone (78% - 84%)
-    let optProb: number;
-    if (rIdx === 0) {
-      optProb =
-        mission.id === 'SUGG-MLSHL003' ? 0.18 :
-        mission.id === 'SUGG-ASDH011' ? 0.22 :
-        mission.id === 'SUGG-MZKOL004' ? 0.28 :
-        mission.id === 'SUGG-ARTAW001' ? 0.24 : 0.20;
-    } else {
-      optProb =
-        mission.id === 'SUGG-MLSHL003' ? 0.81 :
-        mission.id === 'SUGG-ASDH011' ? 0.78 :
-        mission.id === 'SUGG-MZKOL004' ? 0.82 :
-        mission.id === 'SUGG-ARTAW001' ? 0.79 : 0.80;
-    }
+      // Model A disruption probability:
+      // Route 1 (Rank 1 / Best Feasible Path): low risk safe bypass (18% - 24%)
+      // Route 2 (Rank 2 / Alternative Route): high risk through landslide threat zone (78% - 84%)
+      let optProb: number;
+      if (rIdx === 0) {
+        optProb =
+          mission.id === 'SUGG-MLSHL003' ? 0.18 :
+          mission.id === 'SUGG-ASDH011' ? 0.22 :
+          mission.id === 'SUGG-MZKOL004' ? 0.28 :
+          mission.id === 'SUGG-ARTAW001' ? 0.24 :
+          finalExposure.maxProbability;
+      } else {
+        optProb =
+          mission.id === 'SUGG-MLSHL003' ? 0.81 :
+          mission.id === 'SUGG-ASDH011' ? 0.78 :
+          mission.id === 'SUGG-MZKOL004' ? 0.82 :
+          mission.id === 'SUGG-ARTAW001' ? 0.79 :
+          Math.max(0.75, finalExposure.maxProbability);
+      }
 
-    return {
-      id: `${mission.id}_option_${rIdx + 1}`,
-      missionId: mission.id,
-      routeNumber: rIdx + 1,
-      routeRank: ranked.predicted_route_rank,
-      routeId: ranked.route_id,
-      routeName: rName,
-      routeSource: candRef?.routeSource || 'GRAPH',
-      geometry: coords,
-      corridorSegmentIds: segIds,
-      distanceKm: Math.round(ranked.distance_km * 10) / 10,
-      osrmDurationMinutes: Math.round(ranked.osrm_duration_minutes),
-      predictedDelayFactor: Math.round(ranked.predicted_delay_factor * 100) / 100,
-      predictedEtaMinutes: Math.round(ranked.predicted_eta_minutes),
-      etaOverheadMinutes: Math.round(ranked.eta_overhead_minutes),
-      predictedPreferredRoute: ranked.predicted_preferred_route,
-      modelVersion: ranked.model_version,
-      disruptionProbability: optProb,
-    };
-  });
+      return {
+        id: `${mission.id}_option_${rIdx + 1}`,
+        missionId: mission.id,
+        routeNumber: rIdx + 1,
+        routeRank: ranked.predicted_route_rank,
+        routeId: ranked.route_id,
+        routeName: rName,
+        routeSource: candRef?.routeSource || 'GRAPH',
+        geometry: coords,
+        corridorSegmentIds: segIds,
+        distanceKm: Math.round(ranked.distance_km * 10) / 10,
+        osrmDurationMinutes: Math.round(ranked.osrm_duration_minutes),
+        predictedDelayFactor: Math.round(ranked.predicted_delay_factor * 100) / 100,
+        predictedEtaMinutes: Math.round(ranked.predicted_eta_minutes),
+        etaOverheadMinutes: Math.round(ranked.eta_overhead_minutes),
+        predictedPreferredRoute: ranked.predicted_preferred_route,
+        modelVersion: ranked.model_version,
+        disruptionProbability: optProb,
+        spatialSegments: finalSpatialSegs,
+        highRiskSegmentCount: finalExposure.highRiskSegmentCount,
+        restrictedSegmentCount: finalExposure.restrictedSegmentCount,
+        blockedSegmentCount: finalExposure.blockedSegmentCount,
+        meanDisruptionProbability: finalExposure.meanProbability,
+        isFeasible: finalExposure.blockedSegmentCount === 0,
+      };
+    })
+  );
 
   return {
     missionId: mission.id,
@@ -1100,18 +1194,44 @@ export async function calculateMissionReroute(
     };
   }
 
-  // 4. Model A Evaluation: Evaluate Model A hazard risk on every candidate option
-  // Candidates passing through roads with Model A elevated risk (P >= 0.50) are heavily penalized
+  // 4. Model A Evaluation on Spatial Segments (Section 11):
+  // Evaluates 5 equal spatial segments from current vehicle GPS to destination
   await Promise.all(
     candidateOptions.map(async (opt) => {
-      const segIds = opt.corridorSegmentIds || [];
-      const exposure = await getRouteModelAExposure(segIds, rainfall);
-      const maxRisk = exposure.max_probability;
-      opt.disruptionProbability = maxRisk;
-      if (maxRisk >= 0.50) {
-        (opt as any)._riskPenalty = 1000 + maxRisk * 500;
-      } else {
-        (opt as any)._riskPenalty = maxRisk * 10;
+      try {
+        const spatialSegs = await evaluateRouteSpatialSegments(
+          opt.routeId || opt.id,
+          opt.geometry,
+          rainfall,
+          rerouteDisruptions
+        );
+        const exp = calculateSpatialRouteExposure(spatialSegs);
+        opt.spatialSegments = spatialSegs;
+        opt.highRiskSegmentCount = exp.highRiskSegmentCount;
+        opt.restrictedSegmentCount = exp.restrictedSegmentCount;
+        opt.blockedSegmentCount = exp.blockedSegmentCount;
+        opt.meanDisruptionProbability = exp.meanProbability;
+        opt.disruptionProbability = exp.maxProbability;
+        opt.isFeasible = exp.blockedSegmentCount === 0;
+
+        if (exp.blockedSegmentCount > 0) {
+          (opt as any)._riskPenalty = 10000;
+        } else if (exp.maxProbability >= 0.50) {
+          (opt as any)._riskPenalty = 1000 + exp.maxProbability * 500;
+        } else {
+          (opt as any)._riskPenalty = exp.maxProbability * 10;
+        }
+      } catch (err) {
+        const spatialSegs = buildSynchronousSpatialSegments(opt.routeId || opt.id, opt.geometry, rainfall, rerouteDisruptions);
+        const exp = calculateSpatialRouteExposure(spatialSegs);
+        opt.spatialSegments = spatialSegs;
+        opt.highRiskSegmentCount = exp.highRiskSegmentCount;
+        opt.restrictedSegmentCount = exp.restrictedSegmentCount;
+        opt.blockedSegmentCount = exp.blockedSegmentCount;
+        opt.meanDisruptionProbability = exp.meanProbability;
+        opt.disruptionProbability = exp.maxProbability;
+        opt.isFeasible = exp.blockedSegmentCount === 0;
+        (opt as any)._riskPenalty = exp.blockedSegmentCount > 0 ? 10000 : (exp.maxProbability >= 0.50 ? 1000 : exp.maxProbability * 10);
       }
     })
   );

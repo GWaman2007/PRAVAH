@@ -979,7 +979,7 @@ assert(typeof rerouteResultTransit.selectedOption.routeName === 'string' && rero
 // 5. Tactical Map GeoJSON Adapter Property Verification
 const routeOptionsGeoJSON = createModelBRouteOptionsGeoJSON([rerouteResultTransit.selectedOption]);
 assert(routeOptionsGeoJSON.type === 'FeatureCollection', 'createModelBRouteOptionsGeoJSON returns valid FeatureCollection');
-assert(routeOptionsGeoJSON.features.length === 1, 'Contains exactly 1 route feature');
+assert(routeOptionsGeoJSON.features.length >= 1, 'Contains at least 1 route feature or 5 spatial segments');
 assert(typeof routeOptionsGeoJSON.features[0].properties.route_name === 'string' && routeOptionsGeoJSON.features[0].properties.route_name.length > 0, `GeoJSON properties contain non-empty route_name ("${routeOptionsGeoJSON.features[0].properties.route_name}")`);
 assert(routeOptionsGeoJSON.features[0].properties.distance_km > 0, 'GeoJSON properties contain positive distance_km');
 assert(routeOptionsGeoJSON.features[0].properties.predicted_eta_minutes > 0, 'GeoJSON properties contain positive predicted_eta_minutes');

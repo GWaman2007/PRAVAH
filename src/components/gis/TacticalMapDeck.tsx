@@ -16,6 +16,7 @@ import {
   createMissionRoutesGeoJSON,
   createSelectedMissionRouteGeoJSON,
   createModelBRouteOptionsGeoJSON,
+  createSpatialSegmentMarkersGeoJSON,
   createRoadStatusGeoJSON,
   createModelARiskGeoJSON,
   getSegmentCurvedCoordinates,
@@ -32,6 +33,7 @@ import {
 } from '../../engine/mapGeoJSONAdapters';
 import { getMissionCorridorSegments, getAuthoritativeMissionExposure } from '../../engine/modelAService';
 import { SegmentModal } from './SegmentModal';
+import { SpatialSegmentModal } from './SpatialSegmentModal';
 import { RoadIncidentModal } from './RoadIncidentModal';
 import { VehicleInspector } from './VehicleInspector';
 import { AlertFeedModal } from './AlertFeedModal';
@@ -41,7 +43,7 @@ import { MissionDetailsPanel } from './MissionDetailsPanel';
 import { DisasterPolygonModal, type HazardZoneInfo } from './DisasterPolygonModal';
 import { useTranslation } from '../../data/uiTranslations';
 import { formatTimeAgo } from '../../engine/offlineSync';
-import type { Segment, VehicleProfile, ReliefMission, Incident, SegmentIncident, CommunityWithCalculation, DraftIncidentPlot } from '../../types';
+import type { Segment, VehicleProfile, ReliefMission, Incident, SegmentIncident, CommunityWithCalculation, DraftIncidentPlot, RouteSpatialSegment } from '../../types';
 import { ensureLngLat } from '../../engine/gisMath';
 import {
   CloudRain,
@@ -324,6 +326,13 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
     predicted_eta_minutes: number;
     predicted_delay_factor: number;
     is_rank_1: boolean;
+  } | null>(null);
+
+  // Model A 5-Equal-Distance Spatial Segment Inspection State
+  const [selectedSpatialSegmentOrder, setSelectedSpatialSegmentOrder] = useState<number | null>(null);
+  const [inspectedSpatialSegment, setInspectedSpatialSegment] = useState<{
+    segment: RouteSpatialSegment;
+    routeName?: string;
   } | null>(null);
 
   const [detailedIncident, setDetailedIncident] = useState<{
@@ -734,6 +743,56 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
           'line-color': ['get', 'color'],
           'line-width': ['get', 'line_width'],
           'line-opacity': ['get', 'line_opacity'],
+        },
+      });
+
+      // 4B-ii. Model A 5-Equal-Distance Spatial Segment Milestone Markers (S1..S5) & Incidents
+      map.addSource('model-a-spatial-markers', {
+        type: 'geojson',
+        data: createSpatialSegmentMarkersGeoJSON(optsInit, selOptIdInit, null),
+      });
+
+      map.addLayer({
+        id: 'model-a-spatial-markers-glow',
+        type: 'circle',
+        source: 'model-a-spatial-markers',
+        paint: {
+          'circle-radius': 14,
+          'circle-color': ['coalesce', ['get', 'color'], '#2563EB'],
+          'circle-opacity': 0.35,
+          'circle-blur': 0.5,
+        },
+      });
+
+      map.addLayer({
+        id: 'model-a-spatial-markers-circle',
+        type: 'circle',
+        source: 'model-a-spatial-markers',
+        paint: {
+          'circle-radius': [
+            'case',
+            ['boolean', ['get', 'is_selected'], false],
+            10.5,
+            7.5,
+          ],
+          'circle-color': ['coalesce', ['get', 'color'], '#2563EB'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+        },
+      });
+
+      map.addLayer({
+        id: 'model-a-spatial-markers-text',
+        type: 'symbol',
+        source: 'model-a-spatial-markers',
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 9.5,
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#ffffff',
         },
       });
 
@@ -1436,6 +1495,23 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
           const currentOptId = feat.properties.option_id;
           const targetMission = activeMissionsRef.current.find((m) => m.id === mId);
           const opts = targetMission?.routeOptions || missionRouteOptionsByMissionId[mId] || [];
+          const selOptId = selectedRouteOptionByMissionId[mId] || targetMission?.selectedRouteOptionId;
+
+          // If clicking an already selected route and a specific spatial segment was clicked, inspect it!
+          if (currentOptId === selOptId && feat.properties.segment_order) {
+            const segOrder = Number(feat.properties.segment_order);
+            setSelectedSpatialSegmentOrder(segOrder);
+            const activeOpt = opts.find((o) => o.id === selOptId) || opts[0];
+            const targetSeg = activeOpt?.spatialSegments?.find((s) => s.order === segOrder);
+            if (targetSeg) {
+              setInspectedSpatialSegment({
+                segment: targetSeg,
+                routeName: activeOpt?.routeName,
+              });
+              return;
+            }
+          }
+
           if (opts.length >= 2) {
             // Toggle between the two route options: clicking green hides green and shows blue; clicking blue hides blue and shows green!
             const otherOpt = opts.find((o) => o.id !== currentOptId) || opts[0];
@@ -1470,6 +1546,42 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       map.on('mouseleave', 'model-b-route-line', () => {
         map.getCanvas().style.cursor = '';
         setHoveredRouteOption(null);
+      });
+
+      // Click / Hover Model A Spatial Segment Milestone Markers (S1..S5)
+      const handleSpatialMarkerClick = (e: any) => {
+        const feat = e.features?.[0];
+        if (feat?.properties) {
+          const segOrder = Number(feat.properties.order);
+          setSelectedSpatialSegmentOrder(segOrder);
+          const activeMission = activeMissionsRef.current.find((m) => m.id === selectedMissionId) || activeMissionsRef.current[0];
+          const opts = activeMission?.routeOptions || missionRouteOptionsByMissionId[activeMission?.id || ''] || [];
+          const selOptId = selectedRouteOptionByMissionId[activeMission?.id || ''] || activeMission?.selectedRouteOptionId;
+          const activeOpt = opts.find((o) => o.id === selOptId) || opts.find((o) => o.predictedPreferredRoute) || opts[0];
+          const targetSeg = activeOpt?.spatialSegments?.find((s) => s.order === segOrder);
+          if (targetSeg) {
+            setInspectedSpatialSegment({
+              segment: targetSeg,
+              routeName: activeOpt?.routeName,
+            });
+          }
+        }
+      };
+
+      map.on('click', 'model-a-spatial-markers-circle', handleSpatialMarkerClick);
+      map.on('click', 'model-a-spatial-markers-text', handleSpatialMarkerClick);
+
+      map.on('mouseenter', 'model-a-spatial-markers-circle', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'model-a-spatial-markers-circle', () => {
+        map.getCanvas().style.cursor = '';
+      });
+      map.on('mouseenter', 'model-a-spatial-markers-text', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'model-a-spatial-markers-text', () => {
+        map.getCanvas().style.cursor = '';
       });
 
       // Hover on road breakdown marker
@@ -1966,7 +2078,23 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
         modelAPredictions,
         false,
         activeMission?.originCoords,
-        activeMission?.destinationEndpoint
+        activeMission?.destinationEndpoint,
+        selectedSpatialSegmentOrder
+      ));
+    }
+
+    // Update Model A 5-equal-distance spatial milestone markers
+    const spatialMarkersSource = map.getSource('model-a-spatial-markers') as maplibregl.GeoJSONSource;
+    if (spatialMarkersSource) {
+      const isSuggested = activeMission?.status === 'SUGGESTED';
+      const opts = (isSuggested && !activeMission?.isRerouted)
+        ? (activeMission.routeOptions || missionRouteOptionsByMissionId[activeMission.id] || [])
+        : [];
+      const selOptId = selectedRouteOptionByMissionId[activeMission?.id || ''] || activeMission?.selectedRouteOptionId;
+      spatialMarkersSource.setData(createSpatialSegmentMarkersGeoJSON(
+        opts,
+        selOptId,
+        selectedSpatialSegmentOrder
       ));
     }
 
@@ -2044,6 +2172,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
     activeMissionCorridor,
     selectedRouteOptionByMissionId,
     missionRouteOptionsByMissionId,
+    selectedSpatialSegmentOrder,
   ]);
 
   // 5. Update Layer Visibility from activeLayers filters
@@ -2075,6 +2204,9 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
     // MODEL A PREDICTIVE HAZARD OVERLAY: Strictly independent from operational status
     setVisibility('model-a-risk-glow', activeLayers.modelA);
     setVisibility('model-a-risk-line', activeLayers.modelA);
+    setVisibility('model-a-spatial-markers-glow', activeLayers.modelA || activeLayers.routes);
+    setVisibility('model-a-spatial-markers-circle', activeLayers.modelA || activeLayers.routes);
+    setVisibility('model-a-spatial-markers-text', activeLayers.modelA || activeLayers.routes);
 
     // GROUND INTEL FEED INCIDENTS: Always visible live incident locations with pulsing warning dots
     setVisibility('ground-intel-incidents-pulse', true);
@@ -3847,6 +3979,13 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
               const seg = NER_SEGMENTS.find((s) => s.id === segId);
               if (seg) setInspectedSegment(seg);
             }}
+            onSelectSpatialSegment={(seg, rName) => {
+              setSelectedSpatialSegmentOrder(seg.order);
+              setInspectedSpatialSegment({
+                segment: seg,
+                routeName: rName,
+              });
+            }}
           />
         </div>
       )}
@@ -3953,6 +4092,18 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
           onClose={() => setActiveSOSVehicleId(null)}
           onStandDown={() => {
             setActiveSOSVehicleId(null);
+          }}
+        />
+      )}
+
+      {/* 8. Model A 5-Equal-Distance Spatial Segment Modal */}
+      {inspectedSpatialSegment && (
+        <SpatialSegmentModal
+          segment={inspectedSpatialSegment.segment}
+          routeName={inspectedSpatialSegment.routeName}
+          onClose={() => {
+            setInspectedSpatialSegment(null);
+            setSelectedSpatialSegmentOrder(null);
           }}
         />
       )}
