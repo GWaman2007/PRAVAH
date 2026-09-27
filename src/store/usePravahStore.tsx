@@ -1425,8 +1425,47 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [customizingMission, setCustomizingMission] = useState<ReliefMission | null>(null);
   const [pendingSOSAlert, setPendingSOSAlert] = useState<AlertEvent | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const cancelledSOSVehicleIdsRef = useRef<Set<string>>(new Set());
 
   const toggleSimulation = useCallback(() => setIsSimulationRunning((p) => !p), []);
+
+  const cancelVehicleSOS = useCallback((id: string) => {
+    // Register as cancelled so echo handlers (socket/Supabase) don't re-set SOS
+    cancelledSOSVehicleIdsRef.current.add(id);
+    setVehicles((prev) =>
+      prev.map((v) =>
+        v.vehicle_id === id || v.vehicle_name === id
+          ? {
+              ...v,
+              is_sos_manual: false,
+              status: 'ON_ROUTE' as VehicleStatus,
+              is_watchdog_red: false,
+              is_watchdog_amber: false,
+              entry_blackout_time: undefined,
+              expected_blackout_exit_time: undefined,
+              overdue_duration_min: 0,
+              stationary_timer_sec: 0,
+            }
+          : v
+      )
+    );
+    setPendingSOSAlert((curr) =>
+      curr?.vehicle_id === id || curr?.vehicle_name === id ? null : curr
+    );
+    setAlerts((prev) =>
+      prev.map((a) =>
+        (a.vehicle_id === id || a.vehicle_name === id) && a.type === 'SOS_TRIGGERED'
+          ? { ...a, acknowledged: true }
+          : a
+      )
+    );
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('CANCEL_DRIVER_SOS', { vehicleId: id });
+    }
+    if (isSupabaseConfigured) {
+      cancelCloudSOS(id);
+    }
+  }, []);
 
   const acknowledgeAlert = useCallback((id: string) => {
     setAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, acknowledged: true } : a)));
@@ -1445,11 +1484,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const triggerVehicleSOS = useCallback((id: string) => {
+    // Remove from cancelled set so this NEW SOS is honored
+    cancelledSOSVehicleIdsRef.current.delete(id);
     setVehicles((prev) =>
       prev.map((v) => (v.vehicle_id === id ? { ...v, is_sos_manual: true, status: 'SOS_ALERT' } : v))
     );
     const target = vehicles.find((v) => v.vehicle_id === id);
     if (target) {
+      cancelledSOSVehicleIdsRef.current.delete(target.vehicle_name);
       const sosAlert: AlertEvent = {
         id: `sos-${id}-${Date.now()}`,
         vehicle_id: id,
@@ -1476,21 +1518,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (isSupabaseConfigured) {
         broadcastCloudSOS(id, sosAlert);
       }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('pravah:new_sos', { detail: { vehicleId: id } }));
+      }
     }
   }, [vehicles]);
-
-  const cancelVehicleSOS = useCallback((id: string) => {
-    setVehicles((prev) =>
-      prev.map((v) => (v.vehicle_id === id ? { ...v, is_sos_manual: false, status: 'ON_ROUTE' } : v))
-    );
-    setPendingSOSAlert((curr) => (curr?.vehicle_id === id ? null : curr));
-    if (socketRef.current?.connected) {
-      socketRef.current.emit('CANCEL_DRIVER_SOS', { vehicleId: id });
-    }
-    if (isSupabaseConfigured) {
-      cancelCloudSOS(id);
-    }
-  }, []);
 
   // Telemetry simulation tick loop
   useEffect(() => {
@@ -3452,15 +3484,20 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       });
 
       socket.on('DRIVER_SOS_SIGNAL', (payload: any) => {
-        console.warn('🚨 RECEIVED SOS FROM WEBSOCKET:', payload);
+        const vId = payload.vehicleId || payload.vehicle?.vehicle_id;
+        // Skip if this SOS was already cancelled (echo from our own trigger)
+        if (vId && cancelledSOSVehicleIdsRef.current.has(vId)) {
+          return;
+        }
         if (payload.alert) {
-          setAlerts((prev) => [payload.alert, ...prev]);
-          // Only Command roles receive the modal to authorize QRT dispatch
+          setAlerts((prev) => {
+            if (prev.some((a) => a.id === payload.alert.id)) return prev;
+            return [payload.alert, ...prev];
+          });
           if (activeRoleRef.current === 'SUPER_ADMIN' || activeRoleRef.current === 'FLEET_DISPATCHER') {
             setPendingSOSAlert(payload.alert);
           }
         }
-        const vId = payload.vehicleId || payload.vehicle?.vehicle_id;
         if (vId) {
           setVehicles((prev) =>
             prev.map((v) => (v.vehicle_id === vId ? { ...v, is_sos_manual: true, status: 'SOS_ALERT' } : v))
@@ -3875,15 +3912,23 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           }
         })
         .on('broadcast', { event: 'DRIVER_SOS_SIGNAL' }, ({ payload }) => {
+          const vId = payload?.vehicleId;
+          // Skip if this SOS was already cancelled (echo from our own trigger)
+          if (vId && cancelledSOSVehicleIdsRef.current.has(vId)) {
+            return;
+          }
           if (payload?.alert) {
-            setAlerts((prev) => [payload.alert, ...prev]);
+            setAlerts((prev) => {
+              if (prev.some((a) => a.id === payload.alert.id)) return prev;
+              return [payload.alert, ...prev];
+            });
             if (activeRoleRef.current === 'SUPER_ADMIN' || activeRoleRef.current === 'FLEET_DISPATCHER') {
               setPendingSOSAlert(payload.alert);
             }
           }
-          if (payload?.vehicleId) {
+          if (vId) {
             setVehicles((prev) =>
-              prev.map((v) => (v.vehicle_id === payload.vehicleId ? { ...v, is_sos_manual: true, status: 'SOS_ALERT' } : v))
+              prev.map((v) => (v.vehicle_id === vId ? { ...v, is_sos_manual: true, status: 'SOS_ALERT' } : v))
             );
           }
         })

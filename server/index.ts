@@ -1615,12 +1615,25 @@ io.on('connection', (socket: Socket) => {
   // 4b. Driver SOS Stand Down / Cancel
   socket.on('CANCEL_DRIVER_SOS', (data: any) => {
     const { vehicleId } = data;
-    const veh = state.fleetTelemetry[vehicleId];
+    let veh = state.fleetTelemetry[vehicleId];
+    if (!veh) {
+      for (const k of Object.keys(state.fleetTelemetry)) {
+        if (state.fleetTelemetry[k]?.vehicle_id === vehicleId || state.fleetTelemetry[k]?.vehicle_name === vehicleId) {
+          veh = state.fleetTelemetry[k];
+          break;
+        }
+      }
+    }
     if (veh) {
       veh.status = 'ON_ROUTE';
       veh.is_sos_manual = false;
+      veh.is_watchdog_red = false;
+      veh.is_watchdog_amber = false;
+      veh.expected_blackout_exit_time = undefined;
     }
-    state.alerts = state.alerts.filter((a: any) => !(a.vehicle_id === vehicleId && a.type === 'SOS_TRIGGERED'));
+    state.alerts = state.alerts.filter(
+      (a: any) => !((a.vehicle_id === vehicleId || a.vehicle_name === vehicleId) && a.type === 'SOS_TRIGGERED')
+    );
     saveDb();
     io.emit('DRIVER_SOS_CANCELLED', { vehicleId });
     io.emit('STATE_UPDATED', state);

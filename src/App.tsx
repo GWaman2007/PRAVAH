@@ -32,6 +32,7 @@ const AppContent: React.FC = () => {
     alerts,
     vehicles,
     acknowledgeAlert,
+    cancelVehicleSOS,
     pendingSOSAlert,
     setPendingSOSAlert,
   } = usePravahStore();
@@ -158,8 +159,23 @@ const AppContent: React.FC = () => {
         <GlobalSOSInterceptModal
           alert={pendingSOSAlert}
           vehicle={sosVehicle}
-          onClose={() => setPendingSOSAlert(null)}
-          onAcknowledge={(alertId) => acknowledgeAlert(alertId)}
+          onClose={() => {
+            if (pendingSOSAlert?.vehicle_id) {
+              cancelVehicleSOS(pendingSOSAlert.vehicle_id);
+            }
+            setPendingSOSAlert(null);
+          }}
+          onAcknowledge={(alertId) => {
+            acknowledgeAlert(alertId);
+            if (pendingSOSAlert?.vehicle_id) {
+              cancelVehicleSOS(pendingSOSAlert.vehicle_id);
+            }
+            setPendingSOSAlert(null);
+          }}
+          onStandDown={(vehicleId) => {
+            cancelVehicleSOS(vehicleId);
+            setPendingSOSAlert(null);
+          }}
         />
       )}
 

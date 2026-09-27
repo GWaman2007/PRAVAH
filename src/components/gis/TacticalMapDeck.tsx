@@ -115,6 +115,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
     toggleVehicleHalt,
     toggleVehicleDeviation,
     triggerVehicleSOS,
+    cancelVehicleSOS,
     activeRole,
     activeMissions,
     selectedMissionId,
@@ -272,6 +273,38 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState<boolean>(false);
   const [activeSOSVehicleId, setActiveSOSVehicleId] = useState<string | null>(null);
+  const dismissedSOSVehicleIdsRef = useRef<Set<string>>(new Set());
+
+  // Listen for fresh driver SOS triggers to allow subsequent legitimate emergencies
+  useEffect(() => {
+    const handleNewSOS = (e: any) => {
+      const vId = e.detail?.vehicleId;
+      if (vId) {
+        dismissedSOSVehicleIdsRef.current.delete(vId);
+        const match = vehicles.find((v) => v.vehicle_id === vId || v.vehicle_name === vId);
+        if (match) {
+          dismissedSOSVehicleIdsRef.current.delete(match.vehicle_id);
+          dismissedSOSVehicleIdsRef.current.delete(match.vehicle_name);
+        }
+      }
+    };
+    window.addEventListener('pravah:new_sos', handleNewSOS);
+    return () => window.removeEventListener('pravah:new_sos', handleNewSOS);
+  }, [vehicles]);
+
+  const handleDismissSOS = useCallback((vehId: string) => {
+    dismissedSOSVehicleIdsRef.current.add(vehId);
+    const targetVeh = vehicles.find((v) => v.vehicle_id === vehId || v.vehicle_name === vehId);
+    if (targetVeh) {
+      dismissedSOSVehicleIdsRef.current.add(targetVeh.vehicle_id);
+      dismissedSOSVehicleIdsRef.current.add(targetVeh.vehicle_name);
+      cancelVehicleSOS(targetVeh.vehicle_id);
+    } else {
+      cancelVehicleSOS(vehId);
+    }
+    setActiveSOSVehicleId(null);
+  }, [cancelVehicleSOS, vehicles]);
+
   const [isMissionDetailsOpen, setIsMissionDetailsOpen] = useState<boolean>(true);
 
   // Tactical GIS Hover & Detailed Incident State
@@ -473,13 +506,25 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
     };
   }, [isMonsoonDownpourSimulated]);
 
-  // Check if any vehicle has active SOS
+  // Check if any vehicle has active SOS (avoid looping)
   useEffect(() => {
-    const sosVeh = vehicles.find((v) => v.is_sos_manual || v.status === 'SOS_ALERT');
-    if (sosVeh && !activeSOSVehicleId) {
-      setActiveSOSVehicleId(sosVeh.vehicle_id);
+    const sosVeh = vehicles.find(
+      (v) =>
+        (v.is_sos_manual || v.status === 'SOS_ALERT') &&
+        !dismissedSOSVehicleIdsRef.current.has(v.vehicle_id) &&
+        !dismissedSOSVehicleIdsRef.current.has(v.vehicle_name)
+    );
+
+    if (sosVeh) {
+      if (activeSOSVehicleId !== sosVeh.vehicle_id) {
+        setActiveSOSVehicleId(sosVeh.vehicle_id);
+      }
+    } else {
+      if (activeSOSVehicleId) {
+        setActiveSOSVehicleId(null);
+      }
     }
-  }, [vehicles]);
+  }, [vehicles, activeSOSVehicleId]);
 
   // 2. Initialize MapLibre GL Map (Single Instance)
   useEffect(() => {
@@ -2385,16 +2430,6 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
         />
       )}
 
-      {/* SOS Distress Modal */}
-      <SOSModal
-        vehicle={vehicles.find((v) => v.vehicle_id === activeSOSVehicleId) || null}
-        onClose={() => setActiveSOSVehicleId(null)}
-        onStandDown={(id) => {
-          toggleVehicleHalt(id);
-          setActiveSOSVehicleId(null);
-        }}
-      />
-
       {/* Alert Feed Modal */}
       <AlertFeedModal
         isOpen={isAlertModalOpen}
@@ -4085,9 +4120,15 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       {activeSOSVehicleId && (
         <SOSModal
           vehicle={vehicles.find((v) => v.vehicle_id === activeSOSVehicleId) || null}
-          onClose={() => setActiveSOSVehicleId(null)}
-          onStandDown={() => {
-            setActiveSOSVehicleId(null);
+          onClose={() => {
+            if (activeSOSVehicleId) {
+              handleDismissSOS(activeSOSVehicleId);
+            } else {
+              setActiveSOSVehicleId(null);
+            }
+          }}
+          onStandDown={(id) => {
+            handleDismissSOS(id);
           }}
         />
       )}

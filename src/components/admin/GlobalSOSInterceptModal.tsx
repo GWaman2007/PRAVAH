@@ -18,6 +18,7 @@ interface GlobalSOSInterceptModalProps {
   vehicle: VehicleTelemetry | null;
   onClose: () => void;
   onAcknowledge: (alertId: string) => void;
+  onStandDown?: (vehicleId: string) => void;
 }
 
 export const GlobalSOSInterceptModal: React.FC<GlobalSOSInterceptModalProps> = ({
@@ -25,6 +26,7 @@ export const GlobalSOSInterceptModal: React.FC<GlobalSOSInterceptModalProps> = (
   vehicle,
   onClose,
   onAcknowledge,
+  onStandDown,
 }) => {
   const { t } = useTranslation();
   if (!alert || alert.type !== 'SOS_TRIGGERED') return null;
@@ -54,8 +56,8 @@ export const GlobalSOSInterceptModal: React.FC<GlobalSOSInterceptModalProps> = (
 
           <button
             onClick={() => {
-              onAcknowledge(alert.id);
-              onClose();
+              if (alert.vehicle_id) onStandDown?.(alert.vehicle_id);
+              else onClose();
             }}
             className="text-white/80 hover:text-white p-1 rounded-sm cursor-pointer"
           >
@@ -125,8 +127,8 @@ export const GlobalSOSInterceptModal: React.FC<GlobalSOSInterceptModalProps> = (
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-border">
             <button
               onClick={() => {
-                onAcknowledge(alert.id);
-                onClose();
+                if (alert.vehicle_id) onStandDown?.(alert.vehicle_id);
+                else onClose();
               }}
               className="w-full sm:w-auto px-3.5 py-2 rounded-sm border border-border text-text-secondary hover:bg-surface-subtle text-xs btn-press cursor-pointer"
             >
@@ -136,9 +138,8 @@ export const GlobalSOSInterceptModal: React.FC<GlobalSOSInterceptModalProps> = (
             <div className="w-full sm:w-auto flex items-center gap-2">
               <button
                 onClick={() => {
-                  window.alert(`Alert dispatched to BRO Project Sewak / Vartak Quick Clearance Squad.`);
-                  onAcknowledge(alert.id);
-                  onClose();
+                  if (alert.vehicle_id) onStandDown?.(alert.vehicle_id);
+                  else onClose();
                 }}
                 className="flex-1 sm:flex-initial px-3.5 py-2 rounded-sm bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 btn-press shadow-xs cursor-pointer"
               >
@@ -148,9 +149,8 @@ export const GlobalSOSInterceptModal: React.FC<GlobalSOSInterceptModalProps> = (
 
               <button
                 onClick={() => {
-                  window.alert(`🚨 POLICE QRT & DISASTER RESCUE ESCORT DISPATCHED to GPS coordinates [${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}] for Convoy ${alert.vehicle_name}.`);
-                  onAcknowledge(alert.id);
-                  onClose();
+                  if (alert.vehicle_id) onStandDown?.(alert.vehicle_id);
+                  else onClose();
                 }}
                 className="flex-1 sm:flex-initial px-4 py-2 rounded-sm bg-status-blocked-solid hover:bg-status-blocked-text text-white font-bold text-xs flex items-center justify-center gap-1.5 btn-press shadow-xs cursor-pointer animate-bounce"
               >

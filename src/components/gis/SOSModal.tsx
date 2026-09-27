@@ -40,7 +40,9 @@ export const SOSModal: React.FC<SOSModalProps> = ({ vehicle, onClose, onStandDow
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => {
+              onStandDown(v.vehicle_id);
+            }}
             className="text-white/80 hover:text-white p-1 rounded-sm cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -92,7 +94,6 @@ export const SOSModal: React.FC<SOSModalProps> = ({ vehicle, onClose, onStandDow
             <button
               onClick={() => {
                 onStandDown(v.vehicle_id);
-                onClose();
               }}
               className="w-full sm:w-auto px-3 py-2 rounded-sm border border-border text-text-secondary hover:bg-surface-subtle btn-press cursor-pointer text-center"
             >
@@ -100,8 +101,7 @@ export const SOSModal: React.FC<SOSModalProps> = ({ vehicle, onClose, onStandDow
             </button>
             <button
               onClick={() => {
-                alert(`🚨 ESCORT SQUADRON DISPATCHED to GPS coordinates [${v.current_coords[0].toFixed(4)}, ${v.current_coords[1].toFixed(4)}] for ${v.vehicle_name}.`);
-                onClose();
+                onStandDown(v.vehicle_id);
               }}
               className="w-full sm:w-auto px-4 py-2 rounded-sm bg-[#1B4B73] hover:bg-[#123A5A] dark:bg-[#2E6B9E] text-white font-semibold flex items-center justify-center gap-1.5 btn-press shadow-xs cursor-pointer text-center"
             >
