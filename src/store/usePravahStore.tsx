@@ -293,6 +293,7 @@ interface PravahStoreContextType {
   // Demo Mode (Data Injection Only, No Running Scripts)
   isDemoMode: boolean;
   toggleDemoMode: () => void;
+  resetDemoMode: (action?: 'restart' | 'turn_off') => void;
   resetCommunityScenario: (communityId?: string) => void;
 
   // Field Officer Multi-Context & Requisitions
@@ -2921,228 +2922,245 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [isOnline]);
 
-  // 14. Demo Mode: Synchronous Data Injection & Clean Purge (NO Running Scripts or Timeouts)
+  // 14. Demo Mode: Synchronous Data Injection, Reset & Clean Purge (NO Running Scripts or Timeouts)
+  const injectDemoData = useCallback(() => {
+    // 1. Environmental disruption: Monsoon downpour spike to 65 mm/hr
+    setRainfallMmHr(65);
+    setIsMonsoonDownpourSimulated(true);
+
+    // 2. Road Network Severance: NH-306 at Bilkhawthlir Escarpment (SEG-SIL-KOL) -> TOTAL_BLOCKAGE
+    setActiveDisruptions((prev) => ({
+      ...prev,
+      'SEG-SIL-KOL': {
+        status: 'TOTAL_BLOCKAGE',
+        cause: 'Torrential Silt Mudflow (65mm/hr)',
+        description: 'Severe slope wash out along Bilkhawthlir escarpment. All heavy transport severed.',
+        reportedBy: 'Field Officer (Insp. L. Hmar / Mizoram Police)',
+      },
+    }));
+
+    // 3. Isolated Community Distress: Kolasib East Community (MZ-KOL-004) drops to P1 isolation
+    setRawCommunities((prev) =>
+      prev.map((c) =>
+        c.id === 'MZ-KOL-004'
+          ? {
+              ...c,
+              cutoffTimeHours: 2.1,
+              disruptionProbMax: 0.98,
+              elapsedTimeHours: 14.0,
+              isMonsoonAlertActive: true,
+              hasActiveIndent: true,
+            }
+          : c
+      )
+    );
+
+    setDistrictsHealth((prev) =>
+      prev.map((d) => (d.id === 'kolasib' ? { ...d, accessibilityScore: 18, connectivityCategory: 'CRITICAL', openCorridorsCount: 0 } : d))
+    );
+
+    // 4. Vehicle Telemetry: Medic-01 stopped before debris obstruction on NH-306 (NOT rerouted)
+    const vehicleCoords: [number, number] = [24.5015, 92.76491];
+    setSelectedVehicleId('Medic-01');
+    setSelectedMissionId('MSN-ONGOING-MZ01');
+    setSelectedCommunityId('MZ-KOL-004');
+    focusMapOnCoords([24.40, 92.73], 10);
+    setVehicles((prev) =>
+      prev.map((v) =>
+        v.vehicle_id === 'Medic-01'
+          ? {
+              ...v,
+              status: 'ON_ROUTE',
+              current_coords: vehicleCoords,
+              speed_kmh: 0,
+              is_stopped_manual: true,
+              next_chokepoint: 'Bilkhawthlir KM-18 Mudflow Hazard Zone',
+            }
+          : v
+      )
+    );
+
+    // 5. In-Transit Mission: Reset all missions to deterministic fresh demo baseline, then set MSN-ONGOING-MZ01 to obstructed & un-rerouted
+    const freshMissions = generateDeterministicDemoMissions();
+    const updatedMissions = freshMissions.map((m) =>
+      m.id === 'MSN-ONGOING-MZ01' || m.communityId === 'MZ-KOL-004'
+        ? {
+            ...m,
+            urgency: 'P1_CRITICAL' as const,
+            routeStatus: 'UNAVAILABLE' as const,
+            disruptionProbability: 0.98,
+            initialDisruptionProbability: 0.98,
+            isRerouted: false,
+          }
+        : m
+    );
+    setActiveMissions(updatedMissions);
+    persistMissions(updatedMissions);
+
+    // 6. Ground Intel Incident Report
+    setIncidents((prev) => [
+      {
+        id: 'inc-demo-kolasib',
+        title: 'Massive Hillside Silt Slide Severing NH-306 at Bilkhawthlir KM-18',
+        corridorFlair: 'r/Mizoram-NH-306',
+        incidentType: 'Landslide',
+        severity: 'Total Blockage',
+        location: {
+          lat: 24.2850,
+          lng: 92.7350,
+          placeName: 'Bilkhawthlir Escarpment, Kolasib District',
+          state: 'Mizoram',
+          corridorId: 'SEG-SIL-KOL',
+        },
+        author: {
+          name: 'Inspector L. Hmar',
+          role: 'Field Officer (BRO/Police)',
+        },
+        timestamp: new Date().toISOString(),
+        mediaUrl: 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80',
+        votes: { upvotes: 42, downvotes: 0, userVote: 'up' },
+        confidenceScore: 96,
+        hasOfficerVerified: true,
+        sync_status: 'SYNCED',
+        updates: [
+          {
+            id: 'u-demo-kol-1',
+            author: 'Insp. L. Hmar',
+            role: 'Field Officer (BRO/Police)',
+            message: 'Main highway impassable. Advising dispatch to divert via Bairabi Pass bypass road.',
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      },
+      ...prev.filter((i) => i.id !== 'inc-demo-kolasib' && !i.id.startsWith('inc-kolasib-')),
+    ]);
+
+    // 7. Critical Blockage & Reroute Alert
+    setAlerts((prev) => [
+      {
+        id: 'alert-demo-nh306',
+        vehicle_id: 'Medic-01',
+        vehicle_name: 'Medic-01',
+        cargo_type: 'Emergency Medical Solutions & Antivenom',
+        timestamp: new Date().toISOString(),
+        severity: 'CRITICAL',
+        type: 'STATIONARY_HAZARD',
+        title: 'NH-306 Severed at Bilkhawthlir KM-18',
+        message: 'Torrential 65mm/hr mudflow severed NH-306. Active convoy Medic-01 route compromised. Model B detour computation recommended.',
+        coords: vehicleCoords,
+        acknowledged: false,
+        extraDetails: {
+          affectedCorridor: 'SEG-SIL-KOL',
+          source: 'Field Officer Ground Intel (Insp. L. Hmar)',
+        },
+      },
+      ...prev.filter((a) => a.id !== 'alert-demo-nh306' && !a.id.startsWith('alert-nh306-') && !a.id.startsWith('alert-reroute-')),
+    ]);
+
+    // 8. Field Officer Resource Request
+    const demoReq: ResourceRequest = {
+      id: 'REQ-MZ-KOL-DEMO',
+      officerId: 'hmar',
+      officerName: 'Inspector L. Hmar',
+      communityId: 'MZ-KOL-004',
+      communityName: 'Kolasib East Community Depot',
+      resourceType: 'Medical Kits',
+      quantity: 17,
+      unit: 'trauma kits',
+      urgency: 'CRITICAL',
+      reason: 'Critical medical trauma inventory depleted due to landslide casualties and monsoon isolation.',
+      notes: 'NH-306 blocked. Emergency resupply requested via Bhairabi bypass. Silchar Depot pre-allocated.',
+      status: 'PROCESSING',
+      createdAt: new Date().toISOString(),
+    };
+    setResourceRequests((prev) => [demoReq, ...prev.filter((r) => r.id !== 'REQ-MZ-KOL-DEMO')]);
+  }, [focusMapOnCoords]);
+
+  const purgeDemoData = useCallback(() => {
+    // 1. Environmental disruption reset
+    setRainfallMmHr(24);
+    setIsMonsoonDownpourSimulated(false);
+
+    // 2. Road network disruption reset
+    setActiveDisruptions((prev) => ({
+      ...prev,
+      'SEG-SIL-KOL': {
+        status: 'SINGLE_LANE_PASSABLE',
+        cause: 'Road_Subsidence',
+        description: 'Bilkhawthlir silt collapse - 18T load restriction',
+        reportedBy: 'Insp. L. Hmar',
+      },
+    }));
+
+    // 3. Kolasib Community reset to baseline
+    setRawCommunities(INITIAL_COMMUNITIES);
+    setDistrictsHealth(INITIAL_DISTRICTS_HEALTH);
+
+    // 4. Vehicles reset & clear selection
+    setVehicles(INITIAL_VEHICLES);
+    setSelectedVehicleId(null);
+    setSelectedMissionId(null);
+    setSelectedCommunityId(null);
+    focusMapOnCoords([26.2006, 92.9376], 7);
+
+    // 5. Missions reset to clean baseline
+    const freshMissions = generateDeterministicDemoMissions();
+    setActiveMissions(freshMissions);
+    persistMissions(freshMissions);
+
+    // 6. Purge demo incidents
+    setIncidents((prev) => prev.filter((i) => i.id !== 'inc-demo-kolasib' && !i.id.startsWith('inc-kolasib-')));
+
+    // 7. Purge demo alerts
+    setAlerts((prev) =>
+      prev.filter(
+        (a) =>
+          a.id !== 'alert-demo-nh306' &&
+          !a.id.startsWith('alert-nh306-') &&
+          !a.id.startsWith('alert-reroute-') &&
+          !a.id.startsWith('alert-delivered-')
+      )
+    );
+
+    // 8. Purge demo resource requests & restore requirements
+    setResourceRequests((prev) => prev.filter((r) => r.id !== 'REQ-MZ-KOL-DEMO'));
+    setResourceRequirements(INITIAL_RESOURCE_REQUIREMENTS);
+
+    // Clean local storage cache
+    try {
+      localStorage.removeItem('pravah_active_disruptions');
+      localStorage.removeItem('pravah_missions');
+      localStorage.removeItem('pravah_resource_requirements');
+      localStorage.removeItem('pravah_resource_requests');
+    } catch (e) {
+      console.warn('Failed clearing localStorage demo items', e);
+    }
+  }, [focusMapOnCoords]);
+
   const toggleDemoMode = useCallback(() => {
     setIsDemoMode((prevMode) => {
       const nextMode = !prevMode;
-
       if (nextMode) {
-        // --- INJECT DEMO DATA SYNCHRONOUSLY ---
-        // 1. Environmental disruption: Monsoon downpour spike to 65 mm/hr
-        setRainfallMmHr(65);
-        setIsMonsoonDownpourSimulated(true);
-
-        // 2. Road Network Severance: NH-306 at Bilkhawthlir Escarpment (SEG-SIL-KOL) -> TOTAL_BLOCKAGE
-        setActiveDisruptions((prev) => ({
-          ...prev,
-          'SEG-SIL-KOL': {
-            status: 'TOTAL_BLOCKAGE',
-            cause: 'Torrential Silt Mudflow (65mm/hr)',
-            description: 'Severe slope wash out along Bilkhawthlir escarpment. All heavy transport severed.',
-            reportedBy: 'Field Officer (Insp. L. Hmar / Mizoram Police)',
-          },
-        }));
-
-        // 3. Isolated Community Distress: Kolasib East Community (MZ-KOL-004) drops to P1 isolation
-        setRawCommunities((prev) =>
-          prev.map((c) =>
-            c.id === 'MZ-KOL-004'
-              ? {
-                  ...c,
-                  cutoffTimeHours: 2.1,
-                  disruptionProbMax: 0.98,
-                  elapsedTimeHours: 14.0,
-                  isMonsoonAlertActive: true,
-                  hasActiveIndent: true,
-                }
-              : c
-          )
-        );
-
-        setDistrictsHealth((prev) =>
-          prev.map((d) => (d.id === 'kolasib' ? { ...d, accessibilityScore: 18, connectivityCategory: 'CRITICAL', openCorridorsCount: 0 } : d))
-        );
-
-        // 4. Vehicle Telemetry: Medic-01 stopped before debris obstruction on NH-306 (NOT rerouted)
-        const vehicleCoords: [number, number] = [24.5015, 92.76491];
-        setSelectedVehicleId('Medic-01');
-        setSelectedMissionId('MSN-ONGOING-MZ01');
-        setSelectedCommunityId('MZ-KOL-004');
-        focusMapOnCoords([24.40, 92.73], 10);
-        setVehicles((prev) =>
-          prev.map((v) =>
-            v.vehicle_id === 'Medic-01'
-              ? {
-                  ...v,
-                  status: 'ON_ROUTE',
-                  current_coords: vehicleCoords,
-                  speed_kmh: 0,
-                  is_stopped_manual: true,
-                  next_chokepoint: 'Bilkhawthlir KM-18 Mudflow Hazard Zone',
-                }
-              : v
-          )
-        );
-
-        // 5. In-Transit Mission: Keep original route on NH-306, flag route as obstructed (DO NOT AUTOMATICALLY REROUTE)
-        setActiveMissions((prev) =>
-          prev.map((m) =>
-            m.id === 'MSN-ONGOING-MZ01' || m.communityId === 'MZ-KOL-004'
-              ? {
-                  ...m,
-                  urgency: 'P1_CRITICAL' as const,
-                  routeStatus: 'UNAVAILABLE' as const,
-                  disruptionProbability: 0.98,
-                  initialDisruptionProbability: 0.98,
-                  isRerouted: false,
-                }
-              : m
-          )
-        );
-
-        // 6. Ground Intel Incident Report
-        setIncidents((prev) => [
-          {
-            id: 'inc-demo-kolasib',
-            title: 'Massive Hillside Silt Slide Severing NH-306 at Bilkhawthlir KM-18',
-            corridorFlair: 'r/Mizoram-NH-306',
-            incidentType: 'Landslide',
-            severity: 'Total Blockage',
-            location: {
-              lat: 24.2850,
-              lng: 92.7350,
-              placeName: 'Bilkhawthlir Escarpment, Kolasib District',
-              state: 'Mizoram',
-              corridorId: 'SEG-SIL-KOL',
-            },
-            author: {
-              name: 'Inspector L. Hmar',
-              role: 'Field Officer (BRO/Police)',
-            },
-            timestamp: new Date().toISOString(),
-            mediaUrl: 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80',
-            votes: { upvotes: 42, downvotes: 0, userVote: 'up' },
-            confidenceScore: 96,
-            hasOfficerVerified: true,
-            sync_status: 'SYNCED',
-            updates: [
-              {
-                id: 'u-demo-kol-1',
-                author: 'Insp. L. Hmar',
-                role: 'Field Officer (BRO/Police)',
-                message: 'Main highway impassable. Advising dispatch to divert via Bairabi Pass bypass road.',
-                timestamp: new Date().toISOString(),
-              },
-            ],
-          },
-          ...prev.filter((i) => i.id !== 'inc-demo-kolasib' && !i.id.startsWith('inc-kolasib-')),
-        ]);
-
-        // 7. Critical Blockage & Reroute Alert
-        setAlerts((prev) => [
-          {
-            id: 'alert-demo-nh306',
-            vehicle_id: 'Medic-01',
-            vehicle_name: 'Medic-01',
-            cargo_type: 'Emergency Medical Solutions & Antivenom',
-            timestamp: new Date().toISOString(),
-            severity: 'CRITICAL',
-            type: 'STATIONARY_HAZARD',
-            title: 'NH-306 Severed at Bilkhawthlir KM-18',
-            message: 'Torrential 65mm/hr mudflow severed NH-306. Active convoy Medic-01 route compromised. Model B detour computation recommended.',
-            coords: vehicleCoords,
-            acknowledged: false,
-            extraDetails: {
-              affectedCorridor: 'SEG-SIL-KOL',
-              source: 'Field Officer Ground Intel (Insp. L. Hmar)',
-            },
-          },
-          ...prev.filter((a) => a.id !== 'alert-demo-nh306' && !a.id.startsWith('alert-nh306-') && !a.id.startsWith('alert-reroute-')),
-        ]);
-
-        // 8. Field Officer Resource Request
-        const demoReq: ResourceRequest = {
-          id: 'REQ-MZ-KOL-DEMO',
-          officerId: 'hmar',
-          officerName: 'Inspector L. Hmar',
-          communityId: 'MZ-KOL-004',
-          communityName: 'Kolasib East Community Depot',
-          resourceType: 'Medical Kits',
-          quantity: 17,
-          unit: 'trauma kits',
-          urgency: 'CRITICAL',
-          reason: 'Critical medical trauma inventory depleted due to landslide casualties and monsoon isolation.',
-          notes: 'NH-306 blocked. Emergency resupply requested via Bhairabi bypass. Silchar Depot pre-allocated.',
-          status: 'PROCESSING',
-          createdAt: new Date().toISOString(),
-        };
-        setResourceRequests((prev) => [demoReq, ...prev.filter((r) => r.id !== 'REQ-MZ-KOL-DEMO')]);
-
+        injectDemoData();
       } else {
-        // --- PURGE DEMO INJECTED DATA & RESTORE NOMINAL BASELINE ---
-        // 1. Environmental disruption reset
-        setRainfallMmHr(24);
-        setIsMonsoonDownpourSimulated(false);
-
-        // 2. Road network disruption reset
-        setActiveDisruptions((prev) => ({
-          ...prev,
-          'SEG-SIL-KOL': {
-            status: 'SINGLE_LANE_PASSABLE',
-            cause: 'Road_Subsidence',
-            description: 'Bilkhawthlir silt collapse - 18T load restriction',
-            reportedBy: 'Insp. L. Hmar',
-          },
-        }));
-
-        // 3. Kolasib Community reset to baseline
-        setRawCommunities(INITIAL_COMMUNITIES);
-        setDistrictsHealth(INITIAL_DISTRICTS_HEALTH);
-
-        // 4. Vehicles reset & clear selection
-        setVehicles(INITIAL_VEHICLES);
-        setSelectedVehicleId(null);
-        setSelectedMissionId(null);
-        setSelectedCommunityId(null);
-        focusMapOnCoords([26.2006, 92.9376], 7);
-
-        // 5. Missions reset to clean baseline
-        const freshMissions = generateDeterministicDemoMissions();
-        setActiveMissions(freshMissions);
-        persistMissions(freshMissions);
-
-        // 6. Purge demo incidents
-        setIncidents((prev) => prev.filter((i) => i.id !== 'inc-demo-kolasib' && !i.id.startsWith('inc-kolasib-')));
-
-        // 7. Purge demo alerts
-        setAlerts((prev) =>
-          prev.filter(
-            (a) =>
-              a.id !== 'alert-demo-nh306' &&
-              !a.id.startsWith('alert-nh306-') &&
-              !a.id.startsWith('alert-reroute-') &&
-              !a.id.startsWith('alert-delivered-')
-          )
-        );
-
-        // 8. Purge demo resource requests & restore requirements
-        setResourceRequests((prev) => prev.filter((r) => r.id !== 'REQ-MZ-KOL-DEMO'));
-        setResourceRequirements(INITIAL_RESOURCE_REQUIREMENTS);
-
-        // Clean local storage cache
-        try {
-          localStorage.removeItem('pravah_active_disruptions');
-          localStorage.removeItem('pravah_missions');
-          localStorage.removeItem('pravah_resource_requirements');
-          localStorage.removeItem('pravah_resource_requests');
-        } catch (e) {
-          console.warn('Failed clearing localStorage demo items', e);
-        }
+        purgeDemoData();
       }
-
       return nextMode;
     });
-  }, [focusMapOnCoords]);
+  }, [injectDemoData, purgeDemoData]);
+
+  const resetDemoMode = useCallback(
+    (action: 'restart' | 'turn_off' = 'restart') => {
+      if (action === 'turn_off') {
+        setIsDemoMode(false);
+        purgeDemoData();
+      } else {
+        setIsDemoMode(true);
+        injectDemoData();
+      }
+    },
+    [injectDemoData, purgeDemoData]
+  );
 
   // 15. Real-Time Socket Synchronization
   useEffect(() => {
@@ -5069,6 +5087,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
       setPendingSOSAlert,
       isDemoMode,
       toggleDemoMode,
+      resetDemoMode,
       resetCommunityScenario,
       activeOfficerId,
       setActiveOfficerId,

@@ -41,6 +41,7 @@ export const Header: React.FC = () => {
     isSupabaseConfigured,
     isDemoMode,
     toggleDemoMode,
+    resetDemoMode,
     incidents,
     communities,
     vehicles,
@@ -49,6 +50,15 @@ export const Header: React.FC = () => {
 
   const { t } = useTranslation();
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [isResettingDemo, setIsResettingDemo] = useState(false);
+
+  const handleResetDemo = () => {
+    setIsResettingDemo(true);
+    resetDemoMode('restart');
+    setTimeout(() => {
+      setIsResettingDemo(false);
+    }, 450);
+  };
 
   // Macro KPI calculations
   const totalBlockages = incidents.filter((i) => i.severity === 'Total Blockage').length;
@@ -136,29 +146,47 @@ export const Header: React.FC = () => {
                <span className="hidden sm:inline">AI Copilot</span>
              </button>
 
-             {/* Demo Mode Toggle: Injects scenario data directly; toggles off to purge; always off on reload */}
-             <button
-               id="header-demo-mode-btn"
-               onClick={toggleDemoMode}
-               title={
-                 isDemoMode
-                   ? "Demo Mode Active (Demo scenario data injected). Click to turn OFF and purge demo data."
-                   : "Click to toggle Demo Mode (injects Kolasib NH-306 crisis scenario). Reloading always starts with demo mode OFF."
-               }
-               className={`shrink-0 flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-semibold border transition-all btn-press cursor-pointer shadow-xs ${
-                 isDemoMode
-                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-400/40 shadow-amber-500/20'
-                   : 'bg-gradient-to-r from-blue-600/20 to-cyan-600/20 text-cyan-300 border-cyan-500/40 hover:from-blue-600/30 hover:to-cyan-600/30'
-               }`}
-             >
-               <Sparkles className={`w-3.5 h-3.5 ${isDemoMode ? 'text-amber-400 animate-spin' : 'text-cyan-400 animate-pulse'}`} />
-               <span className="font-semibold text-[11px] sm:text-xs">
-                 {isDemoMode ? 'Demo Mode: ON' : 'Demo Mode'}
-               </span>
+             {/* Demo Mode & Reset Controls */}
+             <div className="shrink-0 flex items-center gap-1">
+               {/* Demo Mode Toggle: Injects scenario data directly; toggles off to purge; always off on reload */}
+               <button
+                 id="header-demo-mode-btn"
+                 onClick={toggleDemoMode}
+                 title={
+                   isDemoMode
+                     ? "Demo Mode Active (Demo scenario data injected). Click to turn OFF and purge demo data."
+                     : "Click to toggle Demo Mode (injects Kolasib NH-306 crisis scenario). Reloading always starts with demo mode OFF."
+                 }
+                 className={`shrink-0 flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-semibold border transition-all btn-press cursor-pointer shadow-xs ${
+                   isDemoMode
+                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-400/40 shadow-amber-500/20'
+                     : 'bg-gradient-to-r from-blue-600/20 to-cyan-600/20 text-cyan-300 border-cyan-500/40 hover:from-blue-600/30 hover:to-cyan-600/30'
+                 }`}
+               >
+                 <Sparkles className={`w-3.5 h-3.5 ${isDemoMode ? 'text-amber-400 animate-spin' : 'text-cyan-400 animate-pulse'}`} />
+                 <span className="font-semibold text-[11px] sm:text-xs">
+                   {isDemoMode ? 'Demo Mode: ON' : 'Demo Mode'}
+                 </span>
+                 {isDemoMode && (
+                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+                 )}
+               </button>
+
+               {/* Reset Button for Demo Mode: Restores initial crisis state */}
                {isDemoMode && (
-                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+                 <button
+                   id="header-reset-demo-btn"
+                   onClick={handleResetDemo}
+                   title="Reset Demo Scenario: Re-arm the Kolasib NH-306 mudflow crisis, Medic-01 telemetry, and critical alert from the beginning."
+                   className="shrink-0 flex items-center gap-1 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 hover:border-amber-400/60 transition-all btn-press cursor-pointer shadow-xs"
+                 >
+                   <RotateCcw className={`w-3.5 h-3.5 text-amber-400 ${isResettingDemo ? 'animate-spin' : 'hover:-rotate-90 transition-transform duration-300'}`} />
+                   <span className="font-semibold text-[11px] sm:text-xs">
+                     {isResettingDemo ? 'Resetting...' : 'Reset'}
+                   </span>
+                 </button>
                )}
-             </button>
+             </div>
 
             {/* Admin Profile Pill / Role Switcher: Collapse label on mobile */}
             <div className="flex items-center gap-1 bg-surface-subtle border border-border px-1.5 sm:px-2 py-1 rounded-lg shrink-0">
