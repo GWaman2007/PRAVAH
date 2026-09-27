@@ -567,57 +567,79 @@ export function createSelectedMissionRouteGeoJSON(
     return { type: 'FeatureCollection', features: [] };
   }
 
-  let color = '#2563EB'; // Royal Blue
-  let glowColor = '#3B82F6';
-  let prob = 0;
+  const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
   if (selectedMission.isRerouted) {
-    // When rerouted, the route becomes the authoritative main route -> Royal Blue!
-    color = '#2563EB';
-    glowColor = '#3B82F6';
-    prob = selectedMission.disruptionProbability ?? selectedMission.reroutedDisruptionProbability ?? 0.12;
-  } else {
-    // Before reroute: determine color based on Model A disruption risk probability
-    prob = selectedMission.disruptionProbability ?? (
-      selectedMission.corridorSegmentIds && selectedMission.corridorSegmentIds.length > 0
-        ? calculateRouteModelAExposureFromCache(selectedMission.corridorSegmentIds, modelAPredictions).max_probability
-        : getAuthoritativeMissionExposure(selectedMission, modelAPredictions, NER_SEGMENTS).max_probability
-    );
-    if (prob >= 0.80) {
-      color = '#DC2626'; // High probability: Red
-      glowColor = '#EF4444';
-    } else if (prob >= 0.50) {
-      color = '#EA580C'; // Elevated probability: Orange
-      glowColor = '#F97316';
-    } else {
-      color = '#2563EB'; // Less probability: Blue
-      glowColor = '#3B82F6';
+    // 1. Original Route before detour -> BLUE (#2563EB)
+    if (selectedMission.previousRouteGeometry && selectedMission.previousRouteGeometry.length > 1) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: toGeoJSONLineString(selectedMission.previousRouteGeometry),
+        },
+        properties: {
+          mission_id: `${selectedMission.id}-original`,
+          community_name: selectedMission.communityName,
+          destination_name: selectedMission.destinationName,
+          status: selectedMission.status,
+          corridor_name: 'Original Route (NH-306)',
+          distance_km: selectedMission.routeDistanceKm || 0,
+          is_rerouted: false,
+          color: '#2563EB', // Original route: BLUE
+          glowColor: '#3B82F6',
+          disruption_probability: selectedMission.initialDisruptionProbability ?? 0.85,
+        },
+      });
     }
+
+    // 2. Active Alternate Route -> GREEN (#10B981) starting from driver GPS position
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: toGeoJSONLineString(rawCoords),
+      },
+      properties: {
+        mission_id: selectedMission.id,
+        community_name: selectedMission.communityName,
+        destination_name: selectedMission.destinationName,
+        status: selectedMission.status,
+        corridor_name: selectedMission.suggestedDetour || 'Bhairabi SH-42 Alternate Bypass',
+        distance_km: selectedMission.routeDistanceKm || 0,
+        is_rerouted: true,
+        color: '#10B981', // Alternate route: GREEN
+        glowColor: '#34D399',
+        disruption_probability: selectedMission.reroutedDisruptionProbability ?? 0.12,
+      },
+    });
+  } else {
+    // Original authoritative route before reroute -> BLUE (#2563EB)
+    // Individual severed segments are colored RED on the road-status and hazard layers
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: toGeoJSONLineString(rawCoords),
+      },
+      properties: {
+        mission_id: selectedMission.id,
+        community_name: selectedMission.communityName,
+        destination_name: selectedMission.destinationName,
+        status: selectedMission.status,
+        corridor_name: selectedMission.suggestedDetour || selectedMission.destinationName,
+        distance_km: selectedMission.routeDistanceKm || 0,
+        is_rerouted: false,
+        color: '#2563EB', // Original route: BLUE
+        glowColor: '#3B82F6',
+        disruption_probability: selectedMission.disruptionProbability ?? 0.15,
+      },
+    });
   }
 
   return {
     type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: toGeoJSONLineString(rawCoords),
-        },
-        properties: {
-          mission_id: selectedMission.id,
-          community_name: selectedMission.communityName,
-          destination_name: selectedMission.destinationName,
-          status: selectedMission.status,
-          corridor_name: selectedMission.suggestedDetour || selectedMission.destinationName,
-          distance_km: selectedMission.routeDistanceKm || 0,
-          is_rerouted: Boolean(selectedMission.isRerouted),
-          color,
-          glowColor,
-          disruption_probability: prob,
-        },
-      },
-    ],
+    features,
   };
 }
 

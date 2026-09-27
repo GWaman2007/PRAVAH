@@ -8,6 +8,7 @@ import {
   PackageCheck,
   RotateCcw,
   Sparkles,
+  Play,
   ChevronDown,
   ChevronUp,
   Shield,
@@ -24,6 +25,7 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
     runDemoStep1,
     runDemoStep2,
     runDemoStep3,
+    triggerFullDemoScenario,
     resetDemoSimulation,
     activeMissions,
     communities,
@@ -147,6 +149,17 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
     resetDemoSimulation();
   };
 
+  const handlePlayAll = () => {
+    setIsActionRunning(true);
+    setCurrentStep(1);
+    triggerFullDemoScenario();
+    setTimeout(() => setCurrentStep(2), 2000);
+    setTimeout(() => {
+      setCurrentStep(3);
+      setIsActionRunning(false);
+    }, 4500);
+  };
+
   return (
     <aside
       ref={toolbarRef}
@@ -268,6 +281,28 @@ export const InteractiveWalkthroughToolbar: React.FC = () => {
                 <X className="w-4 h-4" />
               </button>
             </div>
+          </div>
+
+          {/* Quick 1-Click Auto-Play Banner */}
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-md bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-blue-900/40 border border-blue-500/30 text-xs">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+              <span className="font-semibold text-text-primary text-[11px] sm:text-xs">
+                Kolasib NH-306 Resilience Scenario
+              </span>
+              <span className="text-[10px] text-text-tertiary hidden md:inline">
+                Silchar Hub ➔ Kolasib PHC • NH-306 Blocked ➔ Bhairabi SH-42 Detour
+              </span>
+            </div>
+            <button
+              onClick={handlePlayAll}
+              disabled={isActionRunning}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] sm:text-[11px] shadow-sm transition-all cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+              title="Run entire 3-step scenario automatically"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              <span>1-Click Auto-Play</span>
+            </button>
           </div>
 
           {/* 4 Action Cards Grid */}

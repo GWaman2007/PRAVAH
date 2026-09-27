@@ -60,6 +60,7 @@ import { NER_SEGMENTS, NER_NODES, VEHICLE_PROFILES, resolveCorridorSegmentId } f
 import { ensureLngLat, ensureLatLng } from '../engine/gisMath';
 import { INITIAL_COMMUNITIES } from '../data/communitiesData';
 import { INITIAL_VEHICLES, FLEET_ROUTES, BLACKOUT_ZONES, HAZARD_ZONES } from '../data/fleetData';
+import { OSRM_PRECOMPUTED_ALTERNATIVES } from '../data/osrmPrecomputedAlternatives';
 import { INITIAL_DISTRICTS_HEALTH, INITIAL_BRO_BOTTLENECKS } from '../data/executiveData';
 import { SUPPORTED_LANGUAGES, PRESET_TRANSLATIONS, PHONETIC_READINGS, generateBroadcastForIncident } from '../data/translationsData';
 import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngine';
@@ -292,6 +293,7 @@ interface PravahStoreContextType {
   runDemoStep1: () => void;
   runDemoStep2: () => void;
   runDemoStep3: () => void;
+  triggerFullDemoScenario: () => void;
   resetDemoSimulation: () => void;
   resetCommunityScenario: (communityId?: string) => void;
 
@@ -376,13 +378,16 @@ interface PravahStoreContextType {
   getModelAPrediction: (segmentId: string) => ModelAPrediction | undefined;
 }
 
+const KOLASIB_RESOURCE_REQUIREMENTS: ResourceRequirementItem[] = [
+  { resourceType: 'Food Kits', required: 100, available: 20, shortage: 80, unit: 'kits', urgency: 'CRITICAL', lastUpdated: '12 min ago' },
+  { resourceType: 'Water Units', required: 50, available: 10, shortage: 40, unit: 'cans (20L)', urgency: 'CRITICAL', lastUpdated: '15 min ago' },
+  { resourceType: 'Medical Kits', required: 20, available: 3, shortage: 17, unit: 'trauma kits', urgency: 'CRITICAL', lastUpdated: '10 min ago' },
+  { resourceType: 'Tarpaulins / Shelter Kits', required: 40, available: 15, shortage: 25, unit: 'sets', urgency: 'HIGH', lastUpdated: '35 min ago' },
+];
+
 const INITIAL_RESOURCE_REQUIREMENTS: Record<string, ResourceRequirementItem[]> = {
-  COMMUNITY_KOLASIB: [
-    { resourceType: 'Food Kits', required: 100, available: 20, shortage: 80, unit: 'kits', urgency: 'CRITICAL', lastUpdated: '12 min ago' },
-    { resourceType: 'Water Units', required: 50, available: 10, shortage: 40, unit: 'cans (20L)', urgency: 'CRITICAL', lastUpdated: '15 min ago' },
-    { resourceType: 'Medical Kits', required: 20, available: 3, shortage: 17, unit: 'trauma kits', urgency: 'CRITICAL', lastUpdated: '10 min ago' },
-    { resourceType: 'Tarpaulins / Shelter Kits', required: 40, available: 15, shortage: 25, unit: 'sets', urgency: 'HIGH', lastUpdated: '35 min ago' },
-  ],
+  'MZ-KOL-004': KOLASIB_RESOURCE_REQUIREMENTS,
+  COMMUNITY_KOLASIB: KOLASIB_RESOURCE_REQUIREMENTS,
   COMMUNITY_KOHIMA: [
     { resourceType: 'Food Kits', required: 80, available: 35, shortage: 45, unit: 'kits', urgency: 'HIGH', lastUpdated: '1 hr ago' },
     { resourceType: 'Water Units', required: 60, available: 25, shortage: 35, unit: 'cans (20L)', urgency: 'HIGH', lastUpdated: '1 hr ago' },
@@ -403,10 +408,10 @@ const INITIAL_RESOURCE_REQUIREMENTS: Record<string, ResourceRequirementItem[]> =
 const INITIAL_RESOURCE_REQUESTS: ResourceRequest[] = [
   {
     id: 'REQ-MZ-001',
-    officerId: 'fo-hmar',
+    officerId: 'hmar',
     officerName: 'Inspector L. Hmar',
-    communityId: 'COMMUNITY_KOLASIB',
-    communityName: 'Kolasib HQ (MZ-04)',
+    communityId: 'MZ-KOL-004',
+    communityName: 'Kolasib East Community Depot',
     resourceType: 'Medical Kits',
     quantity: 17,
     unit: 'trauma kits',
@@ -434,7 +439,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [activeRole]);
 
   // Field Officer multi-selection state
-  const [activeOfficerId, setActiveOfficerId] = useState<string>('fo-hmar');
+  const [activeOfficerId, setActiveOfficerId] = useState<string>('hmar');
 
   // Field Officer Multi-Context & Requisitions State
   const [resourceRequirements, setResourceRequirements] = useState<Record<string, ResourceRequirementItem[]>>(() => {
@@ -2368,7 +2373,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           rerouteReason: rerouteReason || 'Model B Predictive Hazard Detour Applied',
           reroutedAt: new Date().toISOString(),
           reroutedFromCoords: reroutedFrom,
-          previousRouteGeometry: undefined, // Previous path is completely discarded!
+          previousRouteGeometry: targetMission.routeGeometry || targetMission.previousRouteGeometry,
           routeGeometry: newGeom,
           routeDistanceKm: newDist,
           routeDurationMinutes: newEta,
@@ -2846,9 +2851,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 14. Interactive 1-Click Walkthrough Demo Actions
   const runDemoStep1 = useCallback(() => {
+    // 1. Environmental disruption: Monsoon downpour spike to 65 mm/hr
     setRainfallMmHr(65);
     setIsMonsoonDownpourSimulated(true);
 
+    // 2. Road Network Severance: NH-306 at Bilkhawthlir Escarpment (SEG-SIL-KOL) -> TOTAL_BLOCKAGE (Red)
     setActiveDisruptions((prev) => ({
       ...prev,
       'SEG-SIL-KOL': {
@@ -2859,6 +2866,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       },
     }));
 
+    // 3. Isolated Community Distress: Kolasib East Community (MZ-KOL-004) drops to P1 isolation
     setRawCommunities((prev) =>
       prev.map((c) => {
         if (c.id === 'MZ-KOL-004') {
@@ -2878,63 +2886,42 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((d) => (d.id === 'kolasib' ? { ...d, accessibilityScore: 18, connectivityCategory: 'CRITICAL', openCorridorsCount: 0 } : d))
     );
 
-    setActiveMissions((prev) => {
-      const kolasibRoute = FLEET_ROUTES['ROUTE-SUG-01'];
-      const kolasibTerminus = kolasibRoute.coordinates[kolasibRoute.coordinates.length - 1];
+    // 4. In-Transit Mission: MSN-ONGOING-MZ01 stays in transit but flagged as compromised / high risk
+    setActiveMissions((prev) =>
+      prev.map((m) => {
+        if (m.id === 'MSN-ONGOING-MZ01' || m.communityId === 'MZ-KOL-004') {
+          return {
+            ...m,
+            status: 'IN_TRANSIT',
+            urgency: 'P1_CRITICAL',
+            routeStatus: 'UNAVAILABLE',
+            disruptionProbability: 0.98,
+            initialDisruptionProbability: 0.98,
+            isRerouted: false,
+          };
+        }
+        return m;
+      })
+    );
 
-      if (prev.some((m) => m.communityId === 'MZ-KOL-004')) {
-        return prev.map((m) =>
-          m.communityId === 'MZ-KOL-004'
-            ? {
-                ...m,
-                status: 'SUGGESTED',
-                urgency: 'P1_CRITICAL',
-                assignedRouteId: 'ROUTE-SUG-01',
-                suggestedDetour: 'NH-306 Safe Mountain Bypass (via Vairengte Spur)',
-                routeGeometry: kolasibRoute.coordinates,
-                routeDistanceKm: kolasibRoute.distanceKm,
-                routeDurationMinutes: kolasibRoute.expectedDurationMinutes,
-                destinationEndpoint: kolasibTerminus,
-              }
-            : m
-        );
-      }
-      return [
-        {
-          id: `SUGG-MZKOL004-DEMO`,
-          communityId: 'MZ-KOL-004',
-          communityName: 'Kolasib District HQ & PHC',
-          recommendedVehicleType: '4x4 Tata Xenon High-Clearance Medic Carrier',
-          cargoAllocations: [
-            { item: 'IV Fluids (RL / NS 500ml)', quantity: 350, unit: 'Bags' },
-            { item: 'Polyvalent Snake Antivenom', quantity: 60, unit: 'Vials' },
-            { item: 'Fortified High-Energy Biscuits & Grain', quantity: 800, unit: 'kg' },
-            { item: 'Generator Diesel (Emergency)', quantity: 400, unit: 'Litres' },
-          ],
-          assignedRouteId: 'ROUTE-SUG-01',
-          suggestedDetour: 'NH-306 Safe Mountain Bypass (via Vairengte Spur)',
-          status: 'SUGGESTED',
-          urgency: 'P1_CRITICAL',
-          createdAt: new Date().toISOString(),
-          assignedDriver: 'Rajesh Mech (+91 94350-18492)',
-          assignedOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
-          originWarehouseId: 'silchar',
-          originWarehouseName: 'Silchar Strategic Depot',
-          originCoords: [24.8333, 92.7789],
-          disasterZoneId: 'LHZ-MZ-01',
-          disasterZoneName: 'NH-306 Bilkhawthlir Hill Escarpment',
-          destinationEndpoint: kolasibTerminus,
-          destinationName: 'Kolasib District HQ & PHC',
-          assignedVehicleId: 'Medic-01',
-          routeDistanceKm: kolasibRoute.distanceKm,
-          routeDurationMinutes: kolasibRoute.expectedDurationMinutes,
-          routeStatus: 'OPTIMAL',
-          routeGeometry: kolasibRoute.coordinates,
-        },
-        ...prev,
-      ];
-    });
+    // 5. Vehicle Telemetry: Medic-01 stopped before debris obstruction at [24.5015, 92.76491]
+    setSelectedVehicleId('Medic-01');
+    setVehicles((prev) =>
+      prev.map((v) =>
+        v.vehicle_id === 'Medic-01'
+          ? {
+              ...v,
+              status: 'ON_ROUTE',
+              current_coords: [24.5015, 92.76491],
+              speed_kmh: 0,
+              is_stopped_manual: true,
+              next_chokepoint: 'Bilkhawthlir KM-18 Mudflow Hazard Zone',
+            }
+          : v
+      )
+    );
 
+    // 6. Verified Ground Intel Report by Field Officer Insp. L. Hmar
     setIncidents((prev) => [
       {
         id: `inc-kolasib-${Date.now()}`,
@@ -2956,7 +2943,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         timestamp: new Date().toISOString(),
         mediaUrl: 'https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&w=800&q=80',
         votes: { upvotes: 42, downvotes: 0, userVote: 'up' },
-        confidenceScore: 52,
+        confidenceScore: 96,
         hasOfficerVerified: true,
         sync_status: 'SYNCED',
         updates: [
@@ -2972,53 +2959,295 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ...prev,
     ]);
 
+    // 7. Critical Alert to Dispatcher & Driver
+    setAlerts((prev) => [
+      {
+        id: `alert-nh306-${Date.now()}`,
+        vehicle_id: 'Medic-01',
+        vehicle_name: 'Medic-01',
+        cargo_type: 'Emergency Medical Solutions & Antivenom',
+        timestamp: new Date().toISOString(),
+        severity: 'CRITICAL',
+        type: 'STATIONARY_HAZARD',
+        title: 'NH-306 Severed at Bilkhawthlir KM-18',
+        message: 'Torrential 65mm/hr mudflow severed NH-306. Active convoy Medic-01 route compromised. Model B detour computation recommended.',
+        coords: [24.5015, 92.76491],
+        acknowledged: false,
+        extraDetails: {
+          affectedCorridor: 'SEG-SIL-KOL',
+          source: 'Field Officer Ground Intel (Insp. L. Hmar)',
+        },
+      },
+      ...prev,
+    ]);
+
     if (socketRef.current?.connected) {
       socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 1 });
     }
   }, []);
 
   const runDemoStep2 = useCallback(() => {
-    const kolasibMission =
-      activeMissionsRef.current.find((m) => m.communityId === 'MZ-KOL-004') ||
-      activeMissionsRef.current[0];
-    if (kolasibMission) {
-      approveAndDispatchMission(kolasibMission.id, 'Medic-01');
-    }
+    // 1. Model B Alternative Detour: Bhairabi Mountain Valley Bypass (SH-42)
+    // Spliced dynamically from vehicle's live GPS point [24.5015, 92.76491] to Kolasib [24.2246, 92.6784]
+    const vehicleCoords: [number, number] = [24.5015, 92.76491];
+    const fullBhairabiRoute =
+      OSRM_PRECOMPUTED_ALTERNATIVES['MZ-KOL-004']?.coordinates || FLEET_ROUTES['ROUTE-SUG-01'].coordinates;
+    const splicedDetourGeometry = spliceRouteFromVehicleCoords(fullBhairabiRoute, vehicleCoords);
+    const detourDistanceKm = computePolylineDistanceKm(splicedDetourGeometry);
+    const originalNH306 = FLEET_ROUTES['ROUTE-SUG-01'].coordinates;
+
+    // 2. Update MSN-ONGOING-MZ01 to Rerouted State (Blue original, Green detour)
+    setActiveMissions((prev) =>
+      prev.map((m) => {
+        if (m.id === 'MSN-ONGOING-MZ01' || m.communityId === 'MZ-KOL-004') {
+          return {
+            ...m,
+            status: 'IN_TRANSIT',
+            isRerouted: true,
+            initialDisruptionProbability: 0.98,
+            disruptionProbability: 0.12,
+            reroutedDisruptionProbability: 0.12,
+            rerouteReason: 'NH-306 Mudflow at Bilkhawthlir — Model B Alternate Detour via Bhairabi (SH-42)',
+            reroutedAt: new Date().toISOString(),
+            reroutedFromCoords: vehicleCoords,
+            previousRouteGeometry: originalNH306,
+            routeGeometry: splicedDetourGeometry,
+            routeDistanceKm: detourDistanceKm || 158.6,
+            routeDurationMinutes: 147,
+            assignedRouteId: 'ROUTE-SUG-01-DETOUR',
+            suggestedDetour: 'Bhairabi Mountain Valley Bypass (SH-42)',
+            routeStatus: 'OPTIMAL',
+            urgency: 'P1_CRITICAL',
+          };
+        }
+        return m;
+      })
+    );
+
+    // 3. Driver & Vehicle Telemetry: Resumes motion along detour
     setSelectedVehicleId('Medic-01');
     setVehicles((prev) =>
       prev.map((v) =>
         v.vehicle_id === 'Medic-01'
           ? {
-            ...v,
-            status: 'ON_ROUTE',
-            route_progress_pct: 35,
-            speed_kmh: 44,
-            is_stopped_manual: false,
-            next_chokepoint: 'Bairabi Pass Alternate Spur',
-          }
+              ...v,
+              status: 'ON_ROUTE',
+              current_coords: vehicleCoords,
+              speed_kmh: 42,
+              is_stopped_manual: false,
+              next_chokepoint: 'Bhairabi Valley Waypoint (Safe Corridor)',
+            }
           : v
       )
     );
 
+    // 4. Admin Emergency Broadcast Alert directly to Driver Rajesh Mech
+    setAlerts((prev) => [
+      {
+        id: `alert-reroute-${Date.now()}`,
+        vehicle_id: 'Medic-01',
+        vehicle_name: 'Medic-01',
+        cargo_type: 'Emergency Medical Solutions & Antivenom',
+        timestamp: new Date().toISOString(),
+        severity: 'WARNING',
+        type: 'ROUTE_DEVIATION',
+        title: 'EMERGENCY REROUTE ADVISORY: Medic-01',
+        message: 'NH-306 blocked at Bilkhawthlir. Medic-01 rerouted via Bhairabi SH-42 bypass corridor. Follow new GPS route.',
+        coords: [24.5015, 92.76491],
+        acknowledged: false,
+        extraDetails: {
+          affectedCorridor: 'Bhairabi SH-42',
+          source: 'PRAVAH Dispatch Core',
+        },
+      },
+      ...prev,
+    ]);
+
+    // 5. Community Resource Shortage & Field Officer Urgent Requisition
+    const reqId = 'REQ-MZ-KOL-DEMO';
+    const demoReq: ResourceRequest = {
+      id: reqId,
+      officerId: 'hmar',
+      officerName: 'Inspector L. Hmar',
+      communityId: 'MZ-KOL-004',
+      communityName: 'Kolasib East Community Depot',
+      resourceType: 'Medical Kits',
+      quantity: 17,
+      unit: 'trauma kits',
+      urgency: 'CRITICAL',
+      reason: 'Critical medical trauma inventory depleted due to landslide casualties and monsoon isolation.',
+      notes: 'NH-306 blocked. Emergency resupply requested via Bhairabi bypass. Silchar Depot pre-allocated.',
+      status: 'PROCESSING',
+      createdAt: new Date().toISOString(),
+    };
+
+    setResourceRequests((prev) => {
+      const filtered = prev.filter((r) => r.id !== reqId);
+      return [demoReq, ...filtered];
+    });
+
+    // 6. PRAVAH AI Recommendation for Dispatcher/Admin with FIELD REQUISITION tag (NOT SUGGESTED)
+    setActiveMissions((prev) => {
+      const filtered = prev.filter((m) => m.id !== 'MSN-REQ-MZKOL-DEMO');
+      const requisitionMission: ReliefMission = {
+        id: 'MSN-REQ-MZKOL-DEMO',
+        communityId: 'MZ-KOL-004',
+        communityName: 'Kolasib East Community Depot',
+        recommendedVehicleType: '4x4 Tata Xenon High-Clearance Medic Carrier',
+        cargoAllocations: [
+          { item: 'Emergency Trauma Kits (Level 3)', quantity: 17, unit: 'kits' },
+          { item: 'IV Fluids (Ringer Lactate / Normal Saline)', quantity: 40, unit: 'bags' },
+          { item: 'Polyvalent Snake Antivenom', quantity: 25, unit: 'vials' },
+        ],
+        assignedRouteId: 'ROUTE-SUG-01-DETOUR',
+        suggestedDetour: 'Bhairabi Mountain Valley Bypass (SH-42)',
+        status: 'SUGGESTED',
+        isFieldRequisition: true,
+        source: 'FIELD_REQUISITION',
+        resourceRequestId: reqId,
+        requestedByOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
+        urgency: 'P1_CRITICAL',
+        createdAt: new Date().toISOString(),
+        assignedDriver: 'Malsawma Ralte (+91 94361-99201)',
+        assignedOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
+        originWarehouseId: 'silchar',
+        originWarehouseName: 'Silchar Strategic Depot',
+        originCoords: [24.8333, 92.7789],
+        disasterZoneId: 'LHZ-MZ-01',
+        disasterZoneName: 'NH-306 Bilkhawthlir Escarpment Corridor',
+        destinationEndpoint: [24.2246, 92.6784],
+        destinationName: 'Kolasib East Community Depot',
+        assignedVehicleId: 'Medic-02',
+        routeDistanceKm: 158.6,
+        routeDurationMinutes: 147,
+        routeStatus: 'OPTIMAL',
+        routeGeometry: splicedDetourGeometry,
+      };
+      return [requisitionMission, ...filtered];
+    });
+
     if (socketRef.current?.connected) {
       socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 2 });
     }
-  }, [approveAndDispatchMission]);
+  }, []);
 
   const runDemoStep3 = useCallback(() => {
+    // 1. Convoy safely arrives via Bhairabi detour & delivery confirmed
     markMissionDelivered('MZ-KOL-004', 'Medic-01');
+
     setActiveMissions((prev) =>
       prev.map((m) =>
         m.communityId === 'MZ-KOL-004'
-          ? { ...m, status: 'DELIVERED', deliveredAt: new Date().toISOString() }
+          ? {
+              ...m,
+              status: 'DELIVERED',
+              deliveredAt: new Date().toISOString(),
+              routeStatus: 'OPTIMAL',
+            }
           : m
       )
     );
+
+    // 2. Vehicle Medic-01 parked at destination
+    setVehicles((prev) =>
+      prev.map((v) =>
+        v.vehicle_id === 'Medic-01'
+          ? {
+              ...v,
+              status: 'AVAILABLE',
+              current_coords: [24.2246, 92.6784],
+              route_progress_pct: 100,
+              speed_kmh: 0,
+              is_stopped_manual: false,
+              next_chokepoint: 'Arrived: Kolasib East Community Depot',
+            }
+          : v
+      )
+    );
+
+    // 3. Kolasib Community Isolation Resolved: Priority lowers from P1 to P3
+    setRawCommunities((prev) =>
+      prev.map((c) => {
+        if (c.id === 'MZ-KOL-004') {
+          return {
+            ...c,
+            cutoffTimeHours: 19.5,
+            disruptionProbMax: 0.14,
+            elapsedTimeHours: 2.0,
+            isMonsoonAlertActive: false,
+            hasActiveIndent: false,
+          };
+        }
+        return c;
+      })
+    );
+
+    setDistrictsHealth((prev) =>
+      prev.map((d) => (d.id === 'kolasib' ? { ...d, accessibilityScore: 78, connectivityCategory: 'STABLE', openCorridorsCount: 2 } : d))
+    );
+
+    // 4. Update community resource requirements: Shortage cleared
+    setResourceRequirements((prev) => ({
+      ...prev,
+      'MZ-KOL-004': [
+        { resourceType: 'Food Kits', required: 100, available: 100, shortage: 0, unit: 'kits', urgency: 'LOW', lastUpdated: 'Just now' },
+        { resourceType: 'Water Units', required: 50, available: 50, shortage: 0, unit: 'cans (20L)', urgency: 'LOW', lastUpdated: 'Just now' },
+        { resourceType: 'Medical Kits', required: 20, available: 20, shortage: 0, unit: 'trauma kits', urgency: 'LOW', lastUpdated: 'Just now' },
+        { resourceType: 'Tarpaulins / Shelter Kits', required: 40, available: 35, shortage: 5, unit: 'sets', urgency: 'LOW', lastUpdated: 'Just now' },
+      ],
+      COMMUNITY_KOLASIB: [
+        { resourceType: 'Food Kits', required: 100, available: 100, shortage: 0, unit: 'kits', urgency: 'LOW', lastUpdated: 'Just now' },
+        { resourceType: 'Water Units', required: 50, available: 50, shortage: 0, unit: 'cans (20L)', urgency: 'LOW', lastUpdated: 'Just now' },
+        { resourceType: 'Medical Kits', required: 20, available: 20, shortage: 0, unit: 'trauma kits', urgency: 'LOW', lastUpdated: 'Just now' },
+        { resourceType: 'Tarpaulins / Shelter Kits', required: 40, available: 35, shortage: 5, unit: 'sets', urgency: 'LOW', lastUpdated: 'Just now' },
+      ],
+    }));
+
+    // 5. Mark Field Officer requisition as FULFILLED
+    setResourceRequests((prev) =>
+      prev.map((r) =>
+        r.id === 'REQ-MZ-KOL-DEMO' || r.communityId === 'MZ-KOL-004' || r.communityId === 'COMMUNITY_KOLASIB'
+          ? { ...r, status: 'FULFILLED' }
+          : r
+      )
+    );
+
+    // 6. Confirmation Alert
+    setAlerts((prev) => [
+      {
+        id: `alert-delivered-${Date.now()}`,
+        vehicle_id: 'Medic-01',
+        vehicle_name: 'Medic-01',
+        cargo_type: 'Emergency Medical Solutions & Antivenom',
+        timestamp: new Date().toISOString(),
+        severity: 'INFO',
+        type: 'DELIVERY_COMPLETED',
+        title: 'MISSION DELIVERED: MSN-ONGOING-MZ01',
+        message: 'Medic-01 safely delivered trauma kits & IV fluids to Kolasib PHC via Bhairabi SH-42 bypass. Isolation threat resolved.',
+        coords: [24.2246, 92.6784],
+        acknowledged: true,
+        extraDetails: {
+          affectedCorridor: 'Bhairabi SH-42',
+          source: 'PRAVAH Delivery Verification',
+        },
+      },
+      ...prev,
+    ]);
 
     if (socketRef.current?.connected) {
       socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 3 });
     }
   }, [markMissionDelivered]);
+
+  const triggerFullDemoScenario = useCallback(() => {
+    runDemoStep1();
+    setTimeout(() => {
+      runDemoStep2();
+      setTimeout(() => {
+        runDemoStep3();
+      }, 2400);
+    }, 2000);
+  }, [runDemoStep1, runDemoStep2, runDemoStep3]);
 
   const resetDemoSimulation = useCallback(() => {
     setRawCommunities(INITIAL_COMMUNITIES);
@@ -3050,6 +3279,20 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setRainfallMmHr(24);
     setIsMonsoonDownpourSimulated(false);
     setDistrictsHealth(INITIAL_DISTRICTS_HEALTH);
+    setSelectedVehicleId('Medic-01');
+    setResourceRequirements(INITIAL_RESOURCE_REQUIREMENTS);
+    setResourceRequests(INITIAL_RESOURCE_REQUESTS);
+    setSelectedRouteOptionByMissionId({});
+    setMissionRouteOptionsByMissionId({});
+
+    try {
+      localStorage.removeItem('pravah_active_disruptions');
+      localStorage.removeItem('pravah_missions');
+      localStorage.removeItem('pravah_resource_requirements');
+      localStorage.removeItem('pravah_resource_requests');
+    } catch (e) {
+      console.warn('Failed clearing localStorage demo items', e);
+    }
 
     if (socketRef.current?.connected) {
       socketRef.current.emit('TRIGGER_DEMO_STEP', { step: 0 });
@@ -4981,6 +5224,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
       runDemoStep1,
       runDemoStep2,
       runDemoStep3,
+      triggerFullDemoScenario,
       resetDemoSimulation,
       resetCommunityScenario,
       activeOfficerId,

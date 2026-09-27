@@ -619,7 +619,7 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     urgency: 'P1_CRITICAL',
     createdAt: past2h,
     dispatchedAt: past2h,
-    assignedDriver: 'Lalrinsanga',
+    assignedDriver: 'Rajesh Mech',
     assignedOfficer: 'Insp. L. Hmar (BRO Liaison)',
     originWarehouseId: 'silchar',
     originWarehouseName: 'Silchar Strategic Depot',
