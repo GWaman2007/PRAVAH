@@ -671,7 +671,7 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
   const past5h = new Date(now.getTime() - 5 * 3600 * 1000).toISOString();
   const past8h = new Date(now.getTime() - 8 * 3600 * 1000).toISOString();
 
-  // 1. Ongoing Missions on High-Hazard Corridors (3 In-Transit Convoys)
+  // 1. Ongoing Missions on High-Hazard Corridors (4 In-Transit Convoys)
   const nlRoute = FLEET_ROUTES['ROUTE-SUG-02'] || FLEET_ROUTES['ROUTE-NL-01'];
   const ongoingNagaland: ReliefMission = {
     id: 'MSN-ONGOING-NL01',
@@ -701,9 +701,11 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     routeGeometry: nlRoute?.coordinates || [],
     routeDistanceKm: nlRoute?.distanceKm || 74.0,
     routeDurationMinutes: nlRoute?.expectedDurationMinutes || 95,
-    routeStatus: 'OPTIMAL',
+    routeStatus: 'UNAVAILABLE',
     corridorSegmentIds: ['SEG-DIM-KOH-MAIN'],
     isRerouted: false,
+    disruptionProbability: 0.86,
+    initialDisruptionProbability: 0.86,
   };
 
   const mzRoute = FLEET_ROUTES['ROUTE-SUG-01'] || FLEET_ROUTES['ROUTE-MZ-04'];
@@ -719,7 +721,7 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     assignedRouteId: mzRoute?.id || 'ROUTE-SUG-01',
     suggestedDetour: 'NH-306 Lifeline Arterial via Bilkhawthlir',
     status: 'IN_TRANSIT',
-    urgency: 'P1_CRITICAL',
+    urgency: 'P2_ELEVATED',
     createdAt: past2h,
     dispatchedAt: past2h,
     assignedDriver: 'Rajesh Mech',
@@ -738,9 +740,12 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     routeStatus: 'OPTIMAL',
     corridorSegmentIds: ['SEG-SIL-KOL'],
     isRerouted: false,
+    disruptionProbability: 0.14,
+    initialDisruptionProbability: 0.14,
   };
 
   const skRoute = FLEET_ROUTES['ROUTE-SK-02'];
+  const skBypassCoords = OSRM_PRECOMPUTED_ALTERNATIVES['SK-MAN-002']?.coordinates || [];
   const ongoingSikkim: ReliefMission = {
     id: 'MSN-ONGOING-SK01',
     communityId: 'SK-MAN-002',
@@ -751,7 +756,7 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
       { item: 'Emergency Ready-to-Eat Rations', quantity: 600, unit: 'packs' },
     ],
     assignedRouteId: skRoute?.id || 'ROUTE-SK-02',
-    suggestedDetour: 'NH-10 Teesta Canyon Lifeline Corridor',
+    suggestedDetour: 'NH-717A Pakyong - Lava Ridge Bypass (Safe Mountain Corridor)',
     status: 'IN_TRANSIT',
     urgency: 'P1_CRITICAL',
     createdAt: past2h,
@@ -769,9 +774,87 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     routeGeometry: skRoute?.coordinates || [],
     routeDistanceKm: skRoute?.distanceKm || 66.5,
     routeDurationMinutes: skRoute?.expectedDurationMinutes || 105,
-    routeStatus: 'OPTIMAL',
+    routeStatus: 'UNAVAILABLE',
     corridorSegmentIds: ['SEG-SK-TEESTA'],
     isRerouted: false,
+    disruptionProbability: 0.64,
+    initialDisruptionProbability: 0.64,
+    routeOptions: [
+      {
+        id: 'ROUTE-SK-02',
+        missionId: 'MSN-ONGOING-SK01',
+        routeNumber: 1,
+        routeRank: 1,
+        routeId: 'ROUTE-SK-02',
+        routeName: 'NH-10 Teesta Canyon Lifeline (Severed at 29th Mile)',
+        routeSource: 'OSRM',
+        geometry: skRoute?.coordinates || [],
+        distanceKm: 66.5,
+        osrmDurationMinutes: 105,
+        predictedDelayFactor: 1.85,
+        predictedEtaMinutes: 195,
+        etaOverheadMinutes: 90,
+        predictedPreferredRoute: false,
+        corridorSegmentIds: ['SEG-SK-TEESTA'],
+        disruptionProbability: 0.64,
+        modelVersion: 'model_b_v2.1_calibrated',
+      },
+      {
+        id: 'ROUTE-SK-02_BYPASS',
+        missionId: 'MSN-ONGOING-SK01',
+        routeNumber: 2,
+        routeRank: 2,
+        routeId: 'ROUTE-SK-02_BYPASS',
+        routeName: 'NH-717A Pakyong - Lava Ridge Bypass (Safe Mountain Corridor)',
+        routeSource: 'GRAPH',
+        geometry: skBypassCoords,
+        distanceKm: 83.8,
+        osrmDurationMinutes: 94,
+        predictedDelayFactor: 1.15,
+        predictedEtaMinutes: 108,
+        etaOverheadMinutes: 14,
+        predictedPreferredRoute: true,
+        corridorSegmentIds: ['SEG-SK-EAST'],
+        disruptionProbability: 0.18,
+        modelVersion: 'model_b_v2.1_calibrated',
+      },
+    ],
+  };
+
+  const asOngoingRoute = FLEET_ROUTES['ROUTE-AS-03'];
+  const ongoingAssam: ReliefMission = {
+    id: 'MSN-ONGOING-AS01',
+    communityId: 'AS-DH-011',
+    communityName: 'Haflong Mountain Township Consignment',
+    recommendedVehicleType: 'Cargo-01 (Heavy 10T Logistics Truck)',
+    cargoAllocations: [
+      { item: 'Dry Rations & Pulses (50kg Bags)', quantity: 400, unit: 'kg' },
+      { item: 'High-Density Fuel (Diesel 20L Jerrycans)', quantity: 200, unit: 'liters' },
+    ],
+    assignedRouteId: asOngoingRoute?.id || 'ROUTE-AS-03',
+    suggestedDetour: 'NH-27 Silchar - Haflong Expressway',
+    status: 'IN_TRANSIT',
+    urgency: 'P2_ELEVATED',
+    createdAt: past2h,
+    dispatchedAt: past2h,
+    assignedDriver: 'Malsawma Lushai',
+    assignedOfficer: 'Maj. S. Saikia (BRO Field Officer)',
+    originWarehouseId: 'silchar',
+    originWarehouseName: 'Silchar Strategic Depot',
+    originCoords: [24.8333, 92.7789],
+    disasterZoneId: 'LHZ-AS-01',
+    disasterZoneName: 'NH-27 Barail Hill Clearance Sector',
+    destinationEndpoint: [25.1801, 93.0165],
+    destinationName: 'Haflong Sub-Divisional Depot',
+    assignedVehicleId: 'Cargo-01',
+    routeGeometry: asOngoingRoute?.coordinates || [],
+    routeDistanceKm: asOngoingRoute?.distanceKm || 88.0,
+    routeDurationMinutes: asOngoingRoute?.expectedDurationMinutes || 120,
+    routeStatus: 'OPTIMAL',
+    corridorSegmentIds: ['SEG-HAF-SIL'],
+    isRerouted: false,
+    disruptionProbability: 0.42,
+    initialDisruptionProbability: 0.42,
   };
 
   // 2. Suggested Missions to Vulnerable Hazard Polygon Areas from Strategic Hubs (Model B Top 2 Paths)
@@ -992,11 +1075,11 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
   return [
     suggestedShillong,
     suggestedHaflong,
-    suggestedKolasib,
     suggestedTawang,
     ongoingNagaland,
     ongoingMizoram,
     ongoingSikkim,
+    ongoingAssam,
     deliveredImphal,
     deliveredAgartala,
   ];

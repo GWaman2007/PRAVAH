@@ -1606,7 +1606,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // 8. Field Intelligence Feed
   const [incidents, setIncidents] = useState<Incident[]>(() => {
     if (typeof window !== 'undefined') {
-      return getPersistedIncidents().filter((i) => i.id !== 'inc-demo-kolasib' && !i.id.startsWith('inc-kolasib-'));
+      const persisted = getPersistedIncidents().filter((i) => i.id !== 'inc-demo-kolasib' && !i.id.startsWith('inc-kolasib-'));
+      if (persisted.length > 0 && persisted.length <= 5 && persisted.some((i) => i.id === 'inc-04')) {
+        return persisted;
+      }
+      persistIncidents(DEFAULT_INCIDENTS);
     }
     return DEFAULT_INCIDENTS;
   });
@@ -2365,6 +2369,16 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           if (preSelectedId && availableOpts.length > 0) {
             chosenOption = availableOpts.find((o) => o.id === preSelectedId);
           }
+          if (!chosenOption && availableOpts.length > 1) {
+            chosenOption =
+              availableOpts.find((o) => o.predictedPreferredRoute) ||
+              availableOpts.find((o) => o.id !== targetMission.assignedRouteId && o.id !== targetMission.selectedRouteOptionId) ||
+              availableOpts[1];
+          }
+        }
+
+        if (targetMission.id === 'MSN-ONGOING-SK01' && !rerouteReason) {
+          rerouteReason = 'Rerouted via NH-717A Pakyong-Lava Ridge Bypass to avoid 29th Mile Teesta Canyon blockage';
         }
 
         if (chosenOption) {

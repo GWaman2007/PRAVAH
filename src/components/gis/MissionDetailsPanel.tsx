@@ -122,6 +122,34 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
     exposure.max_probability,
   ]);
 
+  const { mappedSegments } = useMemo(
+    () => getMissionCorridorSegments(mission, NER_SEGMENTS),
+    [mission]
+  );
+
+  const hasRoadBlockage = useMemo(() => {
+    if (mission.routeStatus === 'UNAVAILABLE') return true;
+    return mappedSegments.some((seg) => {
+      const inc = disruptions[seg.id];
+      return inc?.status === 'TOTAL_BLOCKAGE';
+    });
+  }, [mission.routeStatus, mappedSegments, disruptions]);
+
+  const hasIncidentNearRoute = useMemo(() => {
+    return mappedSegments.some((seg) => {
+      const inc = disruptions[seg.id];
+      return Boolean(inc);
+    });
+  }, [mappedSegments, disruptions]);
+
+  // Guardrail: don't suggest rerouting unless:
+  // - probability of disruption > 50% (> 0.50)
+  // - OR road blockage is reported on that route
+  // - OR incident is reported near/on that route
+  const shouldSuggestReroute = useMemo(() => {
+    return displayedProbability > 0.50 || hasRoadBlockage || hasIncidentNearRoute;
+  }, [displayedProbability, hasRoadBlockage, hasIncidentNearRoute]);
+
   const isFieldReq = mission.source === 'FIELD_REQUISITION' || Boolean(mission.isFieldRequisition) || Boolean(mission.resourceRequestId);
   const isSuggested = mission.status === 'SUGGESTED';
   const isApproved = mission.status === 'APPROVED';
@@ -300,7 +328,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                                 : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/35'
                             }`}
                           >
-                            {isRank1 ? 'BEST FEASIBLE PATH' : '2ND FEASIBLE PATH'}
+                            {isRank1 ? 'BEST FEASIBLE PATH' : 'LEAST FEASIBLE PATH'}
                           </span>
                           <span className="font-bold text-xs text-text-primary">
                             {opt.routeName || `Route ${opt.routeNumber}`}
@@ -479,7 +507,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                           ) : (
                             <>
                               <Route className="w-3.5 h-3.5" />
-                              <span>{isRank1 ? 'Deploy Main Best Path (Royal Blue)' : 'Reroute to 2nd Best Path (Tactical Green)'}</span>
+                              <span>{isRank1 ? 'Deploy Main Best Path (Royal Blue)' : 'Reroute to Least Feasible Path (Green)'}</span>
                             </>
                           )}
                         </button>
@@ -546,7 +574,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                   <p className="text-[10px] text-text-tertiary italic">{mission.rerouteReason}</p>
                 )}
               </div>
-            ) : (
+            ) : shouldSuggestReroute ? (
               <button
                 type="button"
                 onClick={() => handleExecuteReroute()}
@@ -565,6 +593,16 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                   </>
                 )}
               </button>
+            ) : (
+              <div className="mt-2 p-2 rounded bg-emerald-500/10 border border-emerald-500/30 text-[10.5px] text-emerald-400 flex items-center justify-between">
+                <span className="flex items-center gap-1 font-medium">
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  Route Status: Optimal &amp; Clear
+                </span>
+                <span className="font-mono text-[9.5px] text-emerald-300">
+                  Risk &le; 50% &bull; No Detour Needed
+                </span>
+              </div>
             )}
             {vehicle && onInspectVehicle && (
               <button
@@ -668,7 +706,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                 </div>
               )}
             </div>
-          ) : (displayedProbability >= 0.50 || exposure.elevated_risk_segment_count > 0) ? (
+          ) : shouldSuggestReroute ? (
             <div className="p-2.5 rounded bg-gradient-to-b from-orange-950/40 to-amber-950/20 border border-orange-500/50 space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-orange-400 flex items-center gap-1 text-[11px]">
@@ -680,7 +718,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-text-secondary leading-tight">
-                Hazard probability reaches <strong>{(exposure.max_probability * 100).toFixed(0)}%</strong> on this corridor. Reroute via the next best viable route from Model B.
+                Hazard probability reaches <strong>{(displayedProbability * 100).toFixed(0)}%</strong> on this corridor. Reroute via the next best viable route from Model B.
               </p>
               {vehicle?.current_coords && isInTransit && (
                 <div className="text-[9.5px] font-mono text-orange-300 flex items-center gap-1">
@@ -707,7 +745,15 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                 )}
               </button>
             </div>
-          ) : null}
+          ) : (
+            <div className="p-2.5 rounded bg-surface border border-border text-xs text-text-secondary flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span>Model B Detour Recommendation:</span>
+              </span>
+              <span className="text-emerald-400 font-medium text-[10.5px]">Corridor Stable (&le;50% Risk)</span>
+            </div>
+          )}
 
 
 

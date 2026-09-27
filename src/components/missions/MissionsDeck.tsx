@@ -335,7 +335,7 @@ export const MissionsDeck: React.FC = () => {
                               <div className="flex items-center justify-between">
                                 <span className="font-bold text-text-primary flex items-center gap-1 text-[11px]">
                                   <span className={`w-2 h-2 rounded-full ${isRank1 ? 'bg-blue-500' : 'bg-emerald-500'}`} />
-                                  {isRank1 ? 'Best Feasible Path' : '2nd Feasible Path'}
+                                  {isRank1 ? 'Best Feasible Path' : 'Least Feasible Path'}
                                 </span>
                                 <span className="font-mono text-[9.5px] px-1 py-0.2 rounded font-bold uppercase bg-surface/60 border border-border text-text-secondary">
                                   {opt.distanceKm} km
@@ -425,13 +425,19 @@ export const MissionsDeck: React.FC = () => {
               const maxRiskProb = mission.isRerouted
                 ? (mission.reroutedDisruptionProbability ?? mission.disruptionProbability ?? 0.05)
                 : (mission.disruptionProbability ?? exposure.max_probability);
-              const hasActiveIncident = mappedSegments.some((seg) => {
+              const isRoadBlocked = mission.routeStatus === 'UNAVAILABLE' || mappedSegments.some((seg) => {
                 const incident = activeDisruptions[seg.id];
-                return incident?.status === 'TOTAL_BLOCKAGE' || incident?.status === 'SINGLE_LANE_PASSABLE';
+                return incident?.status === 'TOTAL_BLOCKAGE';
               });
-              const riskLevel = maxRiskProb >= 0.80 ? 'HIGH' : maxRiskProb >= 0.60 ? 'ELEVATED' : maxRiskProb >= 0.30 ? 'MODERATE' : 'LOW';
+              const hasIncidentOnRoute = mappedSegments.some((seg) => {
+                const incident = activeDisruptions[seg.id];
+                return Boolean(incident);
+              });
+              // Guardrail: don't suggest rerouting unless probability > 50% (> 0.50) OR road blockage OR incident near/on route
+              const shouldSuggestReroute = maxRiskProb > 0.50 || isRoadBlocked || hasIncidentOnRoute;
+              const hasHighRiskRoad = shouldSuggestReroute;
+              const riskLevel = maxRiskProb >= 0.80 ? 'HIGH' : maxRiskProb >= 0.50 ? 'ELEVATED' : maxRiskProb >= 0.30 ? 'MODERATE' : 'LOW';
               const highRiskSeg = [...mappedSegments].sort((a, b) => (modelAPredictions[b.id]?.probability ?? 0) - (modelAPredictions[a.id]?.probability ?? 0))[0];
-              const hasHighRiskRoad = maxRiskProb >= 0.30 || hasActiveIncident;
 
               return (
                 <div
@@ -624,6 +630,14 @@ export const MissionsDeck: React.FC = () => {
                             </>
                           )}
                         </button>
+                      </div>
+                    ) : !isPendingCloseout ? (
+                      <div className="bg-surface-subtle border border-border/80 rounded-xs p-2 text-[10.5px] text-text-secondary flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span>Corridor Risk: {(maxRiskProb * 100).toFixed(0)}%</span>
+                        </span>
+                        <span className="text-emerald-500 font-medium">Optimal &bull; No Detour Needed</span>
                       </div>
                     ) : null}
                   </div>

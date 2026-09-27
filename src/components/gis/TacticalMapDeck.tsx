@@ -1512,11 +1512,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
             }
           }
 
-          if (opts.length >= 2) {
-            // Toggle between the two route options: clicking green hides green and shows blue; clicking blue hides blue and shows green!
-            const otherOpt = opts.find((o) => o.id !== currentOptId) || opts[0];
-            selectMissionRouteRef.current(mId, otherOpt.id);
-          } else if (currentOptId) {
+          if (currentOptId) {
             selectMissionRouteRef.current(mId, currentOptId);
           }
         }

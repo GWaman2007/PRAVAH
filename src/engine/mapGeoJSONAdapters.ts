@@ -569,137 +569,154 @@ export function createModelBRouteOptionsGeoJSON(
 ): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
-  // Mutually exclusive route display:
-  // Render ONLY the 1 active selected route option
-  const activeOption =
-    options.find((opt) => opt.id === selectedOptionId) ||
-    options.find((opt) => opt.predictedPreferredRoute) ||
-    options[0];
-
-  if (!activeOption || !activeOption.geometry || activeOption.geometry.length < 2) {
+  if (!options || options.length === 0) {
     return { type: 'FeatureCollection', features: [] };
   }
 
-  const isRank1 = activeOption.routeRank === 1 || activeOption.predictedPreferredRoute || activeOption.routeNumber === 1;
+  // Determine active selected ID:
+  const activeSelectedId =
+    selectedOptionId ||
+    options.find((opt) => opt.predictedPreferredRoute)?.id ||
+    options.find((opt) => opt.routeRank === 1)?.id ||
+    options[0]?.id;
 
-  // Base theme: Blue for Rank 1 / Bhuvan baseline, Green for Rank 2 / alternate
-  const nominalBaseColor = isRank1 ? '#2563EB' : '#10B981';
-  const nominalGlowColor = isRank1 ? '#3B82F6' : '#34D399';
+  // Render non-selected options first so the selected option renders cleanly on top
+  const sortedOptions = [...options].sort((a, b) => {
+    const aSelected = a.id === activeSelectedId;
+    const bSelected = b.id === activeSelectedId;
+    if (aSelected && !bSelected) return 1;
+    if (!aSelected && bSelected) return -1;
+    return (b.routeRank || 1) - (a.routeRank || 1);
+  });
 
-  // If spatial segments (5 equal-distance 20% segments) exist on this option (Section 10 GIS rules):
-  if (activeOption.spatialSegments && activeOption.spatialSegments.length === 5) {
-    for (const seg of activeOption.spatialSegments) {
-      if (!seg.geometry || seg.geometry.length < 2) continue;
+  for (const opt of sortedOptions) {
+    if (!opt.geometry || opt.geometry.length < 2) continue;
 
-      let segColor = nominalBaseColor;
-      let segGlowColor = nominalGlowColor;
+    const isSelected = opt.id === activeSelectedId;
+    const isRank1 = opt.routeRank === 1 || opt.predictedPreferredRoute || opt.routeNumber === 1;
 
-      if (seg.operationalStatus.isBlocked) {
-        segColor = '#DC2626'; // RED: Confirmed Blocked
-        segGlowColor = '#EF4444';
-      } else if (seg.operationalStatus.isRestricted || seg.modelA.probability >= 0.50) {
-        segColor = '#F59E0B'; // YELLOW: Restricted or High-Risk Model A
-        segGlowColor = '#FBBF24';
+    // Best Feasible = Blue (#2563EB), Least Feasible = Green (#10B981)
+    const nominalBaseColor = isRank1 ? '#2563EB' : '#10B981';
+    const nominalGlowColor = isRank1 ? '#3B82F6' : '#34D399';
+    const tierLabel = isRank1 ? 'Best Feasible Path' : 'Least Feasible Path';
+
+    // If spatial segments (5 equal-distance 20% segments) exist on this option (Section 10 GIS rules):
+    if (opt.spatialSegments && opt.spatialSegments.length === 5) {
+      for (const seg of opt.spatialSegments) {
+        if (!seg.geometry || seg.geometry.length < 2) continue;
+
+        let segColor = nominalBaseColor;
+        let segGlowColor = nominalGlowColor;
+
+        if (seg.operationalStatus.isBlocked) {
+          segColor = '#DC2626'; // RED: Confirmed Blocked
+          segGlowColor = '#EF4444';
+        } else if (seg.operationalStatus.isRestricted || seg.modelA.probability >= 0.50) {
+          segColor = '#F59E0B'; // YELLOW: Restricted or High-Risk Model A
+          segGlowColor = '#FBBF24';
+        }
+
+        const isSegSelected = isSelected && selectedSegmentOrder === seg.order;
+        const lineWidth = isSelected ? (isSegSelected ? 10.5 : 7.5) : 5.0;
+        const glowWidth = isSelected ? (isSegSelected ? 22 : 18) : 12;
+        const lineOpacity = isSelected ? 1.0 : 0.8;
+        const glowOpacity = isSelected ? 0.45 : 0.25;
+
+        features.push({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: toGeoJSONLineString(seg.geometry),
+          },
+          properties: {
+            option_id: opt.id,
+            mission_id: opt.missionId,
+            route_name: opt.routeName || (isRank1 ? 'Best Feasible Route' : 'Least Feasible Route'),
+            tier_label: tierLabel,
+            route_number: opt.routeNumber,
+            route_rank: opt.routeRank,
+            is_selected: isSelected,
+            is_rank_1: isRank1,
+            color: segColor,
+            glow_color: segGlowColor,
+            casing_color: '#0f172a',
+            casing_width: lineWidth + 3.0,
+            disruption_probability: seg.modelA.probability,
+            line_width: lineWidth,
+            line_opacity: lineOpacity,
+            glow_width: glowWidth,
+            glow_opacity: glowOpacity,
+            predicted_delay_factor: opt.predictedDelayFactor,
+            predicted_eta_minutes: opt.predictedEtaMinutes,
+            osrm_duration_minutes: opt.osrmDurationMinutes,
+            distance_km: opt.distanceKm,
+            route_source: opt.routeSource || 'GRAPH',
+
+            // Spatial segment inspection metadata
+            segment_order: seg.order,
+            segment_id: seg.id,
+            percentage_range: seg.percentageRange,
+            segment_distance_km: seg.distanceKm,
+            start_km: seg.startKm,
+            end_km: seg.endKm,
+            probability: seg.modelA.probability,
+            risk_band: seg.modelA.riskBand,
+            is_blocked: seg.operationalStatus.isBlocked,
+            is_restricted: seg.operationalStatus.isRestricted,
+            incident_type: seg.operationalStatus.incidentType,
+            incident_description: seg.operationalStatus.incidentDescription,
+            is_segment_selected: isSegSelected,
+            feature_snapshot: JSON.stringify(seg.modelA.features),
+          },
+        });
       }
+    } else {
+      // Fallback if 5 spatial segments are not generated
+      const alignedCoords = ensureRouteGeometryEndpoints(
+        opt.geometry,
+        originCoords,
+        destinationCoords,
+        null
+      );
 
-      const isSegSelected = selectedSegmentOrder === seg.order;
-      const lineWidth = isSegSelected ? 10.0 : 7.5;
-      const glowWidth = isSegSelected ? 22 : 18;
+      const lineWidth = isSelected ? 7.5 : 5.0;
+      const glowWidth = isSelected ? 18 : 12;
+      const lineOpacity = isSelected ? 1.0 : 0.8;
+      const glowOpacity = isSelected ? 0.45 : 0.25;
 
       features.push({
         type: 'Feature',
         geometry: {
           type: 'LineString',
-          coordinates: toGeoJSONLineString(seg.geometry),
+          coordinates: toGeoJSONLineString(alignedCoords),
         },
         properties: {
-          option_id: activeOption.id,
-          mission_id: activeOption.missionId,
-          route_name: activeOption.routeName || (isRank1 ? 'Primary Best Feasible Route' : '2nd Best Feasible Alternative Route'),
-          tier_label: isRank1 ? 'Best Feasible Path' : '2nd Best Feasible Path',
-          route_number: activeOption.routeNumber,
-          route_rank: activeOption.routeRank,
-          is_selected: true,
+          option_id: opt.id,
+          mission_id: opt.missionId,
+          route_name: opt.routeName || (isRank1 ? 'Best Feasible Route' : 'Least Feasible Route'),
+          tier_label: tierLabel,
+          route_number: opt.routeNumber,
+          route_rank: opt.routeRank,
+          is_selected: isSelected,
           is_rank_1: isRank1,
-          color: segColor,
-          glow_color: segGlowColor,
+          color: nominalBaseColor,
+          glow_color: nominalGlowColor,
           casing_color: '#0f172a',
           casing_width: lineWidth + 3.0,
-          disruption_probability: seg.modelA.probability,
+          disruption_probability: opt.disruptionProbability ?? 0,
           line_width: lineWidth,
-          line_opacity: 1.0,
+          line_opacity: lineOpacity,
           glow_width: glowWidth,
-          glow_opacity: 0.45,
-          predicted_delay_factor: activeOption.predictedDelayFactor,
-          predicted_eta_minutes: activeOption.predictedEtaMinutes,
-          osrm_duration_minutes: activeOption.osrmDurationMinutes,
-          distance_km: activeOption.distanceKm,
-          route_source: activeOption.routeSource || 'GRAPH',
-
-          // Spatial segment inspection metadata
-          segment_order: seg.order,
-          segment_id: seg.id,
-          percentage_range: seg.percentageRange,
-          segment_distance_km: seg.distanceKm,
-          start_km: seg.startKm,
-          end_km: seg.endKm,
-          probability: seg.modelA.probability,
-          risk_band: seg.modelA.riskBand,
-          is_blocked: seg.operationalStatus.isBlocked,
-          is_restricted: seg.operationalStatus.isRestricted,
-          incident_type: seg.operationalStatus.incidentType,
-          incident_description: seg.operationalStatus.incidentDescription,
-          is_segment_selected: isSegSelected,
-          feature_snapshot: JSON.stringify(seg.modelA.features),
+          glow_opacity: glowOpacity,
+          predicted_delay_factor: opt.predictedDelayFactor,
+          predicted_eta_minutes: opt.predictedEtaMinutes,
+          osrm_duration_minutes: opt.osrmDurationMinutes,
+          distance_km: opt.distanceKm,
+          route_source: opt.routeSource || 'GRAPH',
         },
       });
     }
-
-    return {
-      type: 'FeatureCollection',
-      features,
-    };
   }
-
-  // Fallback if 5 spatial segments are not yet generated
-  const alignedCoords = ensureRouteGeometryEndpoints(
-    activeOption.geometry,
-    originCoords,
-    destinationCoords,
-    null
-  );
-
-  features.push({
-    type: 'Feature',
-    geometry: {
-      type: 'LineString',
-      coordinates: toGeoJSONLineString(alignedCoords),
-    },
-    properties: {
-      option_id: activeOption.id,
-      mission_id: activeOption.missionId,
-      route_name: activeOption.routeName || (isRank1 ? 'Primary Best Feasible Route' : '2nd Best Feasible Alternative Route'),
-      tier_label: isRank1 ? 'Best Feasible Path' : '2nd Best Feasible Path',
-      route_number: activeOption.routeNumber,
-      route_rank: activeOption.routeRank,
-      is_selected: true,
-      is_rank_1: isRank1,
-      color: nominalBaseColor,
-      glow_color: nominalGlowColor,
-      casing_color: '#0f172a',
-      casing_width: 10.5,
-      disruption_probability: activeOption.disruptionProbability ?? 0,
-      line_width: 7.5,
-      line_opacity: 1.0,
-      glow_width: 18,
-      glow_opacity: 0.45,
-      predicted_delay_factor: activeOption.predictedDelayFactor,
-      predicted_eta_minutes: activeOption.predictedEtaMinutes,
-      osrm_duration_minutes: activeOption.osrmDurationMinutes,
-      distance_km: activeOption.distanceKm,
-      route_source: activeOption.routeSource || 'GRAPH',
-    },
-  });
 
   return {
     type: 'FeatureCollection',
