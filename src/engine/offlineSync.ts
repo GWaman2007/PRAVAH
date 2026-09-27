@@ -1,13 +1,16 @@
-import type { Incident, CommunityBase, ReliefMission, SegmentIncident } from '../types';
+import type { Incident, CommunityBase, ReliefMission, SegmentIncident, ResponseHub, HubInventory, InventoryTransaction } from '../types';
 
 export const STORAGE_KEYS = {
   INCIDENTS: 'pravah_ner_incidents_v2',
   DISRUPTIONS: 'pravah_ner_disruptions_v2',
-  MISSIONS: 'pravah_ner_missions_v3',
+  MISSIONS: 'pravah_ner_missions_v9',
   COMMUNITIES: 'pravah_ner_communities_v2',
   OFFLINE_QUEUE: 'pravah_ner_offline_queue_v2',
   MUTATION_QUEUE: 'pravah_ner_mutations_v1',
   SIMULATED_OFFLINE: 'pravah_simulated_offline_v2',
+  HUBS: 'pravah_ner_hubs_v1',
+  HUB_INVENTORY: 'pravah_ner_hub_inventory_v1',
+  INVENTORY_TRANSACTIONS: 'pravah_ner_inventory_transactions_v1',
 };
 
 export const DEFAULT_INCIDENTS: Incident[] = [
@@ -305,10 +308,30 @@ export function persistDisruptions(disruptions: Record<string, any>): void {
 export function purgeLegacyMockMissions(): void {
   try {
     if (typeof localStorage !== 'undefined') {
+      [
+        'pravah_relief_missions',
+        'pravah_ner_missions_v1',
+        'pravah_ner_missions_v2',
+        'pravah_ner_missions_v3',
+        'pravah_ner_missions_v4',
+        'pravah_ner_missions_v5',
+        'pravah_ner_missions_v6',
+        'pravah_ner_missions_v7',
+        'pravah_ner_missions_v8',
+      ].forEach((k) => {
+        localStorage.removeItem(k);
+      });
       const raw = localStorage.getItem(STORAGE_KEYS.MISSIONS);
-      if (raw && (raw.includes('"MISSION-') || raw.includes('"MOCK-') || raw.includes('MISSION-MZ-'))) {
+      if (
+        raw &&
+        (!raw.includes('SUGG-MLSHL003-OPT-1') ||
+          !raw.includes('SUGG-ASDH011-OPT-1') ||
+          raw.includes('"MISSION-') ||
+          raw.includes('"MOCK-') ||
+          raw.includes('MISSION-MZ-'))
+      ) {
         localStorage.removeItem(STORAGE_KEYS.MISSIONS);
-        console.log('[OfflineSync] Purged legacy hardcoded missions from localStorage.');
+        console.log('[OfflineSync] Refreshed missions storage with updated suggested missions.');
       }
     }
   } catch {
@@ -650,4 +673,361 @@ export function formatTimeAgo(isoString: string): string {
     return 'recently';
   }
 }
+
+// =========================================================================
+// 8. Initial Seed Data & Offline Storage for Response Hubs & Inventory
+// =========================================================================
+export const INITIAL_RESPONSE_HUBS: ResponseHub[] = [
+  {
+    id: 'guwahati',
+    name: 'Guwahati Regional Hub',
+    code: 'HUB-AS-GAU',
+    state: 'Assam',
+    district: 'Kamrup Metropolitan',
+    city: 'Guwahati',
+    address: 'Khanapara Central Supply Depot, NH-27 Bypass',
+    coordinates: [26.1445, 91.7362],
+    type: 'REGIONAL',
+    status: 'OPERATIONAL',
+    storageCapacityKg: 100000,
+    coldStorageCapacityKg: 25000,
+    fuelStorageCapacityLitres: 50000,
+    sourceType: 'OFFICIAL_REFERENCE',
+    sourceNote: 'Inter-state apex staging terminal for lower Assam and Western Corridor',
+    routingNodeId: 'guwahati',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'silchar',
+    name: 'Silchar Strategic Depot',
+    code: 'HUB-AS-SIL',
+    state: 'Assam',
+    district: 'Cachar',
+    city: 'Silchar',
+    address: 'Tarapur Staging Base, NH-306 Terminal',
+    coordinates: [24.8333, 92.7789],
+    type: 'REGIONAL',
+    status: 'OPERATIONAL',
+    storageCapacityKg: 80000,
+    coldStorageCapacityKg: 15000,
+    fuelStorageCapacityLitres: 40000,
+    sourceType: 'OFFICIAL_REFERENCE',
+    sourceNote: 'Primary lifeline staging hub for Mizoram, Barak Valley, and Dima Hasao',
+    routingNodeId: 'silchar',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'dimapur',
+    name: 'Dimapur Railhead Depot',
+    code: 'HUB-NL-DMU',
+    state: 'Nagaland',
+    district: 'Dimapur',
+    city: 'Dimapur',
+    address: 'Railway Goods Yard Logistics Terminal, NH-29 Junction',
+    coordinates: [25.9095, 93.7266],
+    type: 'REGIONAL',
+    status: 'OPERATIONAL',
+    storageCapacityKg: 75000,
+    coldStorageCapacityKg: 12000,
+    fuelStorageCapacityLitres: 35000,
+    sourceType: 'OFFICIAL_REFERENCE',
+    sourceNote: 'Primary heavy bulk rail-to-road transshipment depot feeding Nagaland & Manipur',
+    routingNodeId: 'dimapur',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'gangtok',
+    name: 'Gangtok STNM Hub',
+    code: 'HUB-SK-GTK',
+    state: 'Sikkim',
+    district: 'East Sikkim',
+    city: 'Gangtok',
+    address: 'Sir Thutob Namgyal Memorial Hospital Complex Staging',
+    coordinates: [27.3314, 88.6138],
+    type: 'FORWARD',
+    status: 'OPERATIONAL',
+    storageCapacityKg: 40000,
+    coldStorageCapacityKg: 15000,
+    fuelStorageCapacityLitres: 20000,
+    sourceType: 'OFFICIAL_REFERENCE',
+    sourceNote: 'High-altitude medical cold chain and mountain emergency staging base',
+    routingNodeId: 'gangtok',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'shillong',
+    name: 'Shillong Forward Base',
+    code: 'HUB-ML-SHL',
+    state: 'Meghalaya',
+    district: 'East Khasi Hills',
+    city: 'Shillong',
+    address: 'Mawlai Emergency Transit Staging Base, NH-6',
+    coordinates: [25.5788, 91.8933],
+    type: 'DISTRICT',
+    status: 'OPERATIONAL',
+    storageCapacityKg: 50000,
+    coldStorageCapacityKg: 10000,
+    fuelStorageCapacityLitres: 25000,
+    sourceType: 'OFFICIAL_REFERENCE',
+    sourceNote: 'Central Meghalaya plateau transit hub for Khasi and Jaintia Hills',
+    routingNodeId: 'shillong',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'kohima',
+    name: 'Kohima Capital Command',
+    code: 'HUB-NL-KOH',
+    state: 'Nagaland',
+    district: 'Kohima',
+    city: 'Kohima',
+    address: 'Highland Capital Disaster Staging Depot, NH-29',
+    coordinates: [25.6751, 94.1086],
+    type: 'DISTRICT',
+    status: 'OPERATIONAL',
+    storageCapacityKg: 45000,
+    coldStorageCapacityKg: 8000,
+    fuelStorageCapacityLitres: 20000,
+    sourceType: 'OFFICIAL_REFERENCE',
+    sourceNote: 'High-altitude tactical relay base for southern Nagaland mountain sectors',
+    routingNodeId: 'kohima',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'imphal',
+    name: 'Imphal Supply Base',
+    code: 'HUB-MN-IMP',
+    state: 'Manipur',
+    district: 'Imphal West',
+    city: 'Imphal',
+    address: 'Lamphelpat Relief Distribution Center, NH-37 Axis',
+    coordinates: [24.8170, 93.9368],
+    type: 'REGIONAL',
+    status: 'OPERATIONAL',
+    storageCapacityKg: 60000,
+    coldStorageCapacityKg: 12000,
+    fuelStorageCapacityLitres: 30000,
+    sourceType: 'OFFICIAL_REFERENCE',
+    sourceNote: 'Apex logistics distribution depot for Manipur valley and hill districts',
+    routingNodeId: 'imphal',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'aizawl',
+    name: 'Aizawl Forward Depot',
+    code: 'HUB-MZ-AZL',
+    state: 'Mizoram',
+    district: 'Aizawl',
+    city: 'Aizawl',
+    address: 'Durtlang Forward Supply Terminal, NH-306 Southern End',
+    coordinates: [23.7271, 92.7176],
+    type: 'FORWARD',
+    status: 'OPERATIONAL',
+    storageCapacityKg: 40000,
+    coldStorageCapacityKg: 9000,
+    fuelStorageCapacityLitres: 20000,
+    sourceType: 'OFFICIAL_REFERENCE',
+    sourceNote: 'Central Mizoram mountain terminus depot for onward distribution',
+    routingNodeId: 'aizawl',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+const RAW_INITIAL_HUB_INVENTORY: HubInventory[] = [
+  // Silchar Strategic Depot
+  { id: 'inv-sil-rice', hubId: 'silchar', resourceType: 'FOOD', resourceName: 'Subsistence Rice / Rations', quantity: 5000, unit: 'kg', minimumStock: 1000, maximumCapacity: 10000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-sil-meals', hubId: 'silchar', resourceType: 'FOOD', resourceName: 'Ready-to-Eat Emergency Meals', quantity: 3000, unit: 'packs', minimumStock: 500, maximumCapacity: 6000, reservedQuantity: 0, priority: 'MEDIUM', lastUpdated: new Date().toISOString() },
+  { id: 'inv-sil-water', hubId: 'silchar', resourceType: 'WATER', resourceName: 'Potable Drinking Water (Cans)', quantity: 8000, unit: 'L', minimumStock: 2000, maximumCapacity: 15000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-sil-iv', hubId: 'silchar', resourceType: 'MEDICAL', resourceName: 'IV Fluids (Ringer Lactate)', quantity: 650, unit: 'bottles', minimumStock: 150, maximumCapacity: 1200, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-sil-antivenom', hubId: 'silchar', resourceType: 'MEDICAL', resourceName: 'Polyvalent Snake Antivenom', quantity: 220, unit: 'vials', minimumStock: 50, maximumCapacity: 400, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-sil-diesel', hubId: 'silchar', resourceType: 'FUEL', resourceName: 'High-Flashpoint Diesel Fuel', quantity: 4500, unit: 'L', minimumStock: 1000, maximumCapacity: 10000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-sil-rescue', hubId: 'silchar', resourceType: 'RESCUE', resourceName: 'Ghat Collapse Rescue Kits', quantity: 45, unit: 'kits', minimumStock: 10, maximumCapacity: 100, reservedQuantity: 0, priority: 'MEDIUM', lastUpdated: new Date().toISOString() },
+
+  // Dimapur Railhead Depot
+  { id: 'inv-dmu-rice', hubId: 'dimapur', resourceType: 'FOOD', resourceName: 'Subsistence Rice / Rations', quantity: 6000, unit: 'kg', minimumStock: 1200, maximumCapacity: 12000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-dmu-meals', hubId: 'dimapur', resourceType: 'FOOD', resourceName: 'Ready-to-Eat Emergency Meals', quantity: 2500, unit: 'packs', minimumStock: 400, maximumCapacity: 5000, reservedQuantity: 0, priority: 'MEDIUM', lastUpdated: new Date().toISOString() },
+  { id: 'inv-dmu-water', hubId: 'dimapur', resourceType: 'WATER', resourceName: 'Potable Drinking Water (Cans)', quantity: 6000, unit: 'L', minimumStock: 1500, maximumCapacity: 12000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-dmu-iv', hubId: 'dimapur', resourceType: 'MEDICAL', resourceName: 'IV Fluids (Ringer Lactate)', quantity: 500, unit: 'bottles', minimumStock: 120, maximumCapacity: 1000, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-dmu-antivenom', hubId: 'dimapur', resourceType: 'MEDICAL', resourceName: 'Polyvalent Snake Antivenom', quantity: 180, unit: 'vials', minimumStock: 40, maximumCapacity: 350, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-dmu-diesel', hubId: 'dimapur', resourceType: 'FUEL', resourceName: 'High-Flashpoint Diesel Fuel', quantity: 5500, unit: 'L', minimumStock: 1200, maximumCapacity: 12000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+
+  // Guwahati Regional Hub
+  { id: 'inv-gau-rice', hubId: 'guwahati', resourceType: 'FOOD', resourceName: 'Subsistence Rice / Rations', quantity: 15000, unit: 'kg', minimumStock: 3000, maximumCapacity: 30000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-gau-water', hubId: 'guwahati', resourceType: 'WATER', resourceName: 'Potable Drinking Water (Cans)', quantity: 20000, unit: 'L', minimumStock: 5000, maximumCapacity: 40000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-gau-iv', hubId: 'guwahati', resourceType: 'MEDICAL', resourceName: 'IV Fluids (Ringer Lactate)', quantity: 1500, unit: 'bottles', minimumStock: 300, maximumCapacity: 3000, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-gau-antivenom', hubId: 'guwahati', resourceType: 'MEDICAL', resourceName: 'Polyvalent Snake Antivenom', quantity: 400, unit: 'vials', minimumStock: 80, maximumCapacity: 800, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-gau-diesel', hubId: 'guwahati', resourceType: 'FUEL', resourceName: 'High-Flashpoint Diesel Fuel', quantity: 12000, unit: 'L', minimumStock: 2500, maximumCapacity: 25000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+
+  // Gangtok STNM Hub
+  { id: 'inv-gtk-rice', hubId: 'gangtok', resourceType: 'FOOD', resourceName: 'Subsistence Rice / Rations', quantity: 3500, unit: 'kg', minimumStock: 800, maximumCapacity: 8000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-gtk-water', hubId: 'gangtok', resourceType: 'WATER', resourceName: 'Potable Drinking Water (Cans)', quantity: 4000, unit: 'L', minimumStock: 1000, maximumCapacity: 8000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-gtk-iv', hubId: 'gangtok', resourceType: 'MEDICAL', resourceName: 'IV Fluids (Ringer Lactate)', quantity: 450, unit: 'bottles', minimumStock: 100, maximumCapacity: 900, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-gtk-antivenom', hubId: 'gangtok', resourceType: 'MEDICAL', resourceName: 'Polyvalent Snake Antivenom', quantity: 150, unit: 'vials', minimumStock: 30, maximumCapacity: 300, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-gtk-diesel', hubId: 'gangtok', resourceType: 'FUEL', resourceName: 'High-Flashpoint Diesel Fuel', quantity: 3000, unit: 'L', minimumStock: 600, maximumCapacity: 6000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+
+  // Shillong Forward Base
+  { id: 'inv-shl-rice', hubId: 'shillong', resourceType: 'FOOD', resourceName: 'Subsistence Rice / Rations', quantity: 4000, unit: 'kg', minimumStock: 1000, maximumCapacity: 8000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-shl-water', hubId: 'shillong', resourceType: 'WATER', resourceName: 'Potable Drinking Water (Cans)', quantity: 5000, unit: 'L', minimumStock: 1200, maximumCapacity: 10000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-shl-iv', hubId: 'shillong', resourceType: 'MEDICAL', resourceName: 'IV Fluids (Ringer Lactate)', quantity: 380, unit: 'bottles', minimumStock: 80, maximumCapacity: 800, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-shl-diesel', hubId: 'shillong', resourceType: 'FUEL', resourceName: 'High-Flashpoint Diesel Fuel', quantity: 3500, unit: 'L', minimumStock: 800, maximumCapacity: 8000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+
+  // Kohima Capital Command
+  { id: 'inv-koh-rice', hubId: 'kohima', resourceType: 'FOOD', resourceName: 'Subsistence Rice / Rations', quantity: 4500, unit: 'kg', minimumStock: 1000, maximumCapacity: 9000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-koh-water', hubId: 'kohima', resourceType: 'WATER', resourceName: 'Potable Drinking Water (Cans)', quantity: 5500, unit: 'L', minimumStock: 1200, maximumCapacity: 10000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-koh-iv', hubId: 'kohima', resourceType: 'MEDICAL', resourceName: 'IV Fluids (Ringer Lactate)', quantity: 320, unit: 'bottles', minimumStock: 90, maximumCapacity: 750, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-koh-diesel', hubId: 'kohima', resourceType: 'FUEL', resourceName: 'High-Flashpoint Diesel Fuel', quantity: 2800, unit: 'L', minimumStock: 700, maximumCapacity: 7000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+
+  // Imphal Supply Base
+  { id: 'inv-imp-rice', hubId: 'imphal', resourceType: 'FOOD', resourceName: 'Subsistence Rice / Rations', quantity: 7000, unit: 'kg', minimumStock: 1500, maximumCapacity: 15000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-imp-water', hubId: 'imphal', resourceType: 'WATER', resourceName: 'Potable Drinking Water (Cans)', quantity: 7500, unit: 'L', minimumStock: 2000, maximumCapacity: 15000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-imp-iv', hubId: 'imphal', resourceType: 'MEDICAL', resourceName: 'IV Fluids (Ringer Lactate)', quantity: 480, unit: 'bottles', minimumStock: 110, maximumCapacity: 1000, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-imp-antivenom', hubId: 'imphal', resourceType: 'MEDICAL', resourceName: 'Polyvalent Snake Antivenom', quantity: 160, unit: 'vials', minimumStock: 35, maximumCapacity: 350, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-imp-diesel', hubId: 'imphal', resourceType: 'FUEL', resourceName: 'High-Flashpoint Diesel Fuel', quantity: 4200, unit: 'L', minimumStock: 1000, maximumCapacity: 10000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+
+  // Aizawl Forward Depot
+  { id: 'inv-azl-rice', hubId: 'aizawl', resourceType: 'FOOD', resourceName: 'Subsistence Rice / Rations', quantity: 3800, unit: 'kg', minimumStock: 800, maximumCapacity: 8000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-azl-water', hubId: 'aizawl', resourceType: 'WATER', resourceName: 'Potable Drinking Water (Cans)', quantity: 4200, unit: 'L', minimumStock: 1000, maximumCapacity: 8000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+  { id: 'inv-azl-iv', hubId: 'aizawl', resourceType: 'MEDICAL', resourceName: 'IV Fluids (Ringer Lactate)', quantity: 310, unit: 'bottles', minimumStock: 75, maximumCapacity: 700, reservedQuantity: 0, priority: 'CRITICAL', lastUpdated: new Date().toISOString() },
+  { id: 'inv-azl-diesel', hubId: 'aizawl', resourceType: 'FUEL', resourceName: 'High-Flashpoint Diesel Fuel', quantity: 2900, unit: 'L', minimumStock: 650, maximumCapacity: 6000, reservedQuantity: 0, priority: 'HIGH', lastUpdated: new Date().toISOString() },
+];
+
+export const INITIAL_HUB_INVENTORY: HubInventory[] = RAW_INITIAL_HUB_INVENTORY.map((item) => ({
+  ...item,
+  commodityName: item.resourceName,
+  category: item.resourceType,
+  lowStockThreshold: item.minimumStock,
+}));
+
+export const INITIAL_INVENTORY_TRANSACTIONS: InventoryTransaction[] = [
+  {
+    id: 'tx-init-01',
+    hubId: 'silchar',
+    inventoryId: 'inv-sil-iv',
+    type: 'ADD',
+    quantity: 650,
+    previousQuantity: 0,
+    newQuantity: 650,
+    previousReserved: 0,
+    newReserved: 0,
+    performedBy: 'Cachar Health Depot Staging Lead',
+    note: 'Initial emergency buffer stock intake under monsoon protocol',
+    timestamp: new Date(Date.now() - 3600000 * 18).toISOString(),
+    commodityName: 'IV Fluids (Ringer Lactate)',
+    quantityDelta: 650,
+    previousAvailable: 0,
+    resultingAvailable: 650,
+    referenceNote: 'Initial emergency buffer stock intake under monsoon protocol',
+  },
+  {
+    id: 'tx-init-02',
+    hubId: 'dimapur',
+    inventoryId: 'inv-dmu-diesel',
+    type: 'ADD',
+    quantity: 5500,
+    previousQuantity: 0,
+    newQuantity: 5500,
+    previousReserved: 0,
+    newReserved: 0,
+    performedBy: 'Railhead IOCL Logistics Manager',
+    note: 'Rail tank wagon discharge to Dimapur buffer tanks',
+    timestamp: new Date(Date.now() - 3600000 * 14).toISOString(),
+    commodityName: 'High-Flashpoint Diesel Fuel',
+    quantityDelta: 5500,
+    previousAvailable: 0,
+    resultingAvailable: 5500,
+    referenceNote: 'Rail tank wagon discharge to Dimapur buffer tanks',
+  },
+  {
+    id: 'tx-init-03',
+    hubId: 'guwahati',
+    inventoryId: 'inv-gau-rice',
+    type: 'ADD',
+    quantity: 15000,
+    previousQuantity: 0,
+    newQuantity: 15000,
+    previousReserved: 0,
+    newReserved: 0,
+    performedBy: 'FCI Khanapara Godown In-Charge',
+    note: 'Central food grain buffer stock intake',
+    timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
+    commodityName: 'Subsistence Rice / Rations',
+    quantityDelta: 15000,
+    previousAvailable: 0,
+    resultingAvailable: 15000,
+    referenceNote: 'Central food grain buffer stock intake',
+  },
+];
+
+export function loadOfflineHubs(): ResponseHub[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.HUBS);
+    if (!raw) return INITIAL_RESPONSE_HUBS;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_RESPONSE_HUBS;
+  } catch {
+    return INITIAL_RESPONSE_HUBS;
+  }
+}
+
+export function saveOfflineHubs(hubs: ResponseHub[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(hubs));
+  } catch (err) {
+    console.warn('⚠️ [OfflineSync] Failed to save hubs:', err);
+  }
+}
+
+export function loadOfflineInventory(): HubInventory[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.HUB_INVENTORY);
+    const source = raw ? JSON.parse(raw) : INITIAL_HUB_INVENTORY;
+    const list = Array.isArray(source) && source.length > 0 ? source : INITIAL_HUB_INVENTORY;
+    return list.map((item: any) => ({
+      ...item,
+      commodityName: item.commodityName || item.resourceName || 'Emergency Resource',
+      category: item.category || item.resourceType || 'FOOD',
+      lowStockThreshold: item.lowStockThreshold ?? item.minimumStock ?? 0,
+      resourceName: item.resourceName || item.commodityName || 'Emergency Resource',
+      resourceType: item.resourceType || item.category || 'FOOD',
+      minimumStock: item.minimumStock ?? item.lowStockThreshold ?? 0,
+    }));
+  } catch {
+    return INITIAL_HUB_INVENTORY;
+  }
+}
+
+export function saveOfflineInventory(inventory: HubInventory[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.HUB_INVENTORY, JSON.stringify(inventory));
+  } catch (err) {
+    console.warn('⚠️ [OfflineSync] Failed to save hub inventory:', err);
+  }
+}
+
+export function loadOfflineTransactions(): InventoryTransaction[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.INVENTORY_TRANSACTIONS);
+    if (!raw) return INITIAL_INVENTORY_TRANSACTIONS;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : INITIAL_INVENTORY_TRANSACTIONS;
+  } catch {
+    return INITIAL_INVENTORY_TRANSACTIONS;
+  }
+}
+
+export function saveOfflineTransactions(transactions: InventoryTransaction[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.INVENTORY_TRANSACTIONS, JSON.stringify(transactions));
+  } catch (err) {
+    console.warn('⚠️ [OfflineSync] Failed to save inventory transactions:', err);
+  }
+}
+
 

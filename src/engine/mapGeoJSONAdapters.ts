@@ -9,12 +9,21 @@ import type {
   RealtimeHazardPolygon,
   Incident,
   DraftIncidentPlot,
+  ResponseHub,
+  HubInventory,
+  ModelAPrediction,
+  MissionRouteOption,
 } from '../types';
 import { NER_NODES, NER_SEGMENTS } from '../data/routingNetwork';
 import { DESTINATION_PIN_DATA_URL } from '../assets/destinationPinBase64';
 import { FLEET_ROUTES } from '../data/fleetData';
+import { OSRM_PRECOMPUTED_ROUTES } from '../data/osrmPrecomputedRoutes';
+import { OSRM_PRECOMPUTED_ALTERNATIVES } from '../data/osrmPrecomputedAlternatives';
+import tawangSelaRoute from '../data/tawangSelaPrecomputedRoute.json';
 import { haversineDistanceKm, ensureLngLat } from './gisMath';
 import { COMMUNITY_ROUTING_PROFILES } from './missionEngine';
+import { calculateRouteModelAExposureFromCache, getAuthoritativeMissionExposure } from './modelAService';
+import { SHILLONG_PRIMARY_ROUTE_COORDS, SHILLONG_BYPASS_ROUTE_COORDS } from '../data/shillongRoadRoutes';
 
 /**
  * Transforms coordinates to RFC 7946 GeoJSON [lng, lat]
@@ -43,6 +52,14 @@ export function validateAndResolveMissionRoute(
   fleetRoutes: Record<string, RouteDefinition> = FLEET_ROUTES
 ): [number, number][] | null {
   if (!mission) return null;
+
+  // 0. Dynamic Reroute / Selected Route Option Priority:
+  // If the mission has been dynamically rerouted or has an explicitly selected route option,
+  // its authentic geometry MUST supersede any static profile route so that the previous path
+  // is completely discarded and the new geometry is immediately rendered on the map!
+  if ((mission.isRerouted || mission.selectedRouteOptionId) && mission.routeGeometry && mission.routeGeometry.length >= 2) {
+    return mission.routeGeometry;
+  }
 
   const dest = mission.destinationEndpoint;
   const routes = fleetRoutes && Object.keys(fleetRoutes).length > 0 ? fleetRoutes : FLEET_ROUTES;
@@ -117,12 +134,80 @@ export function validateAndResolveMissionRoute(
 
 /**
  * 1. Vehicles GeoJSON Source (Points)
+ * If a hub is not assigned with any missions, idle vehicles at the hub are not
+ * displayed on the map. If a hub is associated with a mission (or a mission is actively
+ * underway/selected), only the specified vehicle associated with that mission displays its icon.
  */
 export function createVehiclesGeoJSON(
   vehicles: VehicleTelemetry[],
-  selectedVehicleId: string | null
+  selectedVehicleId: string | null,
+  missions?: ReliefMission[],
+  selectedMissionId?: string | null
 ): GeoJSON.FeatureCollection<GeoJSON.Point> {
-  const features: GeoJSON.Feature<GeoJSON.Point>[] = vehicles.map((v) => {
+  const visibleVehicles = vehicles.filter((v) => {
+    // 1. Explicitly selected vehicle by user is always visible
+    if (selectedVehicleId && v.vehicle_id === selectedVehicleId) {
+      return true;
+    }
+
+    // 2. Vehicles in active transit or emergency states are always visible
+    if (
+      v.is_sos_manual ||
+      v.status === 'SOS_ALERT' ||
+      v.status === 'IN_TRANSIT' ||
+      v.status === 'ON_ROUTE' ||
+      v.status === 'DEAD_ZONE_EXTRAPOLATING' ||
+      v.status === 'HALTED'
+    ) {
+      return true;
+    }
+
+    // 3. If vehicle itself has an active mission_id assigned
+    if (v.mission_id && v.mission_id.trim() !== '') {
+      return true;
+    }
+
+    // 4. If missions context is provided, check if any assigned/active or selected mission specifies this vehicle
+    if (missions && missions.length > 0) {
+      // 4a. Active/Ongoing/Approved missions associated with this vehicle
+      const associatedActiveMission = missions.find(
+        (m) =>
+          (m.status === 'IN_TRANSIT' ||
+            m.status === 'APPROVED' ||
+            m.status === 'PENDING_ADMIN_CLOSEOUT') &&
+          (m.assignedVehicleId === v.vehicle_id || m.id === v.mission_id)
+      );
+      if (associatedActiveMission) {
+        return true;
+      }
+
+      // 4b. If user is currently inspecting/selected a mission in the command center,
+      // show the specified vehicle assigned for that mission at its origin hub / route
+      if (selectedMissionId) {
+        const selectedMission = missions.find((m) => m.id === selectedMissionId);
+        if (
+          selectedMission &&
+          (selectedMission.assignedVehicleId === v.vehicle_id ||
+            selectedMission.id === v.mission_id ||
+            (selectedMission.recommendedVehicleType &&
+              (selectedMission.recommendedVehicleType.includes(v.vehicle_id) ||
+                selectedMission.recommendedVehicleType.toLowerCase().includes(v.vehicle_name.toLowerCase()))))
+        ) {
+          return true;
+        }
+      }
+    }
+
+    // Otherwise, if missions were provided and vehicle is NOT associated with any mission,
+    // do not show the vehicle icon on the map with the hub
+    if (missions !== undefined) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const features: GeoJSON.Feature<GeoJSON.Point>[] = visibleVehicles.map((v) => {
     const isSelected = v.vehicle_id === selectedVehicleId;
     const isSOS = v.is_sos_manual || v.status === 'SOS_ALERT';
     const isDeadReckon = v.status === 'DEAD_ZONE_EXTRAPOLATING';
@@ -146,6 +231,33 @@ export function createVehiclesGeoJSON(
       iconType = 'veh-command';
     } else if (nameLower.includes('supply') || nameLower.includes('ration') || nameLower.includes('grain')) {
       iconType = 'veh-supply';
+    }
+
+    // If an associated mission specifies a vehicle type/profile, ensure correct icon mapping
+    if (missions) {
+      const relatedMission = missions.find(
+        (m) => m.assignedVehicleId === v.vehicle_id || (v.mission_id && m.id === v.mission_id)
+      );
+      if (relatedMission && relatedMission.recommendedVehicleType) {
+        const typeLower = relatedMission.recommendedVehicleType.toLowerCase();
+        if (typeLower.includes('medic') || typeLower.includes('ambulance')) {
+          iconType = 'veh-ambulance';
+        } else if (typeLower.includes('cargo') || typeLower.includes('heavy')) {
+          iconType = 'veh-heavy-truck';
+        } else if (typeLower.includes('tanker') || typeLower.includes('oxygen')) {
+          iconType = 'veh-tanker';
+        } else if (typeLower.includes('engineer')) {
+          iconType = 'veh-engineering';
+        } else if (typeLower.includes('utility')) {
+          iconType = 'veh-utility';
+        } else if (typeLower.includes('rescue')) {
+          iconType = 'veh-rescue';
+        } else if (typeLower.includes('command')) {
+          iconType = 'veh-command';
+        } else if (typeLower.includes('supply') || typeLower.includes('ration')) {
+          iconType = 'veh-supply';
+        }
+      }
     }
 
     return {
@@ -264,8 +376,9 @@ export function createMissionEndpointsGeoJSON(
  */
 export function createMissionRoutesGeoJSON(
   missions: ReliefMission[],
-  fleetRoutes: Record<string, RouteDefinition>,
-  selectedMissionId: string | null
+  fleetRoutes: Record<string, RouteDefinition> = FLEET_ROUTES,
+  selectedMissionId: string | null = null,
+  modelAPredictions: Record<string, ModelAPrediction> = {}
 ): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   // Only display routes for ONGOING missions that are actively in transit
   // Do NOT render unselected suggested missions across the basemap
@@ -279,11 +392,32 @@ export function createMissionRoutesGeoJSON(
     const rawCoords = validateAndResolveMissionRoute(m, fleetRoutes);
     if (!rawCoords || rawCoords.length < 2) return;
 
-    // Subdued slate styling for non-selected active routes so they don't blend with or visually extend the selected route
-    const color = selectedMissionId ? '#64748B' : '#2563EB';
-    const glowColor = selectedMissionId ? '#475569' : '#60A5FA';
-    const lineWeight = selectedMissionId ? 1.8 : 3.5;
-    const opacity = selectedMissionId ? 0.22 : 0.85;
+    let color = '#2563EB';
+    let glowColor = '#3B82F6';
+
+    if (m.isRerouted) {
+      color = '#2563EB';
+      glowColor = '#3B82F6';
+    } else {
+      const prob = m.disruptionProbability ?? (
+        m.corridorSegmentIds && m.corridorSegmentIds.length > 0
+          ? calculateRouteModelAExposureFromCache(m.corridorSegmentIds, modelAPredictions).max_probability
+          : getAuthoritativeMissionExposure(m, modelAPredictions, NER_SEGMENTS).max_probability
+      );
+      if (prob >= 0.80) {
+        color = '#DC2626'; // High probability: Red
+        glowColor = '#EF4444';
+      } else if (prob >= 0.50) {
+        color = '#EA580C'; // Elevated probability: Orange
+        glowColor = '#F97316';
+      } else {
+        color = '#2563EB'; // Less probability: Blue
+        glowColor = '#3B82F6';
+      }
+    }
+
+    const lineWeight = selectedMissionId ? 2.2 : 3.8;
+    const opacity = selectedMissionId ? 0.35 : 0.85;
 
     features.push({
       type: 'Feature',
@@ -314,13 +448,116 @@ export function createMissionRoutesGeoJSON(
 }
 
 /**
+ * 4B. Model B Route Options GeoJSON (LineStrings)
+ * Displays Model B route options for a relief mission.
+ * Colored dynamically by Model A disruption risk:
+ * High risk (P >= 80%): Vibrant Red (#DC2626)
+ * Elevated risk (50% <= P < 80%): Tactical Orange (#EA580C)
+ * Low risk (P < 50%): Authoritative Royal Blue (#2563EB)
+ * When rerouted, the selected bypass route is Royal Blue (#2563EB) as the main route.
+ */
+export function createModelBRouteOptionsGeoJSON(
+  options: MissionRouteOption[] = [],
+  selectedOptionId?: string | null,
+  modelAPredictions: Record<string, ModelAPrediction> = {},
+  isMissionRerouted: boolean = false
+): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+
+  // Mutually exclusive route display:
+  // When green road is selected, blue road is hidden.
+  // When blue road is selected, green road is hidden.
+  const activeOption =
+    options.find((opt) => opt.id === selectedOptionId) ||
+    options.find((opt) => opt.predictedPreferredRoute) ||
+    options[0];
+
+  if (!activeOption || !activeOption.geometry || activeOption.geometry.length < 2) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+
+  const isRank1 = activeOption.routeRank === 1 || activeOption.predictedPreferredRoute || activeOption.routeNumber === 1;
+
+  // Best Feasible Path (Rank 1 / Blue #2563EB) vs 2nd Best Feasible Path (Rank 2 / Green #10B981)
+  let baseColor = isRank1 ? '#2563EB' : '#10B981';
+  let glowColor = isRank1 ? '#3B82F6' : '#34D399';
+
+  if (isMissionRerouted) {
+    baseColor = '#2563EB';
+    glowColor = '#3B82F6';
+  }
+
+  const lineWidth = 7.5;
+  const lineOpacity = 1.0;
+  const glowWidth = 18;
+  const glowOpacity = 0.45;
+
+  let prob = activeOption.disruptionProbability;
+  if (prob === undefined && activeOption.corridorSegmentIds && activeOption.corridorSegmentIds.length > 0) {
+    const exp = calculateRouteModelAExposureFromCache(activeOption.corridorSegmentIds, modelAPredictions);
+    prob = exp.max_probability;
+  }
+  prob = prob ?? 0;
+
+  features.push({
+    type: 'Feature',
+    geometry: {
+      type: 'LineString',
+      coordinates: toGeoJSONLineString(activeOption.geometry),
+    },
+    properties: {
+      option_id: activeOption.id,
+      mission_id: activeOption.missionId,
+      route_name: activeOption.routeName || (isRank1 ? 'Primary Best Feasible Route' : '2nd Best Feasible Alternative Route'),
+      tier_label: isRank1 ? 'Best Feasible Path' : '2nd Best Feasible Path',
+      route_number: activeOption.routeNumber,
+      route_rank: activeOption.routeRank,
+      is_selected: true,
+      is_rank_1: isRank1,
+      color: baseColor,
+      glow_color: glowColor,
+      casing_color: '#0f172a',
+      casing_width: lineWidth + 3.0,
+      disruption_probability: prob,
+      line_width: lineWidth,
+      line_opacity: lineOpacity,
+      glow_width: glowWidth,
+      glow_opacity: glowOpacity,
+      predicted_delay_factor: activeOption.predictedDelayFactor,
+      predicted_eta_minutes: activeOption.predictedEtaMinutes,
+      osrm_duration_minutes: activeOption.osrmDurationMinutes,
+      distance_km: activeOption.distanceKm,
+      route_source: activeOption.routeSource || 'GRAPH',
+    },
+  });
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  };
+}
+
+/**
  * 5. Selected Mission Route GeoJSON (Single highlighted route with prominent emphasis)
+ * Reflects Model A disruption probability:
+ * High (>= 80%): Red (#DC2626)
+ * Elevated (>= 50%): Orange (#EA580C)
+ * Less (< 50%): Blue (#2563EB)
+ * When rerouted: Royal Blue (#2563EB) as the active main route!
  */
 export function createSelectedMissionRouteGeoJSON(
   selectedMission: ReliefMission | null | undefined,
-  fleetRoutes: Record<string, RouteDefinition>
+  fleetRoutes: Record<string, RouteDefinition> = FLEET_ROUTES,
+  modelAPredictions: Record<string, ModelAPrediction> = {}
 ): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   if (!selectedMission) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+
+  // When a mission is SUGGESTED with multiple route options and NOT rerouted, the Model B route options layer
+  // renders both candidate routes.
+  const hasRouteOptions = Boolean(selectedMission.routeOptions && selectedMission.routeOptions.length > 0);
+  if (selectedMission.status === 'SUGGESTED' && !selectedMission.isRerouted && hasRouteOptions) {
     return { type: 'FeatureCollection', features: [] };
   }
 
@@ -328,6 +565,34 @@ export function createSelectedMissionRouteGeoJSON(
 
   if (!rawCoords || rawCoords.length < 2) {
     return { type: 'FeatureCollection', features: [] };
+  }
+
+  let color = '#2563EB'; // Royal Blue
+  let glowColor = '#3B82F6';
+  let prob = 0;
+
+  if (selectedMission.isRerouted) {
+    // When rerouted, the route becomes the authoritative main route -> Royal Blue!
+    color = '#2563EB';
+    glowColor = '#3B82F6';
+    prob = selectedMission.disruptionProbability ?? selectedMission.reroutedDisruptionProbability ?? 0.12;
+  } else {
+    // Before reroute: determine color based on Model A disruption risk probability
+    prob = selectedMission.disruptionProbability ?? (
+      selectedMission.corridorSegmentIds && selectedMission.corridorSegmentIds.length > 0
+        ? calculateRouteModelAExposureFromCache(selectedMission.corridorSegmentIds, modelAPredictions).max_probability
+        : getAuthoritativeMissionExposure(selectedMission, modelAPredictions, NER_SEGMENTS).max_probability
+    );
+    if (prob >= 0.80) {
+      color = '#DC2626'; // High probability: Red
+      glowColor = '#EF4444';
+    } else if (prob >= 0.50) {
+      color = '#EA580C'; // Elevated probability: Orange
+      glowColor = '#F97316';
+    } else {
+      color = '#2563EB'; // Less probability: Blue
+      glowColor = '#3B82F6';
+    }
   }
 
   return {
@@ -346,6 +611,10 @@ export function createSelectedMissionRouteGeoJSON(
           status: selectedMission.status,
           corridor_name: selectedMission.suggestedDetour || selectedMission.destinationName,
           distance_km: selectedMission.routeDistanceKm || 0,
+          is_rerouted: Boolean(selectedMission.isRerouted),
+          color,
+          glowColor,
+          disruption_probability: prob,
         },
       },
     ],
@@ -392,6 +661,304 @@ export function createRoadStatusGeoJSON(
         description: disruption?.description || '',
         lhz_level: seg.bhuvan_lhz_level,
         max_weight: seg.max_weight_limit,
+      },
+    };
+  });
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  };
+}
+
+/**
+ * Resolves authentic, high-resolution curved road coordinates for each segment
+ * from verified OSRM highway traces. Replaces coarse straight chords with actual road bends.
+ */
+export function getSegmentCurvedCoordinates(
+  segmentId: string,
+  fallbackCoords: [number, number][]
+): [number, number][] {
+  switch (segmentId) {
+    case 'SEG-SIL-KOL':
+      // Silchar -> Kolasib (NH-306): 3,200+ GPS points following mountain curves
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-SUG-01']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-SUG-01'].coordinates;
+      }
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-MZ-04']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-MZ-04'].coordinates;
+      }
+      break;
+
+    case 'SEG-HAF-SIL':
+      // Silchar -> Harangajao -> Haflong (NH-27): 3,500+ GPS points following Barail ridge
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-AS-03']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-AS-03'].coordinates;
+      }
+      break;
+
+    case 'SEG-DIM-KOH-MAIN':
+      // Dimapur -> Chumukedima -> Zubza -> Kohima (NH-29): 3,000+ points on mountain highway
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-SUG-02']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-SUG-02'].coordinates;
+      }
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-NL-01']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-NL-01'].coordinates;
+      }
+      break;
+
+    case 'SEG-DIM-WOK':
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-NL-02']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-NL-02'].coordinates.slice(0, 1800);
+      }
+      break;
+
+    case 'SEG-WOK-KOH':
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-NL-02']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-NL-02'].coordinates.slice(1700);
+      }
+      break;
+
+    case 'SEG-GHY-SHL':
+      // Guwahati -> Nongpoh -> Shillong (NH-106): 4,341 verified road-following curve points
+      if (SHILLONG_PRIMARY_ROUTE_COORDS?.length >= 2) {
+        return SHILLONG_PRIMARY_ROUTE_COORDS;
+      }
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-ML-01']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-ML-01'].coordinates.slice(0, 2800);
+      }
+      break;
+
+    case 'SEG-ML-SHL-BYPASS':
+      // Guwahati -> Umiam East Ridge Bypass -> Shillong (SH-8 / Bhoirymbong): 5,438 verified curve points
+      if (SHILLONG_BYPASS_ROUTE_COORDS?.length >= 2) {
+        return SHILLONG_BYPASS_ROUTE_COORDS;
+      }
+      break;
+
+    case 'SEG-SHL-JOW':
+      // Shillong -> Mawryngkneng -> Jowai (NH-6)
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-ML-02']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-ML-02'].coordinates.slice(0, 2200);
+      }
+      break;
+
+    case 'SEG-JOW-SIL':
+      // Jowai -> Sonapur Tunnel -> Badarpur -> Silchar (NH-6)
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-ML-02']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-ML-02'].coordinates.slice(2000);
+      }
+      break;
+
+    case 'SEG-GHY-NAG':
+      // Guwahati -> Jagiroad -> Roha -> Nagaon (NH-27 4-Lane)
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-AS-01']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-AS-01'].coordinates.slice(0, 2400);
+      }
+      break;
+
+    case 'SEG-NAG-HAF':
+      // Nagaon -> Lumding -> Maibang -> Haflong (NH-27 Lumding section)
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-AS-01']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-AS-01'].coordinates.slice(2200);
+      }
+      break;
+
+    case 'SEG-NAG-DIM':
+      // Nagaon -> Dabaka -> Diphu Spur -> Dimapur (NH-29)
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-NL-01']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-NL-01'].coordinates;
+      }
+      break;
+
+    case 'SEG-KOH-IMP':
+      // Kohima -> Mao Gate -> Senapati -> Imphal (NH-2)
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-MN-01']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-MN-01'].coordinates;
+      }
+      break;
+
+    case 'SEG-KOL-AIZ':
+      // Kolasib -> Kawnpui -> Aizawl (NH-306)
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-MZ-04']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-MZ-04'].coordinates.slice(1500);
+      }
+      break;
+
+    case 'SEG-SK-TEESTA':
+      // Gangtok -> Singtam -> 29th Mile Teesta Canyon (NH-10): 3,200+ GPS points following mountain curves
+      if (OSRM_PRECOMPUTED_ROUTES['MISSION-SK-02']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ROUTES['MISSION-SK-02'].coordinates;
+      }
+      break;
+
+    case 'SEG-SK-EAST':
+      // Gangtok -> Pakyong -> Rhenock -> Lava -> Kalimpong Bypass (NH-717A)
+      if (OSRM_PRECOMPUTED_ALTERNATIVES['SK-MAN-002']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ALTERNATIVES['SK-MAN-002'].coordinates;
+      }
+      break;
+
+    case 'SEG-AR-TAW-SELA':
+      // Guwahati -> Tezpur -> Bomdila -> Sela Pass -> Tawang (NH-13): 14,500+ GPS points
+      if (tawangSelaRoute?.coordinates?.length) {
+        return tawangSelaRoute.coordinates as [number, number][];
+      }
+      break;
+
+    case 'SEG-AR-TAW-KAL':
+      // Guwahati -> Orang -> Kalaktang -> Rupa -> Tawang Bypass: 17,600+ GPS points
+      if (OSRM_PRECOMPUTED_ALTERNATIVES['AR-TAW-001']?.coordinates?.length) {
+        return OSRM_PRECOMPUTED_ALTERNATIVES['AR-TAW-001'].coordinates;
+      }
+      break;
+
+    default:
+      break;
+  }
+
+  return fallbackCoords;
+}
+
+/**
+ * 6B. Model A Disruption Risk Overlay GeoJSON (LineStrings)
+ * Generates an overlay representing predictive hazard probability from Model A.
+ * Strictly traces proper road curves along authentic highway geometry.
+ * When a mission is focused, strictly maps the relevant segment on the road itself used for that mission,
+ * avoiding arbitrary lines across the rest of the map.
+ */
+export function createModelARiskGeoJSON(
+  segments: Segment[],
+  modelAPredictions: Record<string, ModelAPrediction> = {},
+  disruptions: Record<string, SegmentIncident> = {},
+  activeMissionSegmentIds?: Set<string> | string[],
+  activeMission?: ReliefMission | null,
+  _fleetRoutes: Record<string, RouteDefinition> = FLEET_ROUTES
+): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  const activeSet = activeMissionSegmentIds
+    ? activeMissionSegmentIds instanceof Set
+      ? activeMissionSegmentIds
+      : new Set(activeMissionSegmentIds)
+    : new Set<string>();
+
+  const isMissionMode = Boolean(activeMission || (activeSet && activeSet.size > 0));
+
+  const features: GeoJSON.Feature<GeoJSON.LineString>[] = segments.map((seg) => {
+    const pred = modelAPredictions[seg.id];
+    const prob = pred ? Number(pred.probability) : 0;
+    const riskBand = pred?.risk_band || (prob >= 0.8 ? 'HIGH' : prob >= 0.5 ? 'ELEVATED' : prob >= 0.3 ? 'MODERATE' : 'LOW');
+    const isActiveMissionSeg = activeSet.has(seg.id);
+
+    // Operational road status (distinct from Model A predictive risk)
+    const disruption = disruptions[seg.id];
+    let operationalStatus = 'OPEN';
+    let operationalColor = '#16A34A';
+    if (disruption?.status === 'TOTAL_BLOCKAGE') {
+      operationalStatus = 'BLOCKED';
+      operationalColor = '#DC2626';
+    } else if (disruption?.status === 'SINGLE_LANE_PASSABLE' || seg.bhuvan_lhz_level >= 4) {
+      operationalStatus = 'DEGRADED';
+      operationalColor = '#F59E0B';
+    }
+
+    // CRITICAL: Strictly render THIS SPECIFIC SEGMENT using its own authentic road coordinates.
+    // NEVER replace an individual segment's geometry with the entire multi-segment mission route!
+    const rawCoords = getSegmentCurvedCoordinates(seg.id, seg.coordinates);
+
+    // Predictive risk color matching risk band
+    let riskColor = '#2563EB'; // Nominal / low risk (authoritative blue)
+    if (riskBand === 'HIGH' || prob >= 0.80) {
+      riskColor = '#DC2626'; // High risk: Vibrant Red
+    } else if (riskBand === 'ELEVATED' || prob >= 0.50) {
+      riskColor = '#EA580C'; // Elevated risk: High-visibility Tactical Orange
+    }
+
+    // Predictive risk line styling:
+    // Model A risk overlay ONLY applies to segments that have genuine elevated/high disruption risk (prob >= 0.50).
+    // Nominal / low risk segments MUST NOT have an orange overlay, keeping the underlying mission route blue!
+    let riskWidth = 0;
+    let riskOpacity = 0;
+    let glowWidth = 0;
+    let glowOpacity = 0;
+
+    const hasElevatedRisk = Boolean(pred && (prob >= 0.50 || riskBand === 'ELEVATED' || riskBand === 'HIGH' || pred.prediction === 1));
+
+    if (isMissionMode) {
+      // In Mission Mode: Only show overlay for segments belonging to the active mission corridor
+      // CRITICAL: When the mission is rerouted, the active mission's bypass corridor is the authoritative safe route (in royal blue).
+      const isReroutedBypass = Boolean(activeMission?.isRerouted && isActiveMissionSeg);
+      const isSuggestedCandidateMode = Boolean(
+        activeMission?.status === 'SUGGESTED' &&
+        ((activeMission?.routeOptions?.length || 0) > 0 || (activeMission as any)?.assignedRouteId)
+      );
+
+      if (isActiveMissionSeg && hasElevatedRisk && !isReroutedBypass && !isSuggestedCandidateMode) {
+        if (riskBand === 'HIGH' || prob >= 0.80) {
+          riskWidth = 6.8;
+          riskOpacity = 0.95;
+          glowWidth = 14;
+          glowOpacity = 0.40;
+        } else {
+          // Elevated risk (0.50 <= prob < 0.80)
+          riskWidth = 6.0;
+          riskOpacity = 0.90;
+          glowWidth = 12;
+          glowOpacity = 0.30;
+        }
+      } else {
+        // Either not an elevated risk segment, or outside active mission corridor, or safe rerouted bypass -> strictly 0 overlay
+        riskWidth = 0;
+        riskOpacity = 0;
+        glowWidth = 0;
+        glowOpacity = 0;
+      }
+    } else {
+      // In General Network View: show elevated/high risk segments across the network
+      if (hasElevatedRisk) {
+        if (riskBand === 'HIGH' || prob >= 0.80) {
+          riskWidth = 5.5;
+          riskOpacity = 0.90;
+          glowWidth = 12;
+          glowOpacity = 0.35;
+        } else {
+          riskWidth = 4.5;
+          riskOpacity = 0.80;
+          glowWidth = 10;
+          glowOpacity = 0.25;
+        }
+      } else {
+        riskWidth = 0;
+        riskOpacity = 0;
+        glowWidth = 0;
+        glowOpacity = 0;
+      }
+    }
+
+    return {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: toGeoJSONLineString(rawCoords),
+      },
+      properties: {
+        segment_id: seg.id,
+        segment_name: seg.name,
+        highway: seg.highway,
+        model_a_probability: prob,
+        model_a_probability_pct: Math.round(prob * 100),
+        model_a_risk_band: riskBand,
+        model_a_threshold: pred?.threshold ?? 0.50,
+        model_version: pred?.model_version || '3.4.1-baseline-xgb',
+        prediction_time: pred?.prediction_time || null,
+        operational_status: operationalStatus,
+        operational_color: operationalColor,
+        is_active_mission_segment: isActiveMissionSeg,
+        risk_color: riskColor,
+        risk_width: riskWidth,
+        risk_opacity: riskOpacity,
+        glow_width: glowWidth,
+        glow_opacity: glowOpacity,
+        has_prediction: !!pred,
       },
     };
   });
@@ -573,23 +1140,50 @@ export function createCommunityBoundariesGeoJSON(
 /**
  * 9. Warehouses & Depots GeoJSON (Points with SVG icons)
  */
-export function createWarehousesGeoJSON(): GeoJSON.FeatureCollection<GeoJSON.Point> {
-  const hubs = Object.values(NER_NODES).filter((n) => n.isHub);
+export function createWarehousesGeoJSON(
+  hubs?: ResponseHub[],
+  inventory?: HubInventory[],
+  vehicles?: VehicleTelemetry[]
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  const sourceHubs: {
+    id: string;
+    name: string;
+    code?: string;
+    state: string;
+    coordinates: [number, number];
+    status?: string;
+    type?: string;
+    elevationMeters?: number;
+  }[] = (hubs && hubs.length > 0)
+    ? hubs
+    : Object.values(NER_NODES).filter((n) => n.isHub);
 
-  const features: GeoJSON.Feature<GeoJSON.Point>[] = hubs.map((h) => ({
-    type: 'Feature',
-    geometry: {
-      type: 'Point',
-      coordinates: toGeoJSONCoords(h.coordinates),
-    },
-    properties: {
-      hub_id: h.id,
-      name: h.name,
-      state: h.state,
-      elevation: h.elevationMeters,
-      icon: 'icon-warehouse',
-    },
-  }));
+  const features: GeoJSON.Feature<GeoJSON.Point>[] = sourceHubs.map((h) => {
+    const hubInv = inventory ? inventory.filter((i) => i.hubId === h.id) : [];
+    const hubVeh = vehicles ? vehicles.filter((v) => v.hub_id === h.id) : [];
+    const availableVehCount = hubVeh.filter((v) => v.status === 'AVAILABLE').length;
+
+    return {
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: toGeoJSONCoords(h.coordinates),
+      },
+      properties: {
+        hub_id: h.id,
+        name: h.name,
+        code: h.code || h.id.toUpperCase(),
+        state: h.state,
+        status: h.status || 'OPERATIONAL',
+        type: h.type || 'REGIONAL',
+        vehicles_count: hubVeh.length,
+        available_vehicles_count: availableVehCount,
+        resources_count: hubInv.length,
+        elevation: h.elevationMeters ?? 100,
+        icon: 'icon-warehouse',
+      },
+    };
+  });
 
   return {
     type: 'FeatureCollection',

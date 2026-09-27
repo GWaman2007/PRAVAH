@@ -1,5 +1,5 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission, RealtimeHazardPolygon, DraftIncidentPlot } from '../types';
+import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission, MissionRouteOption, RealtimeHazardPolygon, DraftIncidentPlot, ResponseHub, HubInventory, InventoryTransaction, ModelAPrediction, ModelARiskBand } from '../types';
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const supabasePublishableKey = (
@@ -431,6 +431,13 @@ export async function fetchCloudMissions(): Promise<ReliefMission[] | null> {
       routeDurationMinutes: row.route_duration_minutes ? Number(row.route_duration_minutes) : undefined,
       routeStatus: row.route_status || row.routeStatus,
       routeGeometry: Array.isArray(row.route_geometry) ? row.route_geometry : undefined,
+      selectedRouteOptionId: row.selected_route_option_id || row.selectedRouteOptionId || undefined,
+      isRerouted: Boolean(row.is_rerouted),
+      rerouteReason: row.reroute_reason || undefined,
+      reroutedAt: row.rerouted_at || undefined,
+      reroutedFromCoords: Array.isArray(row.rerouted_from_coords) ? row.rerouted_from_coords : undefined,
+      corridorSegmentIds: Array.isArray(row.corridor_segment_ids) ? row.corridor_segment_ids : (row.corridorSegmentIds || undefined),
+      previousRouteGeometry: Array.isArray(row.previous_route_geometry) ? row.previous_route_geometry : undefined,
     }));
   } catch (err) {
     console.warn('⚠️ [Supabase] Exception fetching missions:', err);
@@ -467,7 +474,14 @@ export async function upsertCloudMission(mission: ReliefMission): Promise<boolea
       route_distance_km: mission.routeDistanceKm || null,
       route_duration_minutes: mission.routeDurationMinutes || null,
       route_status: mission.routeStatus || null,
-      route_geometry: null,
+      route_geometry: mission.routeGeometry && mission.routeGeometry.length > 0 ? mission.routeGeometry : null,
+      selected_route_option_id: mission.selectedRouteOptionId || null,
+      is_rerouted: Boolean(mission.isRerouted),
+      reroute_reason: mission.rerouteReason || null,
+      rerouted_at: mission.reroutedAt || null,
+      rerouted_from_coords: mission.reroutedFromCoords || null,
+      corridor_segment_ids: mission.corridorSegmentIds && mission.corridorSegmentIds.length > 0 ? mission.corridorSegmentIds : null,
+      previous_route_geometry: mission.previousRouteGeometry || null,
       updated_at: new Date().toISOString(),
     };
 
@@ -539,6 +553,69 @@ export function broadcastCloudMissionClosedOut(missionId: string, communityId: s
       event: 'MISSION_CLOSED_OUT',
       payload: { missionId, communityId, vehicleId, closedAt: new Date().toISOString() },
     });
+  }
+}
+
+export async function upsertCloudMissionRouteOptions(options: MissionRouteOption[]): Promise<boolean> {
+  if (!supabase || !options || options.length === 0) return false;
+  try {
+    const rows = options.map((opt) => ({
+      id: opt.id,
+      mission_id: opt.missionId,
+      route_number: opt.routeNumber,
+      route_rank: opt.routeRank,
+      route_id: opt.routeId,
+      route_name: opt.routeName || null,
+      corridor_segment_ids: opt.corridorSegmentIds || [],
+      geometry: opt.geometry,
+      distance_km: opt.distanceKm,
+      osrm_duration_minutes: opt.osrmDurationMinutes,
+      predicted_delay_factor: opt.predictedDelayFactor,
+      predicted_eta_minutes: opt.predictedEtaMinutes,
+      eta_overhead_minutes: opt.etaOverheadMinutes,
+      predicted_preferred_route: opt.predictedPreferredRoute,
+      model_version: opt.modelVersion,
+    }));
+    const { error } = await supabase.from('mission_route_options').upsert(rows, { onConflict: 'id' });
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert mission_route_options error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting mission_route_options:', err);
+    return false;
+  }
+}
+
+export async function fetchCloudMissionRouteOptions(missionId: string): Promise<MissionRouteOption[]> {
+  if (!supabase || !missionId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('mission_route_options')
+      .select('*')
+      .eq('mission_id', missionId)
+      .order('route_rank', { ascending: true });
+    if (error || !data) return [];
+    return data.map((r: any) => ({
+      id: r.id,
+      missionId: r.mission_id,
+      routeNumber: r.route_number,
+      routeRank: r.route_rank,
+      routeId: r.route_id,
+      routeName: r.route_name || undefined,
+      corridorSegmentIds: Array.isArray(r.corridor_segment_ids) ? r.corridor_segment_ids : undefined,
+      geometry: r.geometry,
+      distanceKm: Number(r.distance_km),
+      osrmDurationMinutes: Number(r.osrm_duration_minutes),
+      predictedDelayFactor: Number(r.predicted_delay_factor),
+      predictedEtaMinutes: Number(r.predicted_eta_minutes),
+      etaOverheadMinutes: Number(r.eta_overhead_minutes),
+      predictedPreferredRoute: Boolean(r.predicted_preferred_route),
+      modelVersion: r.model_version,
+    }));
+  } catch {
+    return [];
   }
 }
 
@@ -709,4 +786,326 @@ export async function deleteCloudDraftReport(draftId: string): Promise<boolean> 
   }
 }
 
+/**
+ * -------------------------------------------------------------
+ * 7. Response Hubs, Hub Inventory & Transactions API
+ * -------------------------------------------------------------
+ */
+export async function fetchCloudHubs(): Promise<ResponseHub[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('response_hubs')
+      .select('*')
+      .order('name', { ascending: true });
 
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch response hubs:', error.message);
+      return null;
+    }
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      code: row.code,
+      state: row.state,
+      district: row.district,
+      city: row.city || undefined,
+      address: row.address || undefined,
+      coordinates: Array.isArray(row.coordinates) ? (row.coordinates as [number, number]) : [26.14, 91.73],
+      type: row.type || 'REGIONAL',
+      status: row.status || 'OPERATIONAL',
+      storageCapacityKg: Number(row.storage_capacity_kg ?? 50000),
+      coldStorageCapacityKg: Number(row.cold_storage_capacity_kg ?? 10000),
+      fuelStorageCapacityLitres: Number(row.fuel_storage_capacity_litres ?? 25000),
+      sourceType: row.source_type || 'OFFICIAL_REFERENCE',
+      sourceNote: row.source_note || undefined,
+      routingNodeId: row.routing_node_id || undefined,
+      routingSegmentId: row.routing_segment_id || undefined,
+      createdAt: row.created_at || new Date().toISOString(),
+      updatedAt: row.updated_at || new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching response hubs:', err);
+    return null;
+  }
+}
+
+export async function upsertCloudHub(hub: ResponseHub): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: hub.id,
+      name: hub.name,
+      code: hub.code,
+      state: hub.state,
+      district: hub.district,
+      city: hub.city || null,
+      address: hub.address || null,
+      coordinates: hub.coordinates,
+      type: hub.type,
+      status: hub.status,
+      storage_capacity_kg: hub.storageCapacityKg,
+      cold_storage_capacity_kg: hub.coldStorageCapacityKg,
+      fuel_storage_capacity_litres: hub.fuelStorageCapacityLitres,
+      source_type: hub.sourceType || 'OFFICIAL_REFERENCE',
+      source_note: hub.sourceNote || null,
+      routing_node_id: hub.routingNodeId || null,
+      routing_segment_id: hub.routingSegmentId || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('response_hubs').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert hub error:', error.message);
+      return false;
+    }
+
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'HUB_UPDATED',
+        payload: { hub },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting hub:', err);
+    return false;
+  }
+}
+
+export async function fetchCloudInventory(hubId?: string): Promise<HubInventory[] | null> {
+  if (!supabase) return null;
+  try {
+    let query = supabase.from('hub_inventory').select('*').order('priority', { ascending: false });
+    if (hubId) {
+      query = query.eq('hub_id', hubId);
+    }
+    const { data, error } = await query;
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch hub inventory:', error.message);
+      return null;
+    }
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      hubId: row.hub_id,
+      resourceType: row.resource_type,
+      resourceName: row.resource_name,
+      quantity: Number(row.quantity),
+      unit: row.unit,
+      minimumStock: Number(row.minimum_stock ?? 0),
+      maximumCapacity: row.maximum_capacity != null ? Number(row.maximum_capacity) : undefined,
+      reservedQuantity: Number(row.reserved_quantity ?? 0),
+      priority: row.priority || 'MEDIUM',
+      expiryDate: row.expiry_date || undefined,
+      lastUpdated: row.last_updated || new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching hub inventory:', err);
+    return null;
+  }
+}
+
+export async function upsertCloudInventory(item: HubInventory): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: item.id,
+      hub_id: item.hubId,
+      resource_type: item.resourceType,
+      resource_name: item.resourceName,
+      quantity: item.quantity,
+      unit: item.unit,
+      minimum_stock: item.minimumStock,
+      maximum_capacity: item.maximumCapacity ?? null,
+      reserved_quantity: item.reservedQuantity,
+      priority: item.priority || 'MEDIUM',
+      expiry_date: item.expiryDate || null,
+      last_updated: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('hub_inventory').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert hub inventory error:', error.message);
+      return false;
+    }
+
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'HUB_INVENTORY_UPDATED',
+        payload: { item },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting hub inventory:', err);
+    return false;
+  }
+}
+
+export async function fetchCloudTransactions(hubId?: string): Promise<InventoryTransaction[] | null> {
+  if (!supabase) return null;
+  try {
+    let query = supabase.from('inventory_transactions').select('*').order('timestamp', { ascending: false }).limit(100);
+    if (hubId) {
+      query = query.eq('hub_id', hubId);
+    }
+    const { data, error } = await query;
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch inventory transactions:', error.message);
+      return null;
+    }
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      hubId: row.hub_id,
+      inventoryId: row.inventory_id,
+      missionId: row.mission_id || undefined,
+      type: row.type,
+      quantity: Number(row.quantity),
+      previousQuantity: Number(row.previous_quantity),
+      newQuantity: Number(row.new_quantity),
+      previousReserved: Number(row.previous_reserved),
+      newReserved: Number(row.new_reserved),
+      performedBy: row.performed_by || undefined,
+      note: row.note || undefined,
+      timestamp: row.timestamp,
+    }));
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching transactions:', err);
+    return null;
+  }
+}
+
+export async function insertCloudTransaction(tx: InventoryTransaction): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: tx.id,
+      hub_id: tx.hubId,
+      inventory_id: tx.inventoryId,
+      mission_id: tx.missionId || null,
+      type: tx.type,
+      quantity: tx.quantity,
+      previous_quantity: tx.previousQuantity,
+      new_quantity: tx.newQuantity,
+      previous_reserved: tx.previousReserved,
+      new_reserved: tx.newReserved,
+      performed_by: tx.performedBy || null,
+      note: tx.note || null,
+      timestamp: tx.timestamp || new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('inventory_transactions').insert(row);
+    if (error) {
+      console.warn('⚠️ [Supabase] Insert inventory transaction error:', error.message);
+      return false;
+    }
+
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'INVENTORY_TRANSACTION_CREATED',
+        payload: { transaction: tx },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception inserting transaction:', err);
+    return false;
+  }
+}
+
+/**
+ * Model A Road Disruption Risk Predictions Persistence
+ */
+export async function fetchCloudModelAPredictions(): Promise<Record<string, ModelAPrediction> | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('model_a_predictions')
+      .select('*')
+      .order('prediction_time', { ascending: false });
+
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch Model A predictions:', error.message);
+      return null;
+    }
+    if (!data) return {};
+
+    const map: Record<string, ModelAPrediction> = {};
+    for (const row of data) {
+      if (!map[row.segment_id]) {
+        map[row.segment_id] = {
+          id: row.id,
+          segment_id: row.segment_id,
+          prediction_time: row.prediction_time,
+          horizon_time: row.horizon_time,
+          probability: Number(row.probability),
+          prediction: Number(row.prediction) as 0 | 1,
+          threshold: Number(row.threshold || 0.5),
+          risk_band: row.risk_band as ModelARiskBand,
+          interpretation: row.interpretation || `Road disruption risk: ${(Number(row.probability) * 100).toFixed(1)}%`,
+          feature_snapshot: row.feature_snapshot,
+          model_version: row.model_version || 'model_a_baseline_xgb_v1',
+          source: (row.source as any) || 'MODEL_A_INFERENCE',
+          created_at: row.created_at,
+        };
+      }
+    }
+    return map;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching Model A predictions:', err);
+    return null;
+  }
+}
+
+export async function upsertCloudModelAPrediction(pred: ModelAPrediction): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: pred.id || `${pred.segment_id}_${new Date(pred.prediction_time).getTime() || Date.now()}`,
+      segment_id: pred.segment_id,
+      prediction_time: pred.prediction_time,
+      horizon_time: pred.horizon_time || new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+      probability: pred.probability,
+      prediction: pred.prediction,
+      threshold: pred.threshold,
+      risk_band: pred.risk_band,
+      feature_snapshot: pred.feature_snapshot,
+      model_version: pred.model_version,
+      source: pred.source,
+      created_at: pred.created_at || new Date().toISOString(),
+    };
+    const { error } = await supabase
+      .from('model_a_predictions')
+      .upsert(row, { onConflict: 'id' });
+
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert Model A prediction error:', error.message);
+      return false;
+    }
+
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'MODEL_A_PREDICTION_UPDATED',
+        payload: { prediction: pred },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting Model A prediction:', err);
+    return false;
+  }
+}

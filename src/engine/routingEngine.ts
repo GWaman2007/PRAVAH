@@ -229,6 +229,13 @@ export function findKShortestPaths(
         const totalNodes = [...rootPathNodes.slice(0, -1), ...spurPath.nodes];
         const totalSegmentIds = [...rootPathSegmentIds, ...spurPath.segmentIds];
 
+        // Strict Yen's algorithm constraint: paths must be simple (acyclic)
+        const isAcyclic =
+          new Set(totalNodes).size === totalNodes.length &&
+          new Set(totalSegmentIds).size === totalSegmentIds.length;
+
+        if (!isAcyclic) continue;
+
         let totalDist = 0;
         for (const sId of totalSegmentIds) {
           const seg = allSegments.find((s) => s.id === sId);

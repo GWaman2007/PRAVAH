@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "start": "npm run dev",
-    "server": "tsx server/index.ts",
+    "server": "tsx watch server/index.ts",
     "client": "vite",
-    "dev": "concurrently -k \"npm run server\" \"npm run client\"",
+    "dev": "concurrently -k \"npm run server\" \"npm run client\" \"npm run model-a:serve\"",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "tsx test_all_engines.mjs"
+    "test": "tsx test_all_engines.mjs",
+    "model-a:serve": "if [ -x /opt/anaconda3/bin/python3 ]; then exec /opt/anaconda3/bin/python3 model-services/model-a/api.py; else exec python3 model-services/model-a/api.py; fi",
+    "model-a:predict": "if [ -x /opt/anaconda3/bin/python3 ]; then exec /opt/anaconda3/bin/python3 model-services/model-a/inference/predict_model_a.py \"$@\"; else exec python3 model-services/model-a/inference/predict_model_a.py \"$@\"; fi"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

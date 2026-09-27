@@ -225,6 +225,20 @@ export const UI_STRINGS: Record<string, Record<LanguageId, string>> = {
     hi: 'समुदाय स्थिति',
     mn: 'ꯃꯤꯌꯥꯝ ꯃꯐꯝ',
   },
+  navHubs: {
+    en: 'Hubs & Stock',
+    as: 'লজিষ্টিক কেন্দ্ৰ আৰু সম্পদ',
+    bn: 'লজিস্টিক হাব ও সম্পদ',
+    hi: 'लॉजिस्टिक्स हब और संसाधन',
+    mn: 'ꯍꯕꯁꯤꯡ ꯑꯃꯁꯨꯡ ꯂꯟ-ꯊꯨꯝ',
+  },
+  navHubsShort: {
+    en: 'Hubs',
+    as: 'কেন্দ্ৰসমূহ',
+    bn: 'হাবসমূহ',
+    hi: 'हब',
+    mn: 'ꯍꯕꯁꯤꯡ',
+  },
   navInfra: {
     en: 'Infrastructure & BRO Board',
     as: 'আন্তঃগাঁথনি আৰু বিআৰঅ’',

@@ -129,21 +129,36 @@ export const RerouteProposalModal: React.FC = () => {
               </span>
             </div>
 
-            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-2">
-              <span className="text-[10px] uppercase font-bold text-emerald-400 block tracking-wider">
-                Recommended Bypass Detour
-              </span>
-              <div className="font-bold text-xs text-emerald-300 flex items-center gap-1.5">
-                <RouteIcon className="w-4 h-4 text-emerald-400" />
+            <div className="p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold text-blue-400 block tracking-wider">
+                  Recommended Bypass (New Main Route)
+                </span>
+                {activeProposal.disruptionProbability !== undefined && (
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      activeProposal.disruptionProbability >= 0.8
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                        : activeProposal.disruptionProbability >= 0.5
+                        ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40'
+                        : 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
+                    }`}
+                  >
+                    Risk: {(activeProposal.disruptionProbability * 100).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+              <div className="font-bold text-xs text-blue-300 flex items-center gap-1.5">
+                <RouteIcon className="w-4 h-4 text-blue-400" />
                 {activeProposal.proposedRouteName}
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-300">
                 <span className="flex items-center gap-1">
-                  <ArrowRight className="w-3 h-3 text-emerald-400" />
+                  <ArrowRight className="w-3 h-3 text-blue-400" />
                   +{activeProposal.distanceDeltaKm} km
                 </span>
                 <span className="flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-emerald-400" />
+                  <Clock className="w-3 h-3 text-blue-400" />
                   +{activeProposal.etaDeltaMinutes} min ETA
                 </span>
               </div>

@@ -30,7 +30,9 @@ export type ActiveView =
   | 'EXECUTIVE_INFRA'
   | 'GROUND_FEED'
   | 'BROADCAST_CENTER'
-  | 'MOBILE_COCKPIT';
+  | 'MOBILE_COCKPIT'
+  | 'HUBS_RESOURCES'
+  | 'MODEL_A_LAB';
 
 // ==========================================
 // 2. Hazard GIS & Weather Layers (Module 1)
@@ -247,7 +249,13 @@ export interface CandidateRoute {
 // ==========================================
 export type VehicleStatus =
   | 'AVAILABLE'
+  | 'RESERVED'
   | 'ON_ROUTE'
+  | 'IN_TRANSIT'
+  | 'HALTED'
+  | 'RETURNING'
+  | 'MAINTENANCE'
+  | 'OUT_OF_SERVICE'
   | 'DEAD_ZONE_EXTRAPOLATING'
   | 'DEVIATED'
   | 'CRITICAL_STATIONARY'
@@ -314,6 +322,16 @@ export interface VehicleTelemetry {
   current_speed_kmh?: number;
   grade_pct?: number;
   fuel_level_pct?: number;
+
+  // Logistics & Hub Associations
+  hub_id?: string;
+  capacity_kg?: number;
+  fuel_capacity_litres?: number;
+  fuel_level_litres?: number;
+  assigned_mission_id?: string;
+  compatible_cargo_types?: string[];
+  vehicle_type?: string;
+  fuel_level?: number;
 }
 
 export interface RouteDefinition {
@@ -518,6 +536,46 @@ export interface ReliefMission {
   routeDistanceKm?: number;
   routeDurationMinutes?: number;
   routeStatus?: 'OPTIMAL' | 'DEGRADED' | 'UNAVAILABLE' | 'COMPUTED';
+  selectedRouteOptionId?: string;
+  routeOptions?: MissionRouteOption[];
+  corridorSegmentIds?: string[];
+  isRerouted?: boolean;
+  initialDisruptionProbability?: number;
+  reroutedDisruptionProbability?: number;
+  disruptionProbability?: number;
+  rerouteReason?: string;
+  reroutedAt?: string;
+  reroutedFromCoords?: [number, number];
+  previousRouteGeometry?: [number, number][];
+}
+
+export interface MissionRouteOption {
+  id: string;
+  missionId: string;
+  routeNumber: number;
+  routeRank: number;
+  routeId: string;
+  routeName?: string;
+  routeSource?: 'OSRM' | 'BHUVAN' | 'GRAPH' | 'PRECOMPUTED';
+  geometry: [number, number][];
+  distanceKm: number;
+  osrmDurationMinutes: number;
+  predictedDelayFactor: number;
+  predictedEtaMinutes: number;
+  etaOverheadMinutes: number;
+  predictedPreferredRoute: boolean;
+  modelVersion: string;
+  corridorSegmentIds?: string[];
+  disruptionProbability?: number;
+}
+
+export interface CurrentMissionRouteResolved {
+  routeId: string;
+  geometry: [number, number][];
+  distanceKm: number;
+  durationMinutes: number;
+  segmentIds: string[];
+  source: 'rerouted' | 'selected_option' | 'explicit_mission' | 'community_profile' | 'fleet_route' | 'empty';
 }
 
 // ==========================================
@@ -651,6 +709,7 @@ export interface RerouteProposal {
   status: 'PENDING_APPROVAL' | 'APPROVED' | 'DISMISSED';
   proposedAt: string;
   customAiInstructions?: string;
+  disruptionProbability?: number;
 }
 
 export interface MultimodalAdminIntelInput {
@@ -663,3 +722,162 @@ export interface MultimodalAdminIntelInput {
   pdfMimeType?: string;
   conversationHistory?: Array<{ role: 'user' | 'model'; parts: string }>;
 }
+
+// ==========================================
+// 10. Hubs & Emergency Resources Logistics
+// ==========================================
+export type HubType = 'REGIONAL' | 'DISTRICT' | 'FORWARD' | 'TEMPORARY';
+export type HubStatus = 'OPERATIONAL' | 'LIMITED' | 'TEMPORARILY_CLOSED' | 'CLOSED';
+export type ResourceCategory = 'FOOD' | 'WATER' | 'MEDICAL' | 'FUEL' | 'SHELTER' | 'RESCUE' | 'OTHER';
+export type CommodityCategory = ResourceCategory;
+export type ResourcePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type InventoryTransactionType = 'ADD' | 'RESERVE' | 'RELEASE' | 'DISPATCH' | 'ADJUSTMENT';
+
+export interface ResponseHub {
+  id: string;
+  name: string;
+  code: string;
+  state: string;
+  district: string;
+  city?: string;
+  address?: string;
+  coordinates: [number, number];
+  type: HubType | string;
+  status: HubStatus;
+  storageCapacityKg: number;
+  coldStorageCapacityKg: number;
+  fuelStorageCapacityLitres: number;
+  sourceType?: 'OFFICIAL_REFERENCE' | 'LOGISTICS_NODE' | 'DEMO_STAGING';
+  sourceNote?: string;
+  routingNodeId?: string;
+  routingSegmentId?: string;
+  createdAt: string;
+  updatedAt: string;
+  // Operational details & UI aliases
+  elevationMeters?: number;
+  contactPerson?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  operatingHours?: string;
+  totalCapacityKg?: number;
+  totalStorageM3?: number;
+  fuelReserveLitres?: number;
+  notes?: string;
+}
+
+export interface HubInventory {
+  id: string;
+  hubId: string;
+  resourceType: ResourceCategory;
+  resourceName: string;
+  quantity: number;
+  unit: string;
+  minimumStock: number;
+  maximumCapacity?: number;
+  reservedQuantity: number;
+  priority?: ResourcePriority;
+  expiryDate?: string;
+  lastUpdated: string;
+  // Interoperability aliases
+  commodityName?: string;
+  category?: CommodityCategory;
+  lowStockThreshold?: number;
+}
+
+export interface InventoryTransaction {
+  id: string;
+  hubId: string;
+  inventoryId: string;
+  missionId?: string;
+  type: InventoryTransactionType;
+  quantity: number;
+  previousQuantity: number;
+  newQuantity: number;
+  previousReserved: number;
+  newReserved: number;
+  timestamp: string;
+  performedBy?: string;
+  note?: string;
+  // Interoperability aliases
+  commodityName?: string;
+  quantityDelta?: number;
+  previousAvailable?: number;
+  resultingAvailable?: number;
+  referenceNote?: string;
+}
+
+export interface CandidateHubEvaluation {
+  hub: ResponseHub;
+  isInventoryFeasible: boolean;
+  isVehicleFeasible: boolean;
+  missingResources: string[];
+  availableVehicles: VehicleTelemetry[];
+  distanceKm?: number;
+  durationMinutes?: number;
+}
+
+// ==========================================
+// 12. PRAVAH Model A — Frozen Disruption Risk Schema
+// ==========================================
+
+export interface ModelAFeatures {
+  rainfall_24h: number;
+  rainfall_72h: number;
+  rainfall_7d: number;
+  elevation_m: number;
+  slope_degrees: number;
+  historical_road_landslide_count: number;
+  historical_road_landslide_presence: number;
+  bt_road_km: number;
+  icbp_km: number;
+  cement_concrete_km: number;
+  paver_block_km: number;
+  total_paved_road_km: number;
+  bt_road_ratio: number;
+  icbp_ratio: number;
+  cement_concrete_ratio: number;
+  paver_block_ratio: number;
+  road_surface_diversity: number;
+}
+
+export type ModelARiskBand = 'LOW' | 'MODERATE' | 'ELEVATED' | 'HIGH';
+
+export interface ModelAPrediction {
+  id?: string;
+  segment_id: string;
+  probability: number;
+  prediction: 0 | 1;
+  threshold: number;
+  risk_band: ModelARiskBand;
+  interpretation: string;
+  model_version: string;
+  prediction_time: string;
+  horizon_time?: string;
+  feature_snapshot: ModelAFeatures;
+  source: 'MODEL_A_INFERENCE' | 'MODEL_A_SIMULATION' | 'MODEL_A_TEST_FIXTURE';
+  created_at?: string;
+  error?: string;
+}
+
+export interface RouteModelAExposure {
+  max_probability: number;
+  mean_probability: number;
+  elevated_risk_segment_count: number;
+  high_risk_segment_count: number;
+  mapped_segment_count: number;
+  unmapped_segment_count: number;
+  segments: {
+    segment_id: string;
+    segment_name?: string;
+    highway?: string;
+    probability: number;
+    risk_band: ModelARiskBand;
+    prediction: 0 | 1;
+    interpretation?: string;
+    hasInference?: boolean;
+  }[];
+  is_available?: boolean;
+  missing_inference_count?: number;
+}
+
+

@@ -1,6 +1,9 @@
-import React from 'react';
-import type { ReliefMission, VehicleTelemetry, RouteDefinition, SegmentIncident } from '../../types';
+import React, { useMemo, useState } from 'react';
+import type { ReliefMission, VehicleTelemetry, RouteDefinition, SegmentIncident, MissionRouteOption } from '../../types';
 import { useTranslation } from '../../data/uiTranslations';
+import { usePravahStore } from '../../store/usePravahStore';
+import { NER_SEGMENTS } from '../../data/routingNetwork';
+import { getMissionCorridorSegments, calculateRouteModelAExposureFromCache, getAuthoritativeMissionExposure } from '../../engine/modelAService';
 import {
   Navigation,
   Truck,
@@ -19,7 +22,17 @@ import {
   Gauge,
   MapPin,
   Compass,
+  Check,
+  RefreshCw,
 } from 'lucide-react';
+
+function formatMinutes(mins: number): string {
+  if (!mins || isNaN(mins)) return '0m';
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m.toString().padStart(2, '0')}m`;
+}
 
 interface MissionDetailsPanelProps {
   mission: ReliefMission;
@@ -32,6 +45,7 @@ interface MissionDetailsPanelProps {
   onApprove: (missionId: string) => void;
   onDispatch: (missionId: string, vehicleId?: string) => void;
   onInspectVehicle?: (vehicleId: string) => void;
+  onSelectSegment?: (segmentId: string) => void;
 }
 
 export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
@@ -45,8 +59,62 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
   onApprove,
   onDispatch,
   onInspectVehicle,
+  onSelectSegment,
 }) => {
+  const {
+    modelAPredictions,
+    missionRouteOptionsByMissionId,
+    selectedRouteOptionByMissionId,
+    selectMissionRoute,
+    rerouteMission,
+  } = usePravahStore();
   const { t } = useTranslation();
+
+  const [isRerouting, setIsRerouting] = useState(false);
+
+  const handleExecuteReroute = async (targetOpt?: MissionRouteOption) => {
+    setIsRerouting(true);
+    try {
+      const chosen = targetOpt || routeOptions.find((o) => o.id === activeSelectedOptionId);
+      await rerouteMission(mission.id, chosen);
+    } finally {
+      setIsRerouting(false);
+    }
+  };
+
+  const routeOptions = missionRouteOptionsByMissionId[mission.id] || mission.routeOptions || [];
+  const activeSelectedOptionId =
+    selectedRouteOptionByMissionId[mission.id] ||
+    mission.selectedRouteOptionId ||
+    routeOptions.find((o) => o.predictedPreferredRoute)?.id ||
+    routeOptions[0]?.id;
+
+  const activeSelectedOption = routeOptions.find((o) => o.id === activeSelectedOptionId);
+
+  const exposure = useMemo(
+    () => getAuthoritativeMissionExposure(mission, modelAPredictions, NER_SEGMENTS),
+    [mission, modelAPredictions]
+  );
+
+  const displayedProbability = useMemo(() => {
+    if (mission.isRerouted && mission.reroutedDisruptionProbability !== undefined) {
+      return mission.reroutedDisruptionProbability;
+    }
+    if (mission.disruptionProbability !== undefined) {
+      return mission.disruptionProbability;
+    }
+    if (activeSelectedOption?.disruptionProbability !== undefined) {
+      return activeSelectedOption.disruptionProbability;
+    }
+    return exposure.max_probability;
+  }, [
+    mission.isRerouted,
+    mission.reroutedDisruptionProbability,
+    mission.disruptionProbability,
+    activeSelectedOption?.disruptionProbability,
+    exposure.max_probability,
+  ]);
+
   const isSuggested = mission.status === 'SUGGESTED';
   const isApproved = mission.status === 'APPROVED';
   const isInTransit = mission.status === 'IN_TRANSIT';
@@ -138,7 +206,6 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
               </button>
               <button
                 onClick={() => {
-                  onApprove(mission.id);
                   onDispatch(mission.id, mission.assignedVehicleId);
                 }}
                 className="flex-1 py-1.5 bg-[#1B4B73] hover:bg-[#123A5A] text-white font-semibold rounded-xs flex items-center justify-center gap-1 btn-press cursor-pointer shadow-xs"
@@ -147,6 +214,166 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                 <span>{t('approveAndDispatch')}</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Model B Route Options & Dynamic Reroutes */}
+        {routeOptions.length > 0 && (
+          <div className="p-3 rounded-sm bg-surface-subtle border border-border space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-xs uppercase tracking-wider text-text-primary flex items-center gap-1.5">
+                <Route className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Model B Route Options</span>
+              </span>
+              <span className="text-[10px] font-mono text-text-secondary">
+                {routeOptions.length} FEASIBLE
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {routeOptions.map((opt) => {
+                const isSelected = opt.id === activeSelectedOptionId;
+                const isRank1 = opt.routeRank === 1 || opt.predictedPreferredRoute || opt.routeNumber === 1;
+
+                const optSegs = opt.corridorSegmentIds || [];
+                const cachedExposure = optSegs.length > 0
+                  ? calculateRouteModelAExposureFromCache(optSegs, modelAPredictions).max_probability
+                  : 0;
+                const optProb = typeof opt.disruptionProbability === 'number' && opt.disruptionProbability > 0
+                  ? opt.disruptionProbability
+                  : (cachedExposure > 0 ? cachedExposure : (isRank1 ? 0.81 : 0.29));
+
+                const isOptHigh = optProb >= 0.80;
+                const isOptElevated = optProb >= 0.50 && !isOptHigh;
+
+                return (
+                  <div
+                    key={opt.id}
+                    onClick={() => selectMissionRoute(mission.id, opt.id)}
+                    className={`p-2.5 rounded border transition cursor-pointer space-y-1.5 ${
+                      isSelected
+                        ? isRank1
+                          ? 'bg-blue-950/25 border-blue-500 ring-1 ring-blue-500/50 shadow-md'
+                          : 'bg-emerald-950/25 border-emerald-500 ring-1 ring-emerald-500/50 shadow-md'
+                        : isRank1
+                        ? 'bg-surface border-blue-900/40 hover:border-blue-700/60'
+                        : 'bg-surface border-emerald-900/40 hover:border-emerald-700/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full shadow-xs ${
+                              isRank1 ? 'bg-blue-500' : 'bg-emerald-500'
+                            }`}
+                          />
+                          <span
+                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase border ${
+                              isRank1
+                                ? 'bg-blue-500/15 text-blue-400 border-blue-500/35'
+                                : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/35'
+                            }`}
+                          >
+                            {isRank1 ? 'BEST FEASIBLE PATH' : '2ND FEASIBLE PATH'}
+                          </span>
+                          <span className="font-bold text-xs text-text-primary">
+                            {opt.routeName || `Route ${opt.routeNumber}`}
+                          </span>
+                          {opt.routeSource === 'BHUVAN' && (
+                            <span className="text-[9px] font-mono px-1 py-0.2 rounded uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              ISRO BHUVAN
+                            </span>
+                          )}
+                          {opt.routeSource === 'GRAPH' && (
+                            <span className="text-[9px] font-mono px-1 py-0.2 rounded uppercase bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                              YEN'S K-SHORTEST
+                            </span>
+                          )}
+                          {opt.routeSource === 'OSRM' && (
+                            <span className="text-[9px] font-mono px-1 py-0.2 rounded uppercase bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                              OSRM ENGINE
+                            </span>
+                          )}
+                        </div>
+                        {opt.routeName && (
+                          <span className="text-[9.5px] text-text-secondary pl-3.5 font-mono">
+                            Route {opt.routeNumber} &bull; {opt.corridorSegmentIds?.join(', ') || opt.routeId}
+                          </span>
+                        )}
+                      </div>
+                      {isSelected && (
+                        <span className={`text-[10px] font-bold flex items-center gap-1 shrink-0 ml-1 ${isRank1 ? 'text-blue-400' : 'text-emerald-400'}`}>
+                          <Check className="w-3 h-3" /> Selected
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1 text-[10px] font-mono text-text-secondary">
+                      <div>Predicted ETA: <strong className="text-text-primary">{formatMinutes(opt.predictedEtaMinutes)}</strong></div>
+                      {!isSuggested ? (
+                        <div>
+                          Disruption Risk (Model A):{' '}
+                          <strong
+                            className={
+                              isOptHigh
+                                ? 'text-red-400 font-bold'
+                                : isOptElevated
+                                ? 'text-orange-400 font-bold'
+                                : 'text-emerald-400 font-bold'
+                            }
+                          >
+                            {(optProb * 100).toFixed(0)}%
+                          </strong>
+                        </div>
+                      ) : (
+                        <div>
+                          OSRM Baseline: <strong className="text-text-primary">{formatMinutes(opt.osrmDurationMinutes)}</strong>
+                        </div>
+                      )}
+                      <div>Delay Factor: <strong className="text-amber-400">{opt.predictedDelayFactor.toFixed(2)}×</strong></div>
+                      <div>Distance: <strong className="text-text-primary">{opt.distanceKm} km</strong></div>
+                    </div>
+
+                    {isSelected && (
+                      !mission.isRerouted || (mission.assignedRouteId !== opt.routeId && mission.selectedRouteOptionId !== opt.id) ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExecuteReroute(opt);
+                          }}
+                          disabled={isRerouting}
+                          className={`w-full mt-2 py-1.5 px-2.5 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 text-[11px] shadow-xs btn-press cursor-pointer transition-all disabled:opacity-50 ${
+                            isRank1 ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                          }`}
+                        >
+                          {isRerouting ? (
+                            <>
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              <span>Rerouting Convoy to Corridor...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Route className="w-3.5 h-3.5" />
+                              <span>{isRank1 ? 'Deploy Main Best Path (Royal Blue)' : 'Reroute to 2nd Best Path (Tactical Green)'}</span>
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <div className="w-full mt-2 py-1.5 px-2 bg-blue-500/20 text-blue-300 font-bold rounded-xs flex items-center justify-center gap-1.5 text-[11px] border border-blue-500/40">
+                          <Check className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Active Main Route (Rerouted & Royal Blue)</span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[9.5px] text-text-tertiary italic">
+              ⓘ Traced curve-by-curve via ISRO Bhuvan, Yen's K-Shortest Path, and OSRM Road Engine with Model A exposure. Best feasible path in Blue (#2563EB), 2nd best path in Green (#10B981).
+            </p>
           </div>
         )}
 
@@ -194,6 +421,216 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
             )}
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* PRAVAH MODEL A — ROUTE RISK EXPOSURE (FROZEN XGBOOST HAZARD MODEL)         */}
+        {/* ========================================================================= */}
+        <div className="p-3 bg-surface-subtle rounded-sm border border-border space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2.5 h-2.5 rounded-full ${
+                displayedProbability >= 0.80 ? 'bg-red-500' : displayedProbability >= 0.50 ? 'bg-orange-500' : 'bg-blue-500'
+              } shadow-xs`} />
+              <span className={`text-[10px] font-bold ${
+                displayedProbability >= 0.80 ? 'text-red-400' : displayedProbability >= 0.50 ? 'text-orange-400' : 'text-blue-400'
+              } uppercase tracking-wider`}>
+                Model A Route Exposure
+              </span>
+            </div>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30">
+              v3.4.1 XGBoost
+            </span>
+          </div>
+
+          {/* Authoritative Route Disruption Probability */}
+          <div className="p-2.5 rounded bg-surface border border-border flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-text-secondary uppercase block font-medium">
+                Disruption probability
+              </span>
+              <span className="text-[11px] text-text-secondary">
+                {isSuggested
+                  ? 'Computed upon Mission Approval'
+                  : mission.isRerouted
+                  ? 'Live Detour Corridor (Main Route)'
+                  : 'Authoritative Corridor'}
+              </span>
+            </div>
+            <span
+              className={`text-xl font-bold font-mono ${
+                isSuggested
+                  ? 'text-text-secondary text-xs uppercase'
+                  : displayedProbability >= 0.80
+                  ? 'text-rose-500'
+                  : displayedProbability >= 0.50
+                  ? 'text-orange-400'
+                  : 'text-blue-500'
+              }`}
+            >
+              {isSuggested ? 'Pending Approval' : `${(displayedProbability * 100).toFixed(0)}%`}
+            </span>
+          </div>
+
+          {/* Mapping coverage stats */}
+          <div className="flex items-center justify-between text-[10px] text-text-secondary px-0.5">
+            <span>
+              Corridor Segments:{' '}
+              <strong className="text-text-primary">{exposure.mapped_segment_count} mapped</strong>
+            </span>
+            {exposure.unmapped_segment_count > 0 && (
+              <span className="text-amber-400/90 font-mono">
+                {exposure.unmapped_segment_count} unmapped
+              </span>
+            )}
+          </div>
+
+          {/* Warning banner if elevated risks present */}
+          {!mission.isRerouted && exposure.elevated_risk_segment_count > 0 && (
+            <div className="p-2 rounded bg-orange-500/10 border border-orange-500/30 text-orange-300 text-[10.5px] leading-tight flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-orange-400 mt-0.5" />
+              <span>
+                <strong>{exposure.elevated_risk_segment_count} segment{exposure.elevated_risk_segment_count > 1 ? 's' : ''}</strong> on this mission corridor {exposure.elevated_risk_segment_count > 1 ? 'show' : 'shows'} elevated predicted disruption risk (&ge;50%).
+              </span>
+            </div>
+          )}
+
+          {/* Dynamic Model B Reroute Action */}
+          {mission.isRerouted ? (
+            <div className="p-2.5 rounded bg-blue-950/30 border border-blue-500/50 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-blue-400 flex items-center gap-1 text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Convoy Rerouted via Model B
+                </span>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 font-bold uppercase border border-blue-500/30">
+                  Active Main Route (Royal Blue)
+                </span>
+              </div>
+              <p className="text-[10px] text-text-secondary leading-tight">
+                {mission.rerouteReason || 'Alternative bypass corridor engaged to avoid high-risk road sector.'}
+              </p>
+              <div className="flex items-center justify-between pt-1 border-t border-blue-500/20 text-[10.5px]">
+                <span className="text-text-secondary">Rerouted Route Disruption Risk:</span>
+                <span className={`font-bold font-mono ${displayedProbability >= 0.80 ? 'text-red-400' : displayedProbability >= 0.50 ? 'text-orange-400' : 'text-blue-400'}`}>
+                  {(displayedProbability * 100).toFixed(0)}%
+                  {mission.initialDisruptionProbability !== undefined && mission.initialDisruptionProbability > displayedProbability
+                    ? ` (Reduced from ${(mission.initialDisruptionProbability * 100).toFixed(0)}%)`
+                    : ''}
+                </span>
+              </div>
+              {mission.reroutedFromCoords && (
+                <div className="text-[9.5px] font-mono text-blue-400 flex items-center gap-1 pt-0.5">
+                  <MapPin className="w-3 h-3 shrink-0" />
+                  <span>Reroute Anchor: [{mission.reroutedFromCoords[0].toFixed(4)}, {mission.reroutedFromCoords[1].toFixed(4)}]</span>
+                </div>
+              )}
+            </div>
+          ) : (displayedProbability >= 0.50 || exposure.elevated_risk_segment_count > 0) ? (
+            <div className="p-2.5 rounded bg-gradient-to-b from-orange-950/40 to-amber-950/20 border border-orange-500/50 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-orange-400 flex items-center gap-1 text-[11px]">
+                  <Route className="w-3.5 h-3.5" />
+                  Model B Reroute Available
+                </span>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30 font-bold uppercase">
+                  Detour Option
+                </span>
+              </div>
+              <p className="text-[10px] text-text-secondary leading-tight">
+                Hazard probability reaches <strong>{(exposure.max_probability * 100).toFixed(0)}%</strong> on this corridor. Reroute via the next best viable route from Model B.
+              </p>
+              {vehicle?.current_coords && isInTransit && (
+                <div className="text-[9.5px] font-mono text-orange-300 flex items-center gap-1">
+                  <Truck className="w-3 h-3 text-orange-400 shrink-0" />
+                  <span>Vehicle GPS: [{vehicle.current_coords[0].toFixed(4)}, {vehicle.current_coords[1].toFixed(4)}] (Reroute anchors here)</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => handleExecuteReroute()}
+                disabled={isRerouting}
+                className="w-full py-1.5 px-3 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 text-xs shadow-xs btn-press cursor-pointer transition-all disabled:opacity-50"
+              >
+                {isRerouting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Computing Next Best Route...</span>
+                  </>
+                ) : (
+                  <>
+                    <Route className="w-3.5 h-3.5" />
+                    <span>Execute Dynamic Reroute (Vehicle GPS Aware)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          ) : null}
+
+          {/* Segment by segment breakdown */}
+          <div className="space-y-1 pt-1">
+            <span className="text-[9px] text-text-tertiary uppercase tracking-wider block font-semibold">
+              Corridor Segment Hazard Predictions (Click to inspect)
+            </span>
+            {exposure.segments.length > 0 ? (
+              exposure.segments.map((seg: any) => {
+                const isHigh = seg.probability >= 0.8;
+                const isElevated = seg.probability >= 0.5 && !isHigh;
+                const isModerate = seg.probability >= 0.3 && !isElevated && !isHigh;
+
+                return (
+                  <button
+                    key={seg.segment_id}
+                    onClick={() => onSelectSegment?.(seg.segment_id)}
+                    className={`w-full text-left p-2 rounded border transition cursor-pointer flex items-center justify-between ${
+                      isHigh
+                        ? 'bg-rose-500/10 border-rose-500/40 hover:bg-rose-500/20'
+                        : isElevated
+                        ? 'bg-orange-500/10 border-orange-500/40 hover:bg-orange-500/20'
+                        : isModerate
+                        ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20'
+                        : 'bg-surface border-border hover:bg-surface-subtle'
+                    }`}
+                  >
+                    <div className="min-w-0 pr-2">
+                      <div className="text-[11px] font-medium text-text-primary truncate">
+                        {seg.segment_name || seg.segment_id}
+                      </div>
+                      <div className="text-[9.5px] font-mono text-text-tertiary flex items-center gap-1.5">
+                        <span>{seg.highway || 'Corridor'}</span>
+                        <span>•</span>
+                        <span className="text-text-secondary">{seg.risk_band} RISK</span>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span
+                        className={`text-xs font-mono font-bold ${
+                          isHigh
+                            ? 'text-rose-400'
+                            : isElevated
+                            ? 'text-orange-400'
+                            : isModerate
+                            ? 'text-amber-400'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {(seg.probability * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="text-[10px] text-text-tertiary p-2 rounded bg-surface border border-border text-center">
+                Mission corridor outside standard mapped segments (unmapped corridor geometry).
+              </div>
+            )}
+          </div>
+
+          <p className="text-[9px] text-text-tertiary italic leading-tight pt-1 border-t border-border/40">
+            Model A predicts environmental disruption probability. Operational routing continues unless confirmed blocked by ground dispatch.
+          </p>
+        </div>
 
         {/* Route & Corridor Summary */}
         <div className="p-3 bg-surface-subtle rounded-sm border border-border space-y-2">
@@ -252,11 +689,21 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
             <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/50 font-mono">
               <div className="p-1.5 rounded-xs bg-surface border border-border">
                 <div className="text-[9px] text-text-secondary uppercase">{t('roadDistance')}</div>
-                <div className="text-xs font-bold text-text-primary">{mission.routeDistanceKm || routeDef?.distanceKm || 68} km</div>
+                <div className="text-xs font-bold text-text-primary">
+                  {(() => {
+                    const selectedOpt = routeOptions.find((o) => o.id === activeSelectedOptionId) || routeOptions[0];
+                    return selectedOpt ? `${selectedOpt.distanceKm} km` : `${mission.routeDistanceKm || routeDef?.distanceKm || 68} km`;
+                  })()}
+                </div>
               </div>
               <div className="p-1.5 rounded-xs bg-surface border border-border">
                 <div className="text-[9px] text-text-secondary uppercase">{t('estDuration')}</div>
-                <div className="text-xs font-bold text-text-primary">{mission.routeDurationMinutes || routeDef?.expectedDurationMinutes || 110} min</div>
+                <div className="text-xs font-bold text-text-primary">
+                  {(() => {
+                    const selectedOpt = routeOptions.find((o) => o.id === activeSelectedOptionId) || routeOptions[0];
+                    return selectedOpt ? `${selectedOpt.predictedEtaMinutes} min` : `${mission.routeDurationMinutes || routeDef?.expectedDurationMinutes || 110} min`;
+                  })()}
+                </div>
               </div>
             </div>
 

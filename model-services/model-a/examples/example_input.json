@@ -1,0 +1,24 @@
+{
+  "segment_id": "SEG-GHY-SHL",
+  "prediction_time": "2026-09-24T00:00:00Z",
+  "horizon_time": "2026-09-24T23:59:59Z",
+  "features": {
+    "rainfall_24h": 85.7,
+    "rainfall_72h": 163.2,
+    "rainfall_7d": 210.5,
+    "elevation_m": 196.8,
+    "slope_degrees": 31.6,
+    "historical_road_landslide_count": 6,
+    "historical_road_landslide_presence": 1,
+    "bt_road_km": 125.4,
+    "icbp_km": 42.1,
+    "cement_concrete_km": 18.2,
+    "paver_block_km": 5.3,
+    "total_paved_road_km": 191.0,
+    "bt_road_ratio": 0.65,
+    "icbp_ratio": 0.22,
+    "cement_concrete_ratio": 0.095,
+    "paver_block_ratio": 0.028,
+    "road_surface_diversity": 4
+  }
+}

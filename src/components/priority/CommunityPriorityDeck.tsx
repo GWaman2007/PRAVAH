@@ -39,6 +39,7 @@ export const CommunityPriorityDeck: React.FC = () => {
     activeRole,
     activeMissions,
     candidateRoutes,
+    approveMission,
     approveAndDispatchMission,
     customizeMission,
   } = usePravahStore();
@@ -145,6 +146,7 @@ export const CommunityPriorityDeck: React.FC = () => {
       <MissionSuggestionQueue
         missions={suggestedMissions}
         candidateRoutes={candidateRoutes}
+        onApprove={approveMission}
         onApproveAndDispatch={approveAndDispatchMission}
         onCustomizedDispatch={customizeMission}
       />

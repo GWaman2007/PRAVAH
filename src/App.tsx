@@ -6,10 +6,12 @@ import { Navigation } from './components/layout/Navigation';
 import { TacticalMapDeck } from './components/gis/TacticalMapDeck';
 import { MissionsDeck } from './components/missions/MissionsDeck';
 import { CommunitiesDeck } from './components/communities/CommunitiesDeck';
+import { HubsResourcesDeck } from './components/hubs/HubsResourcesDeck';
 import { ExecutiveInfrastructureDeck } from './components/executive/ExecutiveInfrastructureDeck';
 import { GroundIntelligenceFeed } from './components/feed/GroundIntelligenceFeed';
 import { MultilingualBroadcastCenter } from './components/broadcast/MultilingualBroadcastCenter';
 import { MobileMissionCockpit } from './components/cockpit/MobileMissionCockpit';
+import { ModelATestingDeck } from './components/modelA/ModelATestingDeck';
 import { GlobalSOSInterceptModal } from './components/admin/GlobalSOSInterceptModal';
 import { InteractiveWalkthroughToolbar } from './components/layout/InteractiveWalkthroughToolbar';
 import { SpeedInsights } from '@vercel/speed-insights/react';
@@ -73,6 +75,11 @@ const AppContent: React.FC = () => {
             <MissionsDeck />
           </div>
         )}
+        {activeView === 'HUBS_RESOURCES' && (
+          <div className="h-full overflow-y-auto pb-16">
+            <HubsResourcesDeck />
+          </div>
+        )}
         {activeView === 'COMMUNITIES' && (
           <div className="h-full overflow-y-auto pb-16">
             <CommunitiesDeck />
@@ -96,6 +103,11 @@ const AppContent: React.FC = () => {
         {activeView === 'MOBILE_COCKPIT' && (
           <div className="h-full overflow-y-auto pb-24">
             <MobileMissionCockpit />
+          </div>
+        )}
+        {activeView === 'MODEL_A_LAB' && (
+          <div className="h-full overflow-y-auto pb-20">
+            <ModelATestingDeck />
           </div>
         )}
       </main>

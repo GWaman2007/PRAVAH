@@ -11,6 +11,28 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'pravah_store.json');
 
+// Ensure .env variables are loaded into process.env if running without --env-file
+const envPath = path.join(__dirname, '../.env');
+function reloadEnvFile() {
+  if (fs.existsSync(envPath)) {
+    try {
+      const envContent = fs.readFileSync(envPath, 'utf-8');
+      envContent.split('\n').forEach((line) => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const key = trimmed.slice(0, eqIdx).trim();
+            const val = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+            process.env[key] = val;
+          }
+        }
+      });
+    } catch {}
+  }
+}
+reloadEnvFile();
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 const app = express();
@@ -26,11 +48,15 @@ const io = new Server(httpServer, {
 });
 
 
+const PYTHON_CMD = fs.existsSync('/opt/anaconda3/bin/python3')
+  ? '/opt/anaconda3/bin/python3'
+  : 'python3';
+
 // ==========================================
 // Extensible Configuration Schemas
 // ==========================================
 const CONFIG = {
-  ISRO_BHUVAN_API_KEY: process.env.ISRO_BHUVAN_API_KEY || '',
+  ISRO_BHUVAN_API_KEY: process.env.BHUVAN_API_TOKEN || process.env.ISRO_BHUVAN_API_KEY || '',
   IMD_ENTERPRISE_KEY: process.env.IMD_ENTERPRISE_KEY || '',
   OPEN_METEO_BASE_URL: 'https://api.open-meteo.com/v1/forecast',
 };
@@ -626,15 +652,728 @@ app.get('/api/missions', (req, res) => {
   res.json(state.activeMissions);
 });
 
+// ==========================================
+// ==========================================
+// Model A Python Microservice & Frozen XGBoost Integration
+// ==========================================
+const MODEL_A_SERVICE_URL = process.env.MODEL_A_SERVICE_URL || 'http://127.0.0.1:5005';
+
+const FROZEN_MODEL_A_FEATURE_KEYS = [
+  'rainfall_24h',
+  'rainfall_72h',
+  'rainfall_7d',
+  'elevation_m',
+  'slope_degrees',
+  'historical_road_landslide_count',
+  'historical_road_landslide_presence',
+  'bt_road_km',
+  'icbp_km',
+  'cement_concrete_km',
+  'paver_block_km',
+  'total_paved_road_km',
+  'bt_road_ratio',
+  'icbp_ratio',
+  'cement_concrete_ratio',
+  'paver_block_ratio',
+  'road_surface_diversity',
+] as const;
+
+function validateAndSanitizeFeatures(rawInput: any): {
+  isValid: boolean;
+  features?: Record<string, number>;
+  error?: string;
+} {
+  if (!rawInput || typeof rawInput !== 'object') {
+    return { isValid: false, error: 'Payload must be a valid JSON object' };
+  }
+
+  let raw = rawInput.features && typeof rawInput.features === 'object' ? rawInput.features : rawInput;
+
+  // Normalize icbp_road_ratio alias if present
+  if (raw.icbp_road_ratio !== undefined && raw.icbp_ratio === undefined) {
+    raw = { ...raw, icbp_ratio: raw.icbp_road_ratio };
+  }
+
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  const features: Record<string, number> = {};
+
+  for (const key of FROZEN_MODEL_A_FEATURE_KEYS) {
+    if (raw[key] === undefined || raw[key] === null || raw[key] === '') {
+      missing.push(key);
+    } else {
+      const val = Number(raw[key]);
+      if (isNaN(val) || !isFinite(val)) {
+        invalid.push(key);
+      } else {
+        features[key] = val;
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    return {
+      isValid: false,
+      error: `Missing required Model A features: ${missing.join(', ')}`,
+    };
+  }
+
+  if (invalid.length > 0) {
+    return {
+      isValid: false,
+      error: `Invalid numeric values for Model A features: ${invalid.join(', ')}`,
+    };
+  }
+
+  return { isValid: true, features };
+}
+
+app.get('/api/model-a/health', async (req, res) => {
+  try {
+    const upstream = await fetch(`${MODEL_A_SERVICE_URL}/health`);
+    if (upstream.ok) {
+      const data = await upstream.json();
+      return res.json(data);
+    }
+  } catch { }
+
+  const modelDir = path.join(__dirname, '..', 'model-services', 'model-a');
+  const modelJsonPath = path.join(modelDir, 'model', 'pravah_model_a_baseline_xgb.json');
+  const schemaPath = path.join(modelDir, 'model', 'pravah_model_a_frozen_feature_schema.csv');
+  const scriptPath = path.join(modelDir, 'inference', 'predict_model_a.py');
+  const modelReady = fs.existsSync(modelJsonPath) && fs.existsSync(schemaPath) && fs.existsSync(scriptPath);
+
+  return res.json({
+    status: modelReady ? 'healthy' : 'unavailable',
+    service: 'pravah-model-a',
+    engine: 'frozen_xgboost_python3_cli',
+    model_version: '3.4.1-baseline-xgb',
+    features_count: FROZEN_MODEL_A_FEATURE_KEYS.length,
+    threshold: 0.50,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.post('/api/model-a/predict', async (req, res) => {
+  console.log('[Model A] Request');
+  console.log(`[Model A] Endpoint: ${req.originalUrl || req.url}`);
+
+  // Validate exact 17 frozen features
+  const validation = validateAndSanitizeFeatures(req.body);
+  if (!validation.isValid || !validation.features) {
+    console.warn(`[Model A] Validation failed: ${validation.error}`);
+    return res.status(400).json({
+      error: validation.error,
+    });
+  }
+
+  const features = validation.features;
+  console.log(`[Model A] Feature count: ${Object.keys(features).length}`);
+  console.log('[Model A] Inference started');
+
+  const segmentId = req.body?.segment_id || 'MODEL_A_PREDICTION';
+  const predictionTime = req.body?.prediction_time || new Date().toISOString();
+  const horizonTime = req.body?.horizon_time;
+  const threshold = typeof req.body?.threshold === 'number' ? req.body.threshold : 0.50;
+
+  // 1. Try FastAPI microservice on 5005 if online
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1000);
+    const upstream = await fetch(`${MODEL_A_SERVICE_URL}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        segment_id: segmentId,
+        prediction_time: predictionTime,
+        horizon_time: horizonTime,
+        features,
+        threshold,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (upstream.ok) {
+      const data = await upstream.json();
+      console.log('[Model A] Inference completed');
+      console.log(`[Model A] Probability: ${data.probability}`);
+      console.log(`[Model A] Prediction: ${data.prediction}`);
+      return res.status(upstream.status).json(data);
+    }
+  } catch { }
+
+  // 2. Direct Python CLI execution fallback using real frozen XGBoost model package
+  try {
+    const { execSync } = await import('child_process');
+    const modelDir = path.join(__dirname, '..', 'model-services', 'model-a');
+    const scriptPath = path.join(modelDir, 'inference', 'predict_model_a.py');
+    const modelJsonPath = path.join(modelDir, 'model', 'pravah_model_a_baseline_xgb.json');
+    const schemaPath = path.join(modelDir, 'model', 'pravah_model_a_frozen_feature_schema.csv');
+
+    const tempFileName = `temp_eval_${Date.now()}_${Math.random().toString(36).substring(7)}.json`;
+    const tempFile = path.join(modelDir, 'examples', tempFileName);
+
+    fs.writeFileSync(tempFile, JSON.stringify(features));
+
+    try {
+      const pyOutputRaw = execSync(
+        `"${PYTHON_CMD}" "${scriptPath}" --model "${modelJsonPath}" --schema "${schemaPath}" --input "${tempFile}" --threshold ${threshold}`,
+        { encoding: 'utf-8', timeout: 10000 }
+      );
+
+      const pyOutput = JSON.parse(pyOutputRaw.trim());
+      const probability = Number(pyOutput.event_probability ?? pyOutput.probability);
+      const prediction = pyOutput.prediction === 1 ? 1 : 0;
+      const risk_band =
+        probability >= 0.8 ? 'HIGH' : probability >= 0.6 ? 'ELEVATED' : probability >= 0.3 ? 'MODERATE' : 'LOW';
+
+      console.log('[Model A] Inference completed');
+      console.log(`[Model A] Probability: ${probability}`);
+      console.log(`[Model A] Prediction: ${prediction}`);
+
+      return res.json({
+        segment_id: segmentId,
+        probability,
+        prediction,
+        threshold: Number(pyOutput.threshold ?? threshold),
+        risk_band,
+        interpretation: pyOutput.interpretation || 'Model A predictive risk signal',
+        model_version: '3.4.1-baseline-xgb',
+        prediction_time: predictionTime,
+        horizon_time: horizonTime,
+        feature_snapshot: features,
+        source: 'MODEL_A_INFERENCE',
+      });
+    } finally {
+      try { fs.unlinkSync(tempFile); } catch { }
+    }
+  } catch (err: any) {
+    console.error('[Model A] Execution error:', err?.message);
+    return res.status(500).json({
+      error: `Model A inference error: ${err?.message || 'Execution failed'}`,
+      details: err?.stderr?.toString() || err?.message,
+    });
+  }
+});
+
+app.post('/api/model-a/batch_predict', async (req, res) => {
+  console.log('[Model A] Batch Request');
+  console.log(`[Model A] Endpoint: ${req.originalUrl || req.url}`);
+
+  const items = Array.isArray(req.body) ? req.body : req.body?.predictions || req.body?.items;
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: 'Payload must be an array of segment prediction requests' });
+  }
+
+  // 1. Try FastAPI microservice on 5005 if online
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const upstream = await fetch(`${MODEL_A_SERVICE_URL}/batch_predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(items),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (upstream.ok) {
+      const data = await upstream.json();
+      return res.status(upstream.status).json(data);
+    }
+  } catch { }
+
+  // 2. Direct Python CLI execution fallback for batch
+  try {
+    const { execSync } = await import('child_process');
+    const modelDir = path.join(__dirname, '..', 'model-services', 'model-a');
+    const scriptPath = path.join(modelDir, 'inference', 'predict_model_a.py');
+    const modelJsonPath = path.join(modelDir, 'model', 'pravah_model_a_baseline_xgb.json');
+    const schemaPath = path.join(modelDir, 'model', 'pravah_model_a_frozen_feature_schema.csv');
+
+    const results = [];
+    for (const item of items) {
+      const validation = validateAndSanitizeFeatures(item);
+      const segmentId = item.segment_id || 'UNKNOWN_SEGMENT';
+      const threshold = typeof item.threshold === 'number' ? item.threshold : 0.50;
+
+      if (!validation.isValid || !validation.features) {
+        results.push({
+          segment_id: segmentId,
+          error: validation.error,
+          probability: null,
+          prediction: null,
+          source: 'MODEL_A_VALIDATION_ERROR',
+        });
+        continue;
+      }
+
+      const tempFileName = `temp_batch_${Date.now()}_${Math.random().toString(36).substring(7)}.json`;
+      const tempFile = path.join(modelDir, 'examples', tempFileName);
+      fs.writeFileSync(tempFile, JSON.stringify(validation.features));
+
+      try {
+        const pyOutputRaw = execSync(
+          `python3 "${scriptPath}" --model "${modelJsonPath}" --schema "${schemaPath}" --input "${tempFile}" --threshold ${threshold}`,
+          { encoding: 'utf-8', timeout: 5000 }
+        );
+        try { fs.unlinkSync(tempFile); } catch { }
+
+        const pyOutput = JSON.parse(pyOutputRaw.trim());
+        const prob = Number(pyOutput.event_probability ?? pyOutput.probability);
+        const risk_band = prob >= 0.8 ? 'HIGH' : prob >= 0.6 ? 'ELEVATED' : prob >= 0.3 ? 'MODERATE' : 'LOW';
+
+        results.push({
+          segment_id: segmentId,
+          probability: prob,
+          prediction: pyOutput.prediction === 1 ? 1 : 0,
+          threshold: Number(pyOutput.threshold ?? threshold),
+          risk_band,
+          interpretation: pyOutput.interpretation || 'Model A predictive risk signal',
+          model_version: '3.4.1-baseline-xgb',
+          prediction_time: item.prediction_time || new Date().toISOString(),
+          horizon_time: item.horizon_time,
+          feature_snapshot: validation.features,
+          source: 'MODEL_A_INFERENCE',
+        });
+      } catch (execErr: any) {
+        try { fs.unlinkSync(tempFile); } catch { }
+        results.push({
+          segment_id: segmentId,
+          error: execErr?.message,
+          probability: null,
+          prediction: null,
+          source: 'MODEL_A_EXECUTION_ERROR',
+        });
+      }
+    }
+
+    return res.json({ predictions: results });
+  } catch (batchErr: any) {
+    return res.status(500).json({
+      error: `Model A batch inference error: ${batchErr?.message || 'Execution failed'}`,
+    });
+  }
+});
+
+// ==========================================
+// PRAVAH MODEL B ROUTE DELAY-FACTOR ENDPOINTS
+// ==========================================
+const MODEL_B_SERVICE_URL = process.env.MODEL_B_SERVICE_URL || 'http://127.0.0.1:5006';
+
+export const EXACT_MODEL_B_FEATURE_KEYS = [
+  'distance_km',
+  'osrm_duration_minutes',
+  'straight_distance_km',
+  'route_speed_kmh',
+  'detour_ratio',
+  'route_mean_rainfall_24h',
+  'route_max_rainfall_24h',
+  'route_mean_rainfall_72h',
+  'route_max_rainfall_72h',
+  'route_mean_rainfall_7d',
+  'route_max_rainfall_7d',
+  'route_mean_target',
+  'route_max_target',
+  'origin_rainfall_24h',
+  'origin_rainfall_72h',
+  'origin_rainfall_7d',
+  'origin_target',
+  'destination_rainfall_24h',
+  'destination_rainfall_72h',
+  'destination_rainfall_7d',
+  'destination_target',
+] as const;
+
+function validateAndSanitizeModelBFeatures(input: any): { isValid: boolean; features?: Record<string, number>; error?: string } {
+  if (!input || typeof input !== 'object') {
+    return { isValid: false, error: 'Payload must be a valid JSON object' };
+  }
+  const rawFeatures = input.features || input;
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  const features: Record<string, number> = {};
+
+  for (const key of EXACT_MODEL_B_FEATURE_KEYS) {
+    if (!(key in rawFeatures) || rawFeatures[key] === null || rawFeatures[key] === undefined) {
+      missing.push(key);
+      continue;
+    }
+    const val = Number(rawFeatures[key]);
+    if (isNaN(val) || !isFinite(val)) {
+      invalid.push(key);
+      continue;
+    }
+    features[key] = val;
+  }
+
+  if (missing.length > 0) {
+    return { isValid: false, error: `Missing required Model B features: ${missing.join(', ')}` };
+  }
+  if (invalid.length > 0) {
+    return { isValid: false, error: `Non-numeric values for Model B features: ${invalid.join(', ')}` };
+  }
+
+  return { isValid: true, features };
+}
+
+const MODEL_B_DIR = path.join(__dirname, '..', 'model-services', 'model-b');
+const MODEL_B_SCRIPT_PATH = path.join(MODEL_B_DIR, 'inference', 'predict_model_b.py');
+const MODEL_B_JOBLIB_PATH = path.join(MODEL_B_DIR, 'model', 'model_b_delay_factor_regressor.joblib');
+const MODEL_B_SCHEMA_PATH = path.join(MODEL_B_DIR, 'model', 'model_b_delay_factor_schema.json');
+
+app.get('/api/model-b/health', async (req, res) => {
+  try {
+    const upstream = await fetch(`${MODEL_B_SERVICE_URL}/health`);
+    if (upstream.ok) {
+      const data = await upstream.json();
+      return res.json(data);
+    }
+  } catch { }
+
+  const modelReady = fs.existsSync(MODEL_B_JOBLIB_PATH) && fs.existsSync(MODEL_B_SCHEMA_PATH) && fs.existsSync(MODEL_B_SCRIPT_PATH);
+
+  return res.json({
+    status: modelReady ? 'healthy' : 'unavailable',
+    service: 'pravah-model-b',
+    engine: 'random_forest_regressor_joblib',
+    model_version: 'prototype_v2_delay_factor',
+    features_count: EXACT_MODEL_B_FEATURE_KEYS.length,
+    bounds: {
+      minimum: 1.0,
+      maximum: 1.75,
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.post('/api/model-b/predict', async (req, res) => {
+  console.log('[Model B] Request');
+  console.log(`[Model B] Endpoint: ${req.originalUrl || req.url}`);
+
+  const validation = validateAndSanitizeModelBFeatures(req.body);
+  if (!validation.isValid || !validation.features) {
+    console.warn(`[Model B] Validation failed: ${validation.error}`);
+    return res.status(400).json({ error: validation.error });
+  }
+
+  const features = validation.features;
+  console.log(`[Model B] Feature count: ${Object.keys(features).length}`);
+  console.log('[Model B] Inference started');
+
+  // 1. Try microservice if online
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1000);
+    const upstream = await fetch(`${MODEL_B_SERVICE_URL}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ features }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (upstream.ok) {
+      const data = await upstream.json();
+      console.log('[Model B] Inference completed');
+      console.log(`[Model B] Predicted delay factor: ${data.predicted_delay_factor}`);
+      return res.status(upstream.status).json(data);
+    }
+  } catch { }
+
+  // 2. Direct Python CLI execution fallback
+  const tempFileName = `temp_b_${Date.now()}_${Math.random().toString(36).substring(7)}.json`;
+  const tempFile = path.join(MODEL_B_DIR, tempFileName);
+
+  try {
+    const { execSync } = await import('child_process');
+    fs.writeFileSync(tempFile, JSON.stringify(features));
+
+    const pyOutputRaw = execSync(
+      `"${PYTHON_CMD}" "${MODEL_B_SCRIPT_PATH}" "${tempFile}"`,
+      { encoding: 'utf-8', timeout: 15000 }
+    );
+
+    const pyOutput = JSON.parse(pyOutputRaw.trim());
+    console.log('[Model B] Inference completed');
+    console.log(`[Model B] Predicted delay factor: ${pyOutput.predicted_delay_factor}`);
+
+    return res.json(pyOutput);
+  } catch (err: any) {
+    console.error('[Model B] Execution error:', err?.message);
+    return res.status(500).json({
+      error: `Model B inference error: ${err?.message || 'Execution failed'}`,
+      details: err?.stderr?.toString() || err?.message,
+    });
+  } finally {
+    try { fs.unlinkSync(tempFile); } catch { }
+  }
+});
+
+app.post('/api/model-b/multi_predict', async (req, res) => {
+  console.log('[Model B] Multi Request');
+  console.log(`[Model B] Endpoint: ${req.originalUrl || req.url}`);
+
+  const routes = Array.isArray(req.body) ? req.body : req.body?.routes;
+  if (!Array.isArray(routes) || routes.length === 0) {
+    return res.status(400).json({ error: 'Payload must contain a non-empty array of candidate routes' });
+  }
+
+  // 1. Try microservice if online
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const upstream = await fetch(`${MODEL_B_SERVICE_URL}/multi_predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ routes }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (upstream.ok) {
+      const data = await upstream.json();
+      return res.status(upstream.status).json(data);
+    }
+  } catch { }
+
+  // 2. Direct Python CLI execution fallback
+  const multiTempFileName = `temp_b_multi_${Date.now()}_${Math.random().toString(36).substring(7)}.json`;
+  const multiTempFile = path.join(MODEL_B_DIR, multiTempFileName);
+
+  try {
+    const { execSync } = await import('child_process');
+    fs.writeFileSync(multiTempFile, JSON.stringify({ routes }));
+
+    const pyOutputRaw = execSync(
+      `"${PYTHON_CMD}" "${MODEL_B_SCRIPT_PATH}" "${multiTempFile}" --multi`,
+      { encoding: 'utf-8', timeout: 15000 }
+    );
+
+    const pyOutput = JSON.parse(pyOutputRaw.trim());
+    return res.json(pyOutput);
+  } catch (err: any) {
+    console.error('[Model B] Multi Execution error:', err?.message);
+    return res.status(500).json({
+      error: `Model B multi-inference error: ${err?.message || 'Execution failed'}`,
+      details: err?.stderr?.toString() || err?.message,
+    });
+  } finally {
+    try { fs.unlinkSync(multiTempFile); } catch { }
+  }
+});
+
 app.post('/api/reset-db', (req, res) => {
   try {
     if (fs.existsSync(DB_FILE)) {
       fs.unlinkSync(DB_FILE);
     }
-  } catch {}
+  } catch { }
   loadDb();
   io.emit('INITIAL_STATE_SYNC', state);
   res.json({ success: true, message: 'Database reset to initial baseline' });
+});
+
+// ==========================================
+// ISRO Bhuvan Shortest Path API Proxy
+// Server-only endpoint to securely query Bhuvan without exposing token to frontend
+// ==========================================
+app.all('/api/bhuvan/shortest-path', async (req, res) => {
+  try {
+    reloadEnvFile();
+    const body = req.body || {};
+    const query = req.query || {};
+
+    const origin = body.origin || body.originCoords;
+    const destination = body.destination || body.destinationCoords;
+
+    const lat1 = origin ? Number(origin[0]) : Number(body.lat1 ?? query.lat1);
+    const lon1 = origin ? Number(origin[1]) : Number(body.lon1 ?? query.lon1);
+    const lat2 = destination ? Number(destination[0]) : Number(body.lat2 ?? query.lat2);
+    const lon2 = destination ? Number(destination[1]) : Number(body.lon2 ?? query.lon2);
+
+    if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing coordinates. Please provide origin: [lat, lon] and destination: [lat, lon]',
+      });
+    }
+
+    const token = process.env.ISRO_BHUVAN_API_KEY || process.env.BHUVAN_API_TOKEN || CONFIG.ISRO_BHUVAN_API_KEY;
+    if (!token) {
+      console.warn('[Bhuvan Proxy] BHUVAN_API_TOKEN is not configured.');
+      return res.status(503).json({
+        success: false,
+        error: 'Bhuvan API token not configured on server',
+      });
+    }
+
+    async function queryBhuvanSegment(
+      sLat1: number,
+      sLon1: number,
+      sLat2: number,
+      sLon2: number
+    ): Promise<{ isSameStateError: boolean; coords: [number, number][] | null }> {
+      const bhuvanUrl = `https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_state.php?lat1=${sLat1}&lon1=${sLon1}&lat2=${sLat2}&lon2=${sLon2}&token=${token}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+      try {
+        const upstreamRes = await fetch(bhuvanUrl, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PRAVAH-NER-Routing/1.0',
+          },
+        });
+        clearTimeout(timeoutId);
+
+        const rawText = await upstreamRes.text();
+        if (rawText.includes('Please provide latitudes and longitudes of same state')) {
+          return { isSameStateError: true, coords: null };
+        }
+        if (!upstreamRes.ok || rawText.startsWith('<!DOCTYPE') || rawText.startsWith('<html') || rawText.startsWith('Error:')) {
+          return { isSameStateError: false, coords: null };
+        }
+
+        // Sanitize trailing commas and empty geometry fields produced by NRSC Bhuvan API
+        const sanitized = rawText
+          .replace(/"geometry":\s*(?=,|}|\n|\r)/g, '"geometry": null')
+          .replace(/,\s*([}\]])/g, '$1');
+
+        const parsed = JSON.parse(sanitized);
+        const segmentCoords: [number, number][] = [];
+        const features = Array.isArray(parsed?.features) ? parsed.features : [];
+
+        for (const feat of features) {
+          const geom = feat?.geometry;
+          if (!geom) continue;
+
+          if (geom.type === 'LineString' && Array.isArray(geom.coordinates)) {
+            for (const pt of geom.coordinates) {
+              if (Array.isArray(pt) && pt.length >= 2) {
+                const lat = Number(pt[1]);
+                const lng = Number(pt[0]);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                  if (
+                    segmentCoords.length === 0 ||
+                    segmentCoords[segmentCoords.length - 1][0] !== lat ||
+                    segmentCoords[segmentCoords.length - 1][1] !== lng
+                  ) {
+                    segmentCoords.push([lat, lng]);
+                  }
+                }
+              }
+            }
+          } else if (geom.type === 'MultiLineString' && Array.isArray(geom.coordinates)) {
+            for (const line of geom.coordinates) {
+              if (Array.isArray(line)) {
+                for (const pt of line) {
+                  if (Array.isArray(pt) && pt.length >= 2) {
+                    const lat = Number(pt[1]);
+                    const lng = Number(pt[0]);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                      if (
+                        segmentCoords.length === 0 ||
+                        segmentCoords[segmentCoords.length - 1][0] !== lat ||
+                        segmentCoords[segmentCoords.length - 1][1] !== lng
+                      ) {
+                        segmentCoords.push([lat, lng]);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        return { isSameStateError: false, coords: segmentCoords.length >= 2 ? segmentCoords : null };
+      } catch {
+        clearTimeout(timeoutId);
+        return { isSameStateError: false, coords: null };
+      }
+    }
+
+    // 1. Attempt direct query first
+    const directResult = await queryBhuvanSegment(lat1, lon1, lat2, lon2);
+    if (directResult.coords && directResult.coords.length >= 2) {
+      return res.json({
+        success: true,
+        routeSource: 'BHUVAN',
+        coordinates: directResult.coords,
+      });
+    }
+
+    // 2. If direct query returned interstate boundary limitation, resolve interstate corridor crossing
+    if (directResult.isSameStateError) {
+      // Known state border crossing points in NER corridors
+      let borderWaypoints: [number, number][] = [];
+
+      // Assam (Guwahati ~26.14, 91.73) <-> Meghalaya (Shillong ~25.57, 91.89)
+      if (
+        (lat1 > 26.0 && lat2 < 25.8 && lon1 < 92.2 && lon2 < 92.2) ||
+        (lat2 > 26.0 && lat1 < 25.8 && lon1 < 92.2 && lon2 < 92.2)
+      ) {
+        borderWaypoints = [[26.1050, 91.8700], [26.0200, 91.8680]]; // Jorabat (Assam) & Byrnihat (Meghalaya)
+      }
+      // Assam (Silchar ~24.83) <-> Mizoram (Kolasib ~24.22)
+      else if (
+        (lat1 > 24.6 && lat2 < 24.4 && lon1 > 92.5 && lon1 < 93.0) ||
+        (lat2 > 24.6 && lat1 < 24.4 && lon1 > 92.5 && lon1 < 93.0)
+      ) {
+        borderWaypoints = [[24.5800, 92.7600], [24.5000, 92.7600]]; // Lailapur (Assam) & Vairengte (Mizoram)
+      }
+
+      if (borderWaypoints.length >= 2) {
+        const [borderA, borderB] = borderWaypoints;
+        const [partA, partB] = await Promise.all([
+          queryBhuvanSegment(lat1, lon1, borderA[0], borderA[1]),
+          queryBhuvanSegment(borderB[0], borderB[1], lat2, lon2),
+        ]);
+
+        // CRITICAL: BOTH interstate segments must resolve.
+        // Returning only one half with a straight-line vector jump to destination is rejected.
+        if (partA.coords && partA.coords.length >= 2 && partB.coords && partB.coords.length >= 2) {
+          const stitchedCoords: [number, number][] = [...partA.coords];
+
+          // Interpolate smooth transition between border points if there is a gap along the highway
+          const endA = partA.coords[partA.coords.length - 1];
+          const startB = partB.coords[0];
+          const gapLat = startB[0] - endA[0];
+          const gapLon = startB[1] - endA[1];
+          const gapSteps = Math.min(20, Math.max(3, Math.round(Math.hypot(gapLat, gapLon) * 150)));
+
+          for (let s = 1; s < gapSteps; s++) {
+            const frac = s / gapSteps;
+            stitchedCoords.push([
+              Number((endA[0] + gapLat * frac).toFixed(6)),
+              Number((endA[1] + gapLon * frac).toFixed(6)),
+            ]);
+          }
+
+          stitchedCoords.push(...partB.coords);
+
+          return res.json({
+            success: true,
+            routeSource: 'BHUVAN',
+            coordinates: stitchedCoords,
+          });
+        }
+      }
+
+      return res.json({
+        success: false,
+        error: 'Bhuvan Shortest Path requires coordinates within the same state',
+      });
+    }
+
+    return res.json({
+      success: false,
+      error: 'Bhuvan returned no valid road coordinates for this path',
+    });
+  } catch (err: any) {
+    return res.json({
+      success: false,
+      error: err?.message || 'Bhuvan proxy call failed',
+    });
+  }
 });
 
 // ==========================================

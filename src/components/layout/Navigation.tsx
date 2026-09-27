@@ -8,9 +8,11 @@ import {
   Users,
   Zap,
   Building2,
+  Warehouse,
   MessageSquare,
   Radio,
   Smartphone,
+  Cpu,
   Menu,
   X,
   ChevronDown,
@@ -25,12 +27,13 @@ interface NavItem {
 }
 
 export const Navigation: React.FC = () => {
-  const { activeView, setActiveView, activeRole, communities, alerts, incidents, activeMissions } = usePravahStore();
+  const { activeView, setActiveView, activeRole, communities, alerts, incidents, activeMissions, inventory } = usePravahStore();
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const p1Count = communities.filter((c) => c.metrics.priorityTier === 'P1').length;
   const suggestedCount = activeMissions.filter((m) => m.status === 'SUGGESTED').length;
+  const lowStockCount = inventory.filter((i) => (i.quantity - i.reservedQuantity) <= (i.lowStockThreshold ?? i.minimumStock ?? 0)).length;
 
   const navItems: NavItem[] = [
     {
@@ -45,6 +48,13 @@ export const Navigation: React.FC = () => {
       shortLabel: t('navMissions'),
       icon: Truck,
       badge: suggestedCount > 0 ? `${suggestedCount} ${t('badgeNew')}` : undefined,
+    },
+    {
+      id: 'HUBS_RESOURCES',
+      label: t('navHubs'),
+      shortLabel: t('navHubsShort'),
+      icon: Warehouse,
+      badge: lowStockCount > 0 ? `${lowStockCount} Low` : undefined,
     },
     {
       id: 'COMMUNITIES',
@@ -79,6 +89,13 @@ export const Navigation: React.FC = () => {
       icon: Smartphone,
       badge: activeRole === 'DRIVER' || activeRole === 'FIELD_OFFICER' ? t('badgeActive') : undefined,
     },
+    {
+      id: 'MODEL_A_LAB',
+      label: 'Model A Lab',
+      shortLabel: 'AI Test',
+      icon: Cpu,
+      badge: 'v3.4.1',
+    },
   ];
 
   const filteredNavItems = navItems.filter((item) => {
@@ -86,7 +103,15 @@ export const Navigation: React.FC = () => {
       return item.id === 'MOBILE_COCKPIT';
     }
     if (activeRole === 'FIELD_OFFICER') {
-      return item.id === 'MOBILE_COCKPIT' || item.id === 'GROUND_FEED' || item.id === 'GIS_COMMAND' || item.id === 'COMMUNITIES' || item.id === 'MISSIONS';
+      return (
+        item.id === 'MOBILE_COCKPIT' ||
+        item.id === 'GROUND_FEED' ||
+        item.id === 'GIS_COMMAND' ||
+        item.id === 'COMMUNITIES' ||
+        item.id === 'MISSIONS' ||
+        item.id === 'HUBS_RESOURCES' ||
+        item.id === 'MODEL_A_LAB'
+      );
     }
     // SUPER_ADMIN & FLEET_DISPATCHER have full central command access; cockpit is dedicated to field roles
     return item.id !== 'MOBILE_COCKPIT';

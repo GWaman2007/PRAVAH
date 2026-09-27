@@ -3,6 +3,8 @@ import { usePravahStore } from '../../store/usePravahStore';
 import { useTranslation } from '../../data/uiTranslations';
 import { CustomizeMissionModal } from '../dispatcher/CustomizeMissionModal';
 import type { ReliefMission } from '../../types';
+import { NER_SEGMENTS } from '../../data/routingNetwork';
+import { getMissionCorridorSegments, getAuthoritativeMissionExposure } from '../../engine/modelAService';
 import {
   Truck,
   Sparkles,
@@ -14,6 +16,9 @@ import {
   PackageCheck,
   MapPin,
   Clock,
+  Route,
+  RefreshCw,
+  ShieldAlert,
 } from 'lucide-react';
 
 export const MissionsDeck: React.FC = () => {
@@ -31,11 +36,34 @@ export const MissionsDeck: React.FC = () => {
     setSelectedVehicleId,
     setActiveView,
     markMissionDelivered,
+    modelAPredictions,
+    activeDisruptions,
+    rerouteMission,
+    missionRouteOptionsByMissionId,
+    selectedRouteOptionByMissionId,
   } = usePravahStore();
 
   const { t } = useTranslation();
 
   const [activeCustomizeMission, setActiveCustomizeMission] = useState<ReliefMission | null>(null);
+  const [isReroutingId, setIsReroutingId] = useState<string | null>(null);
+  const [rerouteNotice, setRerouteNotice] = useState<{ missionId: string; message: string } | null>(null);
+
+  const handleReroute = async (missionId: string) => {
+    setIsReroutingId(missionId);
+    try {
+      const ok = await rerouteMission(missionId);
+      if (ok) {
+        setRerouteNotice({
+          missionId,
+          message: 'Safe detour successfully engaged via Model B. GPS and route geometry updated.',
+        });
+        setTimeout(() => setRerouteNotice(null), 6000);
+      }
+    } finally {
+      setIsReroutingId(null);
+    }
+  };
 
   // Suggested missions MUST appear first at the top
   const suggestedMissions = useMemo(
@@ -99,6 +127,22 @@ export const MissionsDeck: React.FC = () => {
         </div>
       </div>
 
+      {/* Toast Notification */}
+      {rerouteNotice && (
+        <div className="bg-emerald-500/15 border border-emerald-500/40 rounded-md p-3 text-xs flex items-center justify-between text-emerald-700 dark:text-emerald-300 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="font-medium">{rerouteNotice.message}</span>
+          </div>
+          <button
+            onClick={() => setRerouteNotice(null)}
+            className="text-text-secondary hover:text-text-primary px-2 font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 1. SUGGESTED MISSIONS SECTION — VISIBLY AT THE TOP                         */}
       {/* ========================================================================= */}
@@ -128,10 +172,27 @@ export const MissionsDeck: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {suggestedMissions.map((mission) => {
+              const exposure = getAuthoritativeMissionExposure(mission, modelAPredictions, NER_SEGMENTS);
+              const { mappedSegments } = getMissionCorridorSegments(mission, NER_SEGMENTS);
+              const maxRiskProb = exposure.max_probability;
+              const hasActiveIncident = mappedSegments.some((seg) => {
+                const incident = activeDisruptions[seg.id];
+                return incident?.status === 'TOTAL_BLOCKAGE' || incident?.status === 'SINGLE_LANE_PASSABLE';
+              });
+              const riskLevel = maxRiskProb >= 0.80 ? 'HIGH' : maxRiskProb >= 0.60 ? 'ELEVATED' : maxRiskProb >= 0.30 ? 'MODERATE' : 'LOW';
+              const highRiskSeg = [...mappedSegments].sort((a, b) => (modelAPredictions[b.id]?.probability ?? 0) - (modelAPredictions[a.id]?.probability ?? 0))[0];
+              const hasHighRiskRoad = maxRiskProb >= 0.30 || hasActiveIncident;
+
               return (
                 <div
                   key={mission.id}
-                  className="bg-surface border border-status-blocked-solid/60 ring-1 ring-status-blocked-solid/20 rounded-md p-4 sm:p-5 shadow-xs space-y-4 text-xs"
+                  className={`bg-surface border rounded-md p-4 sm:p-5 shadow-xs space-y-4 text-xs ${
+                    mission.isRerouted
+                      ? 'border-emerald-500/60 ring-1 ring-emerald-500/20'
+                      : hasHighRiskRoad
+                      ? 'border-orange-500/60 ring-1 ring-orange-500/20'
+                      : 'border-status-blocked-solid/60 ring-1 ring-status-blocked-solid/20'
+                  }`}
                 >
                   {/* Card Header */}
                   <div className="flex items-start justify-between gap-2">
@@ -201,6 +262,72 @@ export const MissionsDeck: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Reroute Alert / Status */}
+                  {mission.isRerouted ? (
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xs p-2.5 text-[11px] space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          REROUTED VIA MODEL B
+                        </span>
+                        <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold uppercase border border-emerald-500/30">
+                          {(maxRiskProb * 100).toFixed(0)}% Probability
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-text-secondary leading-tight">
+                        {mission.rerouteReason || 'Alternative bypass corridor engaged to avoid high-risk road sector.'}
+                      </p>
+                      <div className="flex items-center justify-between pt-1 border-t border-emerald-500/20 text-[10px]">
+                        <span className="text-text-secondary">New Detour Road Risk:</span>
+                        <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                          {(maxRiskProb * 100).toFixed(0)}%
+                          {mission.initialDisruptionProbability !== undefined && mission.initialDisruptionProbability > maxRiskProb
+                            ? ` (Reduced from ${(mission.initialDisruptionProbability * 100).toFixed(0)}%)`
+                            : ''}
+                        </span>
+                      </div>
+                      {mission.reroutedFromCoords && (
+                        <div className="text-[9.5px] font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
+                          <MapPin className="w-3 h-3 shrink-0" />
+                          <span>Origin: [{mission.reroutedFromCoords[0].toFixed(4)}, {mission.reroutedFromCoords[1].toFixed(4)}]</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : hasHighRiskRoad ? (
+                    <div className={`${riskLevel === 'HIGH' ? 'bg-red-500/10 border-red-500/40' : riskLevel === 'ELEVATED' ? 'bg-orange-500/10 border-orange-500/40' : 'bg-amber-500/10 border-amber-500/40'} border rounded-xs p-2.5 text-[11px] space-y-2`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`font-bold flex items-center gap-1 ${riskLevel === 'HIGH' ? 'text-red-600 dark:text-red-400' : riskLevel === 'ELEVATED' ? 'text-orange-600 dark:text-orange-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                          <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${riskLevel === 'HIGH' ? 'text-red-500' : riskLevel === 'ELEVATED' ? 'text-orange-500' : 'text-amber-500'}`} />
+                          {riskLevel === 'HIGH' ? 'High Hazard' : riskLevel === 'ELEVATED' ? 'Elevated Hazard' : 'Moderate Risk'} Ahead: {(maxRiskProb * 100).toFixed(0)}%
+                        </span>
+                        <span className={`font-mono text-[9px] px-1.5 py-0.2 rounded font-bold uppercase border ${riskLevel === 'HIGH' ? 'bg-red-500/20 text-red-400 border-red-500/40' : riskLevel === 'ELEVATED' ? 'bg-orange-500/20 text-orange-400 border-orange-500/40' : 'bg-amber-500/20 text-amber-400 border-amber-500/40'}`}>
+                          Model A
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-text-secondary leading-tight">
+                        {riskLevel === 'HIGH' ? 'Critical' : riskLevel === 'ELEVATED' ? 'Elevated' : 'Moderate'} disruption risk on <strong>{highRiskSeg?.highway ? `${highRiskSeg.highway} (${highRiskSeg.name})` : highRiskSeg?.name || 'primary lifeline'}</strong>. Next best viable bypass route available from Model B.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleReroute(mission.id)}
+                        disabled={isReroutingId === mission.id}
+                        className="w-full py-1.5 px-3 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 text-xs shadow-xs btn-press cursor-pointer transition-all disabled:opacity-50"
+                      >
+                        {isReroutingId === mission.id ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Computing Model B Reroute...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Route className="w-3.5 h-3.5" />
+                            <span>Reroute Mission (Model B Detour)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ) : null}
+
                   {/* Action Buttons */}
                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">
                     <button
@@ -210,6 +337,19 @@ export const MissionsDeck: React.FC = () => {
                       <Send className="w-3.5 h-3.5" />
                       <span>{t('dispatchMission')}</span>
                     </button>
+
+                    {hasHighRiskRoad && !mission.isRerouted && (
+                      <button
+                        type="button"
+                        onClick={() => handleReroute(mission.id)}
+                        disabled={isReroutingId === mission.id}
+                        className="py-2 px-3 rounded-sm bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/40 text-orange-600 dark:text-orange-400 font-bold text-xs flex items-center justify-center gap-1 btn-press cursor-pointer transition-colors disabled:opacity-50"
+                        title="Reroute via Model B"
+                      >
+                        <Route className="w-3.5 h-3.5" />
+                        <span>Reroute</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => setActiveCustomizeMission(mission)}
@@ -264,11 +404,30 @@ export const MissionsDeck: React.FC = () => {
               const isPendingCloseout = mission.status === 'PENDING_ADMIN_CLOSEOUT';
               const progressPct = isPendingCloseout ? 100 : (veh?.route_progress_pct ?? 45);
 
+              const exposure = getAuthoritativeMissionExposure(mission, modelAPredictions, NER_SEGMENTS);
+              const { mappedSegments } = getMissionCorridorSegments(mission, NER_SEGMENTS);
+              const maxRiskProb = mission.isRerouted
+                ? (mission.reroutedDisruptionProbability ?? mission.disruptionProbability ?? 0.05)
+                : (mission.disruptionProbability ?? exposure.max_probability);
+              const hasActiveIncident = mappedSegments.some((seg) => {
+                const incident = activeDisruptions[seg.id];
+                return incident?.status === 'TOTAL_BLOCKAGE' || incident?.status === 'SINGLE_LANE_PASSABLE';
+              });
+              const riskLevel = maxRiskProb >= 0.80 ? 'HIGH' : maxRiskProb >= 0.60 ? 'ELEVATED' : maxRiskProb >= 0.30 ? 'MODERATE' : 'LOW';
+              const highRiskSeg = [...mappedSegments].sort((a, b) => (modelAPredictions[b.id]?.probability ?? 0) - (modelAPredictions[a.id]?.probability ?? 0))[0];
+              const hasHighRiskRoad = maxRiskProb >= 0.30 || hasActiveIncident;
+
               return (
                 <div
                   key={mission.id}
                   className={`bg-surface border rounded-md p-4 shadow-xs space-y-3 text-xs flex flex-col justify-between transition-colors ${
-                    isPendingCloseout ? 'border-amber-500/50 bg-amber-500/[0.02]' : 'border-border'
+                    isPendingCloseout
+                      ? 'border-amber-500/50 bg-amber-500/[0.02]'
+                      : mission.isRerouted
+                      ? 'border-emerald-500/60 ring-1 ring-emerald-500/20'
+                      : hasHighRiskRoad
+                      ? 'border-orange-500/60 ring-1 ring-orange-500/20'
+                      : 'border-border'
                   }`}
                 >
                   <div className="space-y-2.5">
@@ -294,6 +453,8 @@ export const MissionsDeck: React.FC = () => {
                             ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50 animate-pulse'
                             : mission.status === 'APPROVED'
                             ? 'bg-sky-500/20 text-sky-400 border-sky-500/50'
+                            : mission.isRerouted
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
                             : 'bg-primary-tint text-primary border-primary/30'
                         }`}
                       >
@@ -301,6 +462,8 @@ export const MissionsDeck: React.FC = () => {
                           ? 'PENDING ADMIN CLOSEOUT'
                           : mission.status === 'APPROVED'
                           ? 'APPROVED · READY TO DISPATCH'
+                          : mission.isRerouted
+                          ? 'REROUTED · IN TRANSIT'
                           : mission.status}
                       </span>
                     </div>
@@ -364,6 +527,78 @@ export const MissionsDeck: React.FC = () => {
                         </div>
                       )}
                     </div>
+
+                    {/* Reroute Alert / Status */}
+                    {mission.isRerouted ? (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xs p-2.5 text-[11px] space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                            REROUTED VIA MODEL B
+                          </span>
+                          <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold uppercase border border-emerald-500/30">
+                            {(maxRiskProb * 100).toFixed(0)}% Probability
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-text-secondary leading-tight">
+                          {mission.rerouteReason || 'Alternative bypass corridor engaged to avoid high-risk road sector.'}
+                        </p>
+                        <div className="flex items-center justify-between pt-1 border-t border-emerald-500/20 text-[10px]">
+                          <span className="text-text-secondary">New Detour Road Risk:</span>
+                          <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                            {(maxRiskProb * 100).toFixed(0)}%
+                            {mission.initialDisruptionProbability !== undefined && mission.initialDisruptionProbability > maxRiskProb
+                              ? ` (Reduced from ${(mission.initialDisruptionProbability * 100).toFixed(0)}%)`
+                              : ''}
+                          </span>
+                        </div>
+                        {mission.reroutedFromCoords && (
+                          <div className="text-[9.5px] font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span>Reroute Origin: [{mission.reroutedFromCoords[0].toFixed(4)}, {mission.reroutedFromCoords[1].toFixed(4)}]</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : hasHighRiskRoad && !isPendingCloseout ? (
+                      <div className={`${riskLevel === 'HIGH' ? 'bg-red-500/10 border-red-500/40' : riskLevel === 'ELEVATED' ? 'bg-orange-500/10 border-orange-500/40' : 'bg-amber-500/10 border-amber-500/40'} border rounded-xs p-2.5 text-[11px] space-y-2`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`font-bold flex items-center gap-1 ${riskLevel === 'HIGH' ? 'text-red-600 dark:text-red-400' : riskLevel === 'ELEVATED' ? 'text-orange-600 dark:text-orange-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                            <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${riskLevel === 'HIGH' ? 'text-red-500' : riskLevel === 'ELEVATED' ? 'text-orange-500' : 'text-amber-500'}`} />
+                            {riskLevel === 'HIGH' ? 'High Hazard' : riskLevel === 'ELEVATED' ? 'Elevated Hazard' : 'Moderate Risk'} Ahead: {(maxRiskProb * 100).toFixed(0)}%
+                          </span>
+                          <span className={`font-mono text-[9px] px-1.5 py-0.2 rounded font-bold uppercase border ${riskLevel === 'HIGH' ? 'bg-red-500/20 text-red-400 border-red-500/40' : riskLevel === 'ELEVATED' ? 'bg-orange-500/20 text-orange-400 border-orange-500/40' : 'bg-amber-500/20 text-amber-400 border-amber-500/40'}`}>
+                            Model A
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-text-secondary leading-tight">
+                          {riskLevel === 'HIGH' ? 'Critical' : riskLevel === 'ELEVATED' ? 'Elevated' : 'Moderate'} hazard on <strong>{highRiskSeg?.highway ? `${highRiskSeg.highway} (${highRiskSeg.name})` : highRiskSeg?.name || 'active corridor'}</strong>. Next best bypass corridor ready via Model B.
+                        </p>
+                        {mission.status === 'IN_TRANSIT' && veh?.current_coords && (
+                          <div className="text-[9.5px] font-mono text-text-secondary flex items-center gap-1">
+                            <Truck className="w-3 h-3 text-primary shrink-0" />
+                            <span>Vehicle GPS: [{veh.current_coords[0].toFixed(4)}, {veh.current_coords[1].toFixed(4)}] (Reroute anchors here)</span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleReroute(mission.id)}
+                          disabled={isReroutingId === mission.id}
+                          className="w-full py-1.5 px-3 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 text-xs shadow-xs btn-press cursor-pointer transition-all disabled:opacity-50"
+                        >
+                          {isReroutingId === mission.id ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Computing Model B Reroute...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Route className="w-3.5 h-3.5" />
+                              <span>Reroute Convoy from Current Position</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Actions */}
@@ -376,6 +611,19 @@ export const MissionsDeck: React.FC = () => {
                         <MapPin className="w-3.5 h-3.5" />
                         <span>{t('trackOnGis')}</span>
                       </button>
+
+                      {hasHighRiskRoad && !mission.isRerouted && !isPendingCloseout && (
+                        <button
+                          type="button"
+                          onClick={() => handleReroute(mission.id)}
+                          disabled={isReroutingId === mission.id}
+                          className="py-1.5 px-2.5 bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/40 text-orange-600 dark:text-orange-400 font-bold text-xs flex items-center justify-center gap-1 btn-press cursor-pointer transition-colors disabled:opacity-50"
+                          title="Reroute via Model B"
+                        >
+                          <Route className="w-3.5 h-3.5" />
+                          <span>Reroute</span>
+                        </button>
+                      )}
 
                       {mission.status === 'APPROVED' ? (
                         <button

@@ -15,7 +15,10 @@ import {
   createVehicleSOSGeoJSON,
   createMissionRoutesGeoJSON,
   createSelectedMissionRouteGeoJSON,
+  createModelBRouteOptionsGeoJSON,
   createRoadStatusGeoJSON,
+  createModelARiskGeoJSON,
+  getSegmentCurvedCoordinates,
   createDisastersGeoJSON,
   createCommunitiesGeoJSON,
   createCommunityBoundariesGeoJSON,
@@ -27,6 +30,7 @@ import {
   createSelectedDraftRouteGeoJSON,
   registerMapIcons,
 } from '../../engine/mapGeoJSONAdapters';
+import { getMissionCorridorSegments, getAuthoritativeMissionExposure } from '../../engine/modelAService';
 import { SegmentModal } from './SegmentModal';
 import { RoadIncidentModal } from './RoadIncidentModal';
 import { VehicleInspector } from './VehicleInspector';
@@ -59,6 +63,7 @@ import {
   Layers,
   Sparkles,
   RefreshCw,
+  Cpu,
 } from 'lucide-react';
 
 export const TacticalMapDeck: React.FC = () => {
@@ -125,6 +130,14 @@ export const TacticalMapDeck: React.FC = () => {
     submitOfficerReport,
     pendingMapFocus,
     setPendingMapFocus,
+    hubs,
+    inventory,
+    setSelectedHubId,
+    setActiveView,
+    modelAPredictions,
+    missionRouteOptionsByMissionId,
+    selectedRouteOptionByMissionId,
+    selectMissionRoute,
   } = usePravahStore();
 
   const { t } = useTranslation();
@@ -146,6 +159,8 @@ export const TacticalMapDeck: React.FC = () => {
   hazardPolygonsRef.current = hazardPolygons;
   const pendingMapFocusRef = useRef(pendingMapFocus);
   pendingMapFocusRef.current = pendingMapFocus;
+  const selectMissionRouteRef = useRef(selectMissionRoute);
+  selectMissionRouteRef.current = selectMissionRoute;
 
   // Zoom map to community polygon or coordinates
   const zoomToCommunity = useCallback((communityId: string, mapInstance?: maplibregl.Map | null) => {
@@ -277,11 +292,53 @@ export const TacticalMapDeck: React.FC = () => {
     lastUpdated?: string;
   } | null>(null);
 
+  const [hoveredModelASegment, setHoveredModelASegment] = useState<{
+    x: number;
+    y: number;
+    segment_id: string;
+    segment_name: string;
+    highway?: string;
+    model_a_probability: number;
+    model_a_risk_band: string;
+    operational_status: string;
+    is_active_mission_segment: boolean;
+  } | null>(null);
+
+  const [hoveredRouteOption, setHoveredRouteOption] = useState<{
+    x: number;
+    y: number;
+    option_id: string;
+    mission_id: string;
+    route_name: string;
+    route_number: number;
+    route_rank: number;
+    is_selected: boolean;
+    distance_km: number;
+    predicted_eta_minutes: number;
+    predicted_delay_factor: number;
+    is_rank_1: boolean;
+  } | null>(null);
+
   const [detailedIncident, setDetailedIncident] = useState<{
     segment: Segment;
     disruption: SegmentIncident;
     incident: Incident | null;
     affectedMissions: ReliefMission[];
+  } | null>(null);
+
+  // Tactical Hub Hover State
+  const [hoveredHub, setHoveredHub] = useState<{
+    x: number;
+    y: number;
+    hub_id: string;
+    name: string;
+    code: string;
+    state: string;
+    status: string;
+    type: string;
+    vehicles_count: number;
+    available_vehicles_count: number;
+    resources_count: number;
   } | null>(null);
 
   // Disaster Polygon & Sector Inspection Modal State
@@ -325,6 +382,26 @@ export const TacticalMapDeck: React.FC = () => {
     if (!selectedMissionId) return null;
     return activeMissions.find((m) => m.id === selectedMissionId) || null;
   }, [activeMissions, selectedMissionId]);
+
+  const activeSelectedRouteOptId = activeMission
+    ? selectedRouteOptionByMissionId[activeMission.id] || activeMission.selectedRouteOptionId
+    : null;
+
+  // Corridor road segments for active selected mission - authoritative current route segments first
+  const activeMissionCorridor = useMemo(() => {
+    if (!activeMission) return new Set<string>();
+    if (activeMission.corridorSegmentIds && activeMission.corridorSegmentIds.length > 0) {
+      return new Set(activeMission.corridorSegmentIds);
+    }
+    const missionOptions = missionRouteOptionsByMissionId[activeMission.id] || activeMission.routeOptions;
+    const { mappedSegments } = getMissionCorridorSegments(
+      activeMission,
+      NER_SEGMENTS,
+      activeSelectedRouteOptId,
+      missionOptions
+    );
+    return new Set(mappedSegments.map((s) => s.id));
+  }, [activeMission, activeSelectedRouteOptId, missionRouteOptionsByMissionId]);
 
   // Selected vehicle object
   const activeVehicle = useMemo(() => {
@@ -531,6 +608,17 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       // -------------------------------------------------------------
+      // 2B. MODEL A PREDICTIVE ROAD DISRUPTION RISK (Source)
+      // Dedicated GeoJSON-based layer strictly separating predictive
+      // hazard probability (orange/red-orange) from operational status.
+      // -------------------------------------------------------------
+      map.addSource('model-a-risk', {
+        type: 'geojson',
+        data: createModelARiskGeoJSON(NER_SEGMENTS, modelAPredictions, activeDisruptions, activeMissionCorridor, activeMission, FLEET_ROUTES),
+      });
+
+
+      // -------------------------------------------------------------
       // 3. ALL MISSION ROUTES
       // -------------------------------------------------------------
       map.addSource('mission-routes', {
@@ -561,21 +649,109 @@ export const TacticalMapDeck: React.FC = () => {
       });
 
       // -------------------------------------------------------------
-      // 4. SELECTED MISSION ROUTE (Dedicated strong emphasis)
+      // 4B. MODEL B ROUTE OPTIONS (Suggested Missions Route Alternatives)
+      // Displays Model B route options with dynamic disruption risk colors:
+      // High (>= 80%): Red, Elevated (>= 50%): Orange, Low (< 50%): Blue
+      // -------------------------------------------------------------
+      map.addSource('model-b-route-options', {
+        type: 'geojson',
+        data: createModelBRouteOptionsGeoJSON(
+          activeMission
+            ? (activeMission.isRerouted ? [] : (activeMission.routeOptions || missionRouteOptionsByMissionId[activeMission.id] || []))
+            : [],
+          selectedRouteOptionByMissionId[activeMission?.id || ''] || activeMission?.selectedRouteOptionId,
+          modelAPredictions,
+          Boolean(activeMission?.isRerouted)
+        ),
+      });
+
+      map.addLayer({
+        id: 'model-b-route-glow',
+        type: 'line',
+        source: 'model-b-route-options',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': ['get', 'glow_color'],
+          'line-width': ['get', 'glow_width'],
+          'line-opacity': ['get', 'glow_opacity'],
+          'line-blur': 3,
+        },
+      });
+
+      map.addLayer({
+        id: 'model-b-route-casing',
+        type: 'line',
+        source: 'model-b-route-options',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': ['coalesce', ['get', 'casing_color'], '#0f172a'],
+          'line-width': ['coalesce', ['get', 'casing_width'], 8.5],
+          'line-opacity': 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: 'model-b-route-line',
+        type: 'line',
+        source: 'model-b-route-options',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': ['get', 'line_width'],
+          'line-opacity': ['get', 'line_opacity'],
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 4C. SELECTED / REROUTED AUTHORITATIVE MISSION ROUTE
+      // Dynamic risk color:
+      // High (>= 80%): Red (#DC2626)
+      // Elevated (>= 50%): Orange (#EA580C)
+      // Less (< 50%): Royal Blue (#2563EB)
+      // When rerouted: Royal Blue (#2563EB) as authoritative main route
       // -------------------------------------------------------------
       map.addSource('selected-mission-route', {
         type: 'geojson',
-        data: createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES),
+        data: createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES, modelAPredictions),
+      });
+
+      map.addLayer({
+        id: 'selected-mission-glow',
+        type: 'line',
+        source: 'selected-mission-route',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': ['coalesce', ['get', 'glowColor'], '#3B82F6'],
+          'line-width': 13,
+          'line-opacity': 0.45,
+          'line-blur': 4,
+        },
       });
 
       map.addLayer({
         id: 'selected-mission-casing',
         type: 'line',
         source: 'selected-mission-route',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
         paint: {
           'line-color': '#0F172A',
-          'line-width': 8,
-          'line-opacity': 0.85,
+          'line-width': 8.5,
+          'line-opacity': 0.90,
         },
       });
 
@@ -583,10 +759,52 @@ export const TacticalMapDeck: React.FC = () => {
         id: 'selected-mission-line',
         type: 'line',
         source: 'selected-mission-route',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
         paint: {
-          'line-color': '#2563EB',
-          'line-width': 5.2,
+          'line-color': ['coalesce', ['get', 'color'], '#2563EB'],
+          'line-width': 5.8,
           'line-opacity': 1.0,
+        },
+      });
+
+      // -------------------------------------------------------------
+      // 4B-ii. MODEL A PREDICTIVE ROAD DISRUPTION HAZARD OVERLAYS
+      // Rendered on top so hazard choke points and high-risk segments
+      // illuminate clearly over the base route lines.
+      // -------------------------------------------------------------
+      map.addLayer({
+        id: 'model-a-risk-glow',
+        type: 'line',
+        source: 'model-a-risk',
+        layout: {
+          visibility: activeLayers.modelA ? 'visible' : 'none',
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': ['get', 'risk_color'],
+          'line-width': ['get', 'glow_width'],
+          'line-opacity': ['get', 'glow_opacity'],
+          'line-blur': 4,
+        },
+      });
+
+      map.addLayer({
+        id: 'model-a-risk-line',
+        type: 'line',
+        source: 'model-a-risk',
+        layout: {
+          visibility: activeLayers.modelA ? 'visible' : 'none',
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': ['get', 'risk_color'],
+          'line-width': ['get', 'risk_width'],
+          'line-opacity': ['get', 'risk_opacity'],
         },
       });
 
@@ -671,7 +889,7 @@ export const TacticalMapDeck: React.FC = () => {
       // -------------------------------------------------------------
       map.addSource('warehouses', {
         type: 'geojson',
-        data: createWarehousesGeoJSON(),
+        data: createWarehousesGeoJSON(hubs, inventory, vehicles),
       });
 
       map.addLayer({
@@ -1035,7 +1253,7 @@ export const TacticalMapDeck: React.FC = () => {
       // -------------------------------------------------------------
       map.addSource('vehicles', {
         type: 'geojson',
-        data: createVehiclesGeoJSON(vehicles, selectedVehicleId),
+        data: createVehiclesGeoJSON(vehicles, selectedVehicleId, activeMissions, selectedMissionId),
         cluster: false, // Ensure all operational vehicles are always visible individually
       });
 
@@ -1131,6 +1349,81 @@ export const TacticalMapDeck: React.FC = () => {
           const seg = NER_SEGMENTS.find((s) => s.id === feat.properties.segment_id);
           if (seg) setInspectedSegment(seg);
         }
+      });
+
+      // Click Model A predictive risk segment -> Opens existing SegmentModal with 17 features & probability
+      map.on('click', 'model-a-risk-line', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat?.properties?.segment_id) {
+          const seg = NER_SEGMENTS.find((s) => s.id === feat.properties.segment_id);
+          if (seg) setInspectedSegment(seg);
+        }
+      });
+
+      // Hover on Model A predictive risk segment
+      map.on('mousemove', 'model-a-risk-line', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          setHoveredModelASegment({
+            x: e.point.x,
+            y: e.point.y,
+            segment_id: feat.properties.segment_id,
+            segment_name: feat.properties.segment_name,
+            highway: feat.properties.highway,
+            model_a_probability: Number(feat.properties.model_a_probability || 0),
+            model_a_risk_band: feat.properties.model_a_risk_band,
+            operational_status: feat.properties.operational_status,
+            is_active_mission_segment: !!feat.properties.is_active_mission_segment,
+          });
+        }
+      });
+
+      map.on('mouseleave', 'model-a-risk-line', () => {
+        setHoveredModelASegment(null);
+      });
+
+      // Click Model B route option line (Route 1 or Route 2) to toggle and select that route directly on the map
+      map.on('click', 'model-b-route-line', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat?.properties?.mission_id) {
+          const mId = feat.properties.mission_id;
+          const currentOptId = feat.properties.option_id;
+          const targetMission = activeMissionsRef.current.find((m) => m.id === mId);
+          const opts = targetMission?.routeOptions || missionRouteOptionsByMissionId[mId] || [];
+          if (opts.length >= 2) {
+            // Toggle between the two route options: clicking green hides green and shows blue; clicking blue hides blue and shows green!
+            const otherOpt = opts.find((o) => o.id !== currentOptId) || opts[0];
+            selectMissionRouteRef.current(mId, otherOpt.id);
+          } else if (currentOptId) {
+            selectMissionRouteRef.current(mId, currentOptId);
+          }
+        }
+      });
+
+      map.on('mousemove', 'model-b-route-line', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          map.getCanvas().style.cursor = 'pointer';
+          setHoveredRouteOption({
+            x: e.point.x,
+            y: e.point.y,
+            option_id: feat.properties.option_id,
+            mission_id: feat.properties.mission_id,
+            route_name: feat.properties.route_name || (feat.properties.route_number === 1 ? 'Primary Corridor' : 'Alternative Bypass'),
+            route_number: Number(feat.properties.route_number || 1),
+            route_rank: Number(feat.properties.route_rank || 1),
+            is_selected: Boolean(feat.properties.is_selected),
+            distance_km: Number(feat.properties.distance_km || 0),
+            predicted_eta_minutes: Number(feat.properties.predicted_eta_minutes || 0),
+            predicted_delay_factor: Number(feat.properties.predicted_delay_factor || 1.0),
+            is_rank_1: Boolean(feat.properties.is_rank_1),
+          });
+        }
+      });
+
+      map.on('mouseleave', 'model-b-route-line', () => {
+        map.getCanvas().style.cursor = '';
+        setHoveredRouteOption(null);
       });
 
       // Hover on road breakdown marker
@@ -1405,11 +1698,46 @@ export const TacticalMapDeck: React.FC = () => {
         setHoveredPolygon(null);
       });
 
+      // Click on warehouse/hub -> Select and navigate to Logistics Center
+      map.on('click', 'warehouses-icon', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          setSelectedHubId(feat.properties.hub_id);
+          setActiveView('HUBS_RESOURCES');
+        }
+      });
+
+      // Hover on warehouse -> Show live capacity & fleet summary
+      map.on('mousemove', 'warehouses-icon', (e: any) => {
+        const feat = e.features?.[0];
+        if (feat && feat.properties) {
+          const p = feat.properties;
+          setHoveredHub({
+            x: e.point.x,
+            y: e.point.y,
+            hub_id: p.hub_id,
+            name: p.name,
+            code: p.code,
+            state: p.state,
+            status: p.status,
+            type: p.type,
+            vehicles_count: Number(p.vehicles_count || 0),
+            available_vehicles_count: Number(p.available_vehicles_count || 0),
+            resources_count: Number(p.resources_count || 0),
+          });
+        }
+      });
+      map.on('mouseleave', 'warehouses-icon', () => {
+        setHoveredHub(null);
+      });
+
       // Cursor change on interactive layers
       const interactiveLayers = [
+        'warehouses-icon',
         'vehicles-cluster',
         'vehicles-unclustered',
         'road-status-line',
+        'model-a-risk-line',
         'road-breakdowns-point',
         'road-breakdowns-pulse',
         'ground-intel-incidents-core',
@@ -1563,7 +1891,7 @@ export const TacticalMapDeck: React.FC = () => {
     // Update vehicles & SOS
     const vehSource = map.getSource('vehicles') as maplibregl.GeoJSONSource;
     if (vehSource) {
-      vehSource.setData(createVehiclesGeoJSON(vehicles, selectedVehicleId));
+      vehSource.setData(createVehiclesGeoJSON(vehicles, selectedVehicleId, activeMissions, selectedMissionId));
     }
     const sosSource = map.getSource('vehicle-sos') as maplibregl.GeoJSONSource;
     if (sosSource) {
@@ -1573,11 +1901,21 @@ export const TacticalMapDeck: React.FC = () => {
     // Update mission routes
     const routesSource = map.getSource('mission-routes') as maplibregl.GeoJSONSource;
     if (routesSource) {
-      routesSource.setData(createMissionRoutesGeoJSON(activeMissions, FLEET_ROUTES, selectedMissionId));
+      routesSource.setData(createMissionRoutesGeoJSON(activeMissions, FLEET_ROUTES, selectedMissionId, modelAPredictions));
     }
     const selRouteSource = map.getSource('selected-mission-route') as maplibregl.GeoJSONSource;
     if (selRouteSource) {
-      selRouteSource.setData(createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES));
+      selRouteSource.setData(createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES, modelAPredictions));
+    }
+
+    // Update Model B route options for mission
+    const modelBSource = map.getSource('model-b-route-options') as maplibregl.GeoJSONSource;
+    if (modelBSource) {
+      const opts = activeMission
+        ? (activeMission.isRerouted ? [] : (activeMission.routeOptions || missionRouteOptionsByMissionId[activeMission.id] || []))
+        : [];
+      const selOptId = selectedRouteOptionByMissionId[activeMission?.id || ''] || activeMission?.selectedRouteOptionId;
+      modelBSource.setData(createModelBRouteOptionsGeoJSON(opts, selOptId, modelAPredictions, Boolean(activeMission?.isRerouted)));
     }
 
     // Update mission endpoints
@@ -1590,6 +1928,10 @@ export const TacticalMapDeck: React.FC = () => {
     const roadSource = map.getSource('road-status') as maplibregl.GeoJSONSource;
     if (roadSource) {
       roadSource.setData(createRoadStatusGeoJSON(NER_SEGMENTS, activeDisruptions));
+    }
+    const modelASource = map.getSource('model-a-risk') as maplibregl.GeoJSONSource;
+    if (modelASource) {
+      modelASource.setData(createModelARiskGeoJSON(NER_SEGMENTS, modelAPredictions, activeDisruptions, activeMissionCorridor, activeMission, FLEET_ROUTES));
     }
     const breakdownSource = map.getSource('road-breakdowns') as maplibregl.GeoJSONSource;
     if (breakdownSource) {
@@ -1623,8 +1965,16 @@ export const TacticalMapDeck: React.FC = () => {
     if (commSource) {
       commSource.setData(createCommunitiesGeoJSON(communities, selectedCommunityId));
     }
+
+    // Update warehouses with dynamic store state
+    const warehouseSource = map.getSource('warehouses') as maplibregl.GeoJSONSource;
+    if (warehouseSource) {
+      warehouseSource.setData(createWarehousesGeoJSON(hubs, inventory, vehicles));
+    }
   }, [
     vehicles,
+    hubs,
+    inventory,
     selectedVehicleId,
     activeMissions,
     selectedMissionId,
@@ -1638,6 +1988,10 @@ export const TacticalMapDeck: React.FC = () => {
     approvedDraftPlots,
     allDraftPlots,
     selectedDraftPlot,
+    modelAPredictions,
+    activeMissionCorridor,
+    selectedRouteOptionByMissionId,
+    missionRouteOptionsByMissionId,
   ]);
 
   // 5. Update Layer Visibility from activeLayers filters
@@ -1666,6 +2020,10 @@ export const TacticalMapDeck: React.FC = () => {
     setVisibility('road-breakdowns-pulse', activeLayers.roadStatus);
     setVisibility('road-breakdowns-point', activeLayers.roadStatus);
 
+    // MODEL A PREDICTIVE HAZARD OVERLAY: Strictly independent from operational status
+    setVisibility('model-a-risk-glow', activeLayers.modelA);
+    setVisibility('model-a-risk-line', activeLayers.modelA);
+
     // GROUND INTEL FEED INCIDENTS: Always visible live incident locations with pulsing warning dots
     setVisibility('ground-intel-incidents-pulse', true);
     setVisibility('ground-intel-incidents-core', true);
@@ -1679,6 +2037,7 @@ export const TacticalMapDeck: React.FC = () => {
     // MISSION ROUTES & ENDPOINTS: Active routes and mission destination targets (solid markers only)
     setVisibility('mission-routes-glow', activeLayers.routes);
     setVisibility('mission-routes-line', activeLayers.routes);
+    setVisibility('selected-mission-glow', activeLayers.routes);
     setVisibility('selected-mission-casing', activeLayers.routes);
     setVisibility('selected-mission-line', activeLayers.routes);
     setVisibility('mission-endpoints-core', activeLayers.routes);
@@ -1766,6 +2125,23 @@ export const TacticalMapDeck: React.FC = () => {
 
   const selectedRoute = candidateRoutes[selectedRouteIndex] || candidateRoutes[0];
 
+  // Handler to smoothly fly to and inspect segment on map
+  const handleSeeSegmentOnMap = useCallback((seg: Segment) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const coords = getSegmentCurvedCoordinates(seg.id, seg.coordinates);
+    if (coords && coords.length > 0) {
+      const midIdx = Math.floor(coords.length / 2);
+      const [lat, lng] = coords[midIdx];
+      map.flyTo({
+        center: [lng, lat],
+        zoom: 12.5,
+        essential: true,
+        pitch: 30,
+      });
+    }
+  }, []);
+
   return (
     <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden bg-page-bg relative">
       {/* Mobile Switcher Tab Bar (< lg) */}
@@ -1810,6 +2186,7 @@ export const TacticalMapDeck: React.FC = () => {
         currentDisruption={inspectedSegment ? activeDisruptions[inspectedSegment.id] : undefined}
         onClose={() => setInspectedSegment(null)}
         onApplyDisruption={(segId, dis) => setSegmentDisruption(segId, dis)}
+        onSeeOnMap={handleSeeSegmentOnMap}
       />
 
       {/* Detailed Road Incident / Disruption Modal */}
@@ -1989,23 +2366,49 @@ export const TacticalMapDeck: React.FC = () => {
                             </span>
                           </div>
 
-                          <span
-                            className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 ${
-                              m.status === 'APPROVED'
-                                ? 'bg-sky-500/20 text-sky-400 border-sky-500/50'
-                                : m.status === 'PENDING_ADMIN_CLOSEOUT'
-                                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50 animate-pulse'
-                                : 'bg-status-open-tint text-status-open-text border-status-open-solid/40'
-                            }`}
-                          >
-                            {m.status === 'APPROVED'
-                              ? 'APPROVED'
-                              : m.status === 'PENDING_ADMIN_CLOSEOUT'
-                              ? 'AWAITING SIGN-OFF'
-                              : veh?.speed_kmh
-                              ? `${veh.speed_kmh} km/h`
-                              : 'IN_TRANSIT'}
-                          </span>
+                        {(() => {
+                          const mProb = m.isRerouted
+                            ? (m.reroutedDisruptionProbability ?? m.disruptionProbability ?? 0.05)
+                            : (m.disruptionProbability ?? getAuthoritativeMissionExposure(m, modelAPredictions, NER_SEGMENTS).max_probability);
+                          return (
+                            <div className="flex items-center gap-1 shrink-0">
+                              {m.isRerouted ? (
+                                <span className="px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/40">
+                                  REROUTED • {(mProb * 100).toFixed(0)}%
+                                </span>
+                              ) : (
+                                <span
+                                  className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border ${
+                                    mProb >= 0.8
+                                      ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                                      : mProb >= 0.5
+                                      ? 'bg-orange-500/20 text-orange-400 border-orange-500/40'
+                                      : 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                                  }`}
+                                >
+                                  RISK: {(mProb * 100).toFixed(0)}%
+                                </span>
+                              )}
+                              <span
+                                className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 ${
+                                  m.status === 'APPROVED'
+                                    ? 'bg-sky-500/20 text-sky-400 border-sky-500/50'
+                                    : m.status === 'PENDING_ADMIN_CLOSEOUT'
+                                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50 animate-pulse'
+                                    : 'bg-status-open-tint text-status-open-text border-status-open-solid/40'
+                                }`}
+                              >
+                                {m.status === 'APPROVED'
+                                  ? 'APPROVED'
+                                  : m.status === 'PENDING_ADMIN_CLOSEOUT'
+                                  ? 'AWAITING SIGN-OFF'
+                                  : veh?.speed_kmh
+                                  ? `${veh.speed_kmh} km/h`
+                                  : 'IN_TRANSIT'}
+                              </span>
+                            </div>
+                          );
+                        })()}
                         </div>
 
                         <div className="grid grid-cols-2 gap-1.5 text-[10px] text-text-secondary bg-surface-subtle p-1.5 rounded-xs">
@@ -2030,6 +2433,29 @@ export const TacticalMapDeck: React.FC = () => {
                             <strong className="text-text-primary font-mono">
                               {m.status === 'APPROVED' ? 'Ready' : m.status === 'PENDING_ADMIN_CLOSEOUT' ? 'Arrived' : `${m.routeDurationMinutes || 90} min`}
                             </strong>
+                          </div>
+                          <div className="col-span-2 pt-1 border-t border-border/40 flex items-center justify-between">
+                            <span>{m.isRerouted ? 'Detour Disruption Risk:' : 'Disruption Probability:'}</span>
+                            {(() => {
+                              const mProb = m.isRerouted
+                                ? (m.reroutedDisruptionProbability ?? m.disruptionProbability ?? 0.05)
+                                : (m.disruptionProbability ?? getAuthoritativeMissionExposure(m, modelAPredictions, NER_SEGMENTS).max_probability);
+                              return (
+                                <strong
+                                  className={`font-mono font-bold ${
+                                    m.isRerouted
+                                      ? 'text-blue-400'
+                                      : mProb >= 0.8
+                                      ? 'text-red-400'
+                                      : mProb >= 0.5
+                                      ? 'text-orange-400'
+                                      : 'text-blue-400'
+                                  }`}
+                                >
+                                  {(mProb * 100).toFixed(0)}%{m.isRerouted ? ' (Active Main Route)' : ''}
+                                </strong>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -2124,6 +2550,7 @@ export const TacticalMapDeck: React.FC = () => {
                             </span>
                           </div>
 
+                        <div className="flex items-center gap-1 shrink-0">
                           <span
                             className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 ${
                               isApproved
@@ -2133,6 +2560,7 @@ export const TacticalMapDeck: React.FC = () => {
                           >
                             {m.status}
                           </span>
+                        </div>
                         </div>
 
                         <div className="p-1.5 rounded-xs bg-surface-subtle text-[10px] space-y-1">
@@ -2145,8 +2573,19 @@ export const TacticalMapDeck: React.FC = () => {
                             <strong className="text-status-open-text">{m.suggestedDetour}</strong>
                           </div>
                           <div className="text-text-secondary flex justify-between">
-                            <span>{t('distance')}: <strong>{m.routeDistanceKm || 65} km</strong></span>
-                            <span>{t('eta')}: <strong>{m.routeDurationMinutes || 100} min</strong></span>
+                            {(() => {
+                              const opts = missionRouteOptionsByMissionId[m.id] || m.routeOptions;
+                              const selectedOptId = selectedRouteOptionByMissionId[m.id] || m.selectedRouteOptionId;
+                              const activeOpt = opts?.find((o) => o.id === selectedOptId) || opts?.[0];
+                              const displayEta = activeOpt ? activeOpt.predictedEtaMinutes : (m.routeDurationMinutes || 100);
+                              const displayDist = activeOpt ? activeOpt.distanceKm : (m.routeDistanceKm || 65);
+                              return (
+                                <>
+                                  <span>{t('distance')}: <strong>{displayDist} km</strong></span>
+                                  <span>{t('eta')}: <strong>{displayEta} min</strong></span>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -2904,6 +3343,18 @@ export const TacticalMapDeck: React.FC = () => {
               {t('layerRoadStatus')}
             </button>
             <button
+              onClick={() => toggleLayer('modelA')}
+              className={`px-2 py-1 rounded-xs border font-medium cursor-pointer transition flex items-center gap-1 ${
+                activeLayers.modelA
+                  ? 'bg-orange-500/20 text-orange-400 border-orange-500/60 shadow-xs'
+                  : 'bg-surface text-text-secondary border-border'
+              }`}
+              title="Toggle Model A predictive road-disruption hazard overlay (Orange / Red-Orange)"
+            >
+              <span className={`w-2 h-2 rounded-full ${activeLayers.modelA ? 'bg-orange-500 shadow-xs' : 'bg-slate-400'}`} />
+              <span>Model A Risk</span>
+            </button>
+            <button
               onClick={() => toggleLayer('routes')}
               className={`px-2 py-1 rounded-xs border font-medium cursor-pointer transition ${
                 activeLayers.routes
@@ -3057,8 +3508,148 @@ export const TacticalMapDeck: React.FC = () => {
                     <span className="text-slate-300">{hoveredBreakdown.lastUpdated}</span>
                   </div>
                 )}
+                {modelAPredictions[hoveredBreakdown.segment_id] && (
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <Cpu className="w-3 h-3 text-indigo-400" />
+                      <span>Model A Risk:</span>
+                    </span>
+                    <span className={`font-mono font-bold text-[10px] px-1.5 py-0.2 rounded border ${
+                      modelAPredictions[hoveredBreakdown.segment_id].risk_band === 'HIGH'
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                        : modelAPredictions[hoveredBreakdown.segment_id].risk_band === 'ELEVATED'
+                        ? 'bg-orange-500/20 text-orange-300 border-orange-500/40'
+                        : modelAPredictions[hoveredBreakdown.segment_id].risk_band === 'MODERATE'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    }`}>
+                      {(modelAPredictions[hoveredBreakdown.segment_id].probability * 100).toFixed(0)}% ({modelAPredictions[hoveredBreakdown.segment_id].risk_band})
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="pt-1 text-[10px] text-slate-500 italic text-right">{t('clickForDetails')}</div>
+            </div>
+          )}
+
+          {/* Model A Segment Risk Tactical Hover Tooltip */}
+          {activeLayers.modelA && hoveredModelASegment && !hoveredBreakdown && (
+            <div
+              className="absolute z-30 pointer-events-none bg-slate-900/95 border border-orange-500/60 rounded-sm p-3 shadow-xl backdrop-blur-md text-xs w-68 space-y-2 text-slate-200 animate-fadeIn select-none"
+              style={{
+                left: Math.min(Math.max(12, hoveredModelASegment.x + 12), (mapContainerRef.current?.clientWidth || window.innerWidth) - 280),
+                top: Math.min(Math.max(12, hoveredModelASegment.y - 20), (mapContainerRef.current?.clientHeight || window.innerHeight) - 190),
+              }}
+            >
+              <div className="flex items-start justify-between border-b border-slate-800 pb-1.5">
+                <div className="pr-2 min-w-0">
+                  <div className="font-bold text-sm text-orange-400 truncate">{hoveredModelASegment.segment_name}</div>
+                  {hoveredModelASegment.highway && (
+                    <div className="text-[11px] font-mono text-slate-400">{hoveredModelASegment.highway}</div>
+                  )}
+                </div>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider shrink-0 border ${
+                    hoveredModelASegment.model_a_risk_band === 'HIGH'
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                      : hoveredModelASegment.model_a_risk_band === 'ELEVATED'
+                      ? 'bg-orange-500/20 text-orange-300 border-orange-500/50'
+                      : hoveredModelASegment.model_a_risk_band === 'MODERATE'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                      : 'bg-slate-700/40 text-slate-300 border-slate-600'
+                  }`}
+                >
+                  {hoveredModelASegment.model_a_risk_band} RISK
+                </span>
+              </div>
+
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Road Operational Status:</span>
+                  <span
+                    className={`font-semibold ${
+                      hoveredModelASegment.operational_status === 'BLOCKED'
+                        ? 'text-red-400'
+                        : hoveredModelASegment.operational_status === 'DEGRADED'
+                        ? 'text-amber-400'
+                        : 'text-emerald-400'
+                    }`}
+                  >
+                    {hoveredModelASegment.operational_status}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Model A Disruption Prob:</span>
+                  <span className="font-mono font-bold text-orange-400">
+                    {(hoveredModelASegment.model_a_probability * 100).toFixed(0)}%
+                  </span>
+                </div>
+
+                {hoveredModelASegment.is_active_mission_segment && (
+                  <div className="px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/30 text-sky-300 text-[10px] font-medium text-center">
+                    Active Mission Corridor Segment
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-1 border-t border-slate-800 text-[10px] text-slate-400 italic flex justify-between">
+                <span>Click segment to view 17 features</span>
+                <span className="text-orange-400 font-mono">XGBoost v3.4.1</span>
+              </div>
+            </div>
+          )}
+
+          {/* Model B Route Option Tactical Hover Tooltip */}
+          {hoveredRouteOption && !hoveredModelASegment && !hoveredBreakdown && (
+            <div
+              className="absolute z-30 pointer-events-none bg-slate-900/95 border border-sky-500/60 rounded-sm p-3 shadow-xl backdrop-blur-md text-xs w-72 space-y-2 text-slate-200 animate-fadeIn select-none"
+              style={{
+                left: Math.min(Math.max(12, hoveredRouteOption.x + 12), (mapContainerRef.current?.clientWidth || window.innerWidth) - 300),
+                top: Math.min(Math.max(12, hoveredRouteOption.y - 20), (mapContainerRef.current?.clientHeight || window.innerHeight) - 180),
+              }}
+            >
+              <div className="flex items-start justify-between border-b border-slate-800 pb-1.5">
+                <div className="pr-2 min-w-0">
+                  <div className="font-bold text-sm text-sky-400 truncate">{hoveredRouteOption.route_name}</div>
+                  <div className="text-[11px] font-mono text-slate-400">
+                    Route {hoveredRouteOption.route_number} &bull; {hoveredRouteOption.is_rank_1 ? 'Lowest Predicted ETA' : 'Alternative Bypass'}
+                  </div>
+                </div>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider shrink-0 border ${
+                    hoveredRouteOption.is_selected
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                      : 'bg-slate-700/40 text-slate-300 border-slate-600'
+                  }`}
+                >
+                  {hoveredRouteOption.is_selected ? 'SELECTED' : 'OPTION'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Predicted ETA:</span>
+                  <strong className="text-emerald-400">{Math.round(hoveredRouteOption.predicted_eta_minutes)} mins</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Distance:</span>
+                  <strong className="text-slate-200">{hoveredRouteOption.distance_km} km</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Delay Factor:</span>
+                  <strong className="text-amber-400">{hoveredRouteOption.predicted_delay_factor.toFixed(2)}×</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Action:</span>
+                  <span className="text-sky-300 text-[10px] font-sans">Click line to select</span>
+                </div>
+              </div>
+
+              <div className="pt-1 border-t border-slate-800 text-[10px] text-slate-400 italic flex justify-between">
+                <span>Model B 21-Feature Inference</span>
+                <span className="text-sky-400 font-mono">PRAVAH GIS</span>
+              </div>
             </div>
           )}
 
@@ -3100,6 +3691,56 @@ export const TacticalMapDeck: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* Hovered Logistics Hub Card */}
+          {hoveredHub && (
+            <div
+              className="absolute z-30 pointer-events-auto bg-slate-900/95 border border-primary/40 rounded-lg p-3 shadow-2xl backdrop-blur-md text-xs w-64 animate-in fade-in zoom-in-95 duration-150"
+              style={{
+                left: Math.min(Math.max(12, hoveredHub.x + 12), (mapContainerRef.current?.clientWidth || window.innerWidth) - 270),
+                top: Math.min(Math.max(12, hoveredHub.y - 20), (mapContainerRef.current?.clientHeight || window.innerHeight) - 180),
+              }}
+            >
+              <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-1.5 mb-2">
+                <div>
+                  <div className="font-bold text-sm text-white flex items-center gap-1.5">
+                    <span>{hoveredHub.name}</span>
+                    <span className="font-mono text-[10px] text-slate-400">({hoveredHub.code})</span>
+                  </div>
+                  <div className="text-[11px] font-medium text-slate-400">{hoveredHub.state} • {hoveredHub.type.replace('_', ' ')}</div>
+                </div>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 border ${
+                  hoveredHub.status === 'OPERATIONAL'
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                    : hoveredHub.status === 'LIMITED'
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
+                    : 'bg-red-500/20 text-red-400 border-red-500/50'
+                }`}>
+                  {hoveredHub.status}
+                </span>
+              </div>
+              <div className="space-y-1 mb-2.5">
+                <div className="flex justify-between items-center text-slate-300">
+                  <span className="text-slate-400">Available Fleet:</span>
+                  <span className="font-semibold text-emerald-400">{hoveredHub.available_vehicles_count} / {hoveredHub.vehicles_count}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-300">
+                  <span className="text-slate-400">Stock Commodities:</span>
+                  <span className="font-semibold text-slate-200">{hoveredHub.resources_count}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedHubId(hoveredHub.hub_id);
+                  setActiveView('HUBS_RESOURCES');
+                }}
+                className="w-full py-1.5 px-2 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 rounded text-[11px] font-bold tracking-wide flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>OPEN IN LOGISTICS CENTER</span>
+                <span>→</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Interactive GIS Legend */}
@@ -3125,6 +3766,10 @@ export const TacticalMapDeck: React.FC = () => {
             onInspectVehicle={(vId) => {
               setSelectedVehicleId(vId);
               setIsInspectorOpen(true);
+            }}
+            onSelectSegment={(segId) => {
+              const seg = NER_SEGMENTS.find((s) => s.id === segId);
+              if (seg) setInspectedSegment(seg);
             }}
           />
         </div>
@@ -3206,6 +3851,7 @@ export const TacticalMapDeck: React.FC = () => {
               setSegmentDisruption(segId, dis);
             }
           }}
+          onSeeOnMap={handleSeeSegmentOnMap}
         />
       )}
 

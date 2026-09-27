@@ -9,6 +9,7 @@ import type {
   CandidateRoute,
   VehicleProfile,
   VehicleTelemetry,
+  VehicleStatus,
   AlertEvent,
   Incident,
   CommunityBase,
@@ -24,7 +25,20 @@ import type {
   RejectedReport,
   RerouteProposal,
   MultimodalAdminIntelInput,
+  ResponseHub,
+  HubInventory,
+  InventoryTransaction,
+  CandidateHubEvaluation,
+  ModelAPrediction,
+  MissionRouteOption,
 } from '../types';
+import {
+  generateAndRankMissionRoutes,
+  calculateMissionReroute,
+  resolveCorridorBypassSegments,
+  spliceRouteFromVehicleCoords,
+  computePolylineDistanceKm,
+} from '../engine/modelBRouteRankingService';
 import {
   verifyAndStructureCitizenReport,
   structureOfficerReport,
@@ -47,7 +61,7 @@ import { SUPPORTED_LANGUAGES, PRESET_TRANSLATIONS, PHONETIC_READINGS, generateBr
 import { findKShortestPaths, evaluateAndRankPaths } from '../engine/routingEngine';
 import { calculateCompositePriority } from '../engine/priorityEngine';
 import { stepVehicleSimulation, initRouteDistances } from '../engine/telemetryEngine';
-import { generateDynamicMissionSuggestions, isMissionOngoing, COMMUNITY_ROUTING_PROFILES } from '../engine/missionEngine';
+import { generateDynamicMissionSuggestions, isMissionOngoing, COMMUNITY_ROUTING_PROFILES, generateDeterministicDemoMissions } from '../engine/missionEngine';
 import { getAuthoritativeHazardPolygons } from '../engine/realtimePolygonService';
 import {
   getOfflineQueue,
@@ -72,7 +86,20 @@ import {
   persistMissions,
   getPersistedCommunities,
   persistCommunities,
+  loadOfflineHubs,
+  saveOfflineHubs,
+  loadOfflineInventory,
+  saveOfflineInventory,
+  loadOfflineTransactions,
+  saveOfflineTransactions,
 } from '../engine/offlineSync';
+import {
+  calculateAvailableQuantity,
+  isInventoryLowStock,
+  checkHubInventoryFeasibility,
+  checkHubVehicleFeasibility,
+  findCandidateHubsForCommunity,
+} from '../engine/hubLogisticsService';
 import {
   isSupabaseConfigured,
   supabase,
@@ -99,7 +126,19 @@ import {
   fetchCloudDraftReports,
   upsertCloudDraftReport,
   deleteCloudDraftReport,
+  fetchCloudHubs,
+  upsertCloudHub,
+  fetchCloudInventory,
+  upsertCloudInventory,
+  fetchCloudTransactions,
+  insertCloudTransaction,
+  fetchCloudModelAPredictions,
+  upsertCloudModelAPrediction,
+  upsertCloudMissionRouteOptions,
+  fetchCloudMissionRouteOptions,
 } from '../engine/supabaseClient';
+import { predictSegmentRisk, batchPredictSegmentRisks, clearModelCache, getAuthoritativeMissionExposure, calculateRouteModelAExposureFromCache } from '../engine/modelAService';
+import { buildModelAFeatures } from '../engine/modelAFeatureBuilder';
 
 interface PravahStoreContextType {
   // UAC & Role
@@ -152,6 +191,7 @@ interface PravahStoreContextType {
     routes: boolean;
     fleet: boolean;
     roadStatus: boolean;
+    modelA: boolean;
   };
   toggleLayer: (layer: keyof PravahStoreContextType['activeLayers']) => void;
   imdFilter: 'ALL' | 'Red' | 'Orange' | 'Yellow' | 'Green';
@@ -217,6 +257,15 @@ interface PravahStoreContextType {
   reportMissionDeliveryByField: (missionId: string) => void;
   adminCloseoutMission: (missionId: string) => void;
 
+  // Model B Route Options & Dynamic Routing
+  missionRouteOptionsByMissionId: Record<string, MissionRouteOption[]>;
+  selectedRouteOptionByMissionId: Record<string, string>;
+  modelBLoading: boolean;
+  modelBError: string | null;
+  generateMissionRouteOptions: (mission: ReliefMission) => Promise<MissionRouteOption[]>;
+  selectMissionRoute: (missionId: string, optionId: string) => void;
+  rerouteMission: (missionId: string, customOption?: MissionRouteOption, reason?: string) => Promise<boolean>;
+
   // Real-Time Hazard Polygons (APIs & Cloud)
   hazardPolygons: RealtimeHazardPolygon[];
   refreshHazardPolygons: () => Promise<void>;
@@ -262,6 +311,36 @@ interface PravahStoreContextType {
   pendingMapFocus: { coords: [number, number]; zoom?: number; draftId?: string; timestamp?: number } | null;
   setPendingMapFocus: (focus: { coords: [number, number]; zoom?: number; draftId?: string; timestamp?: number } | null) => void;
   focusMapOnCoords: (coords: [number, number], zoom?: number, draftId?: string) => void;
+
+  // 13. Hubs & Emergency Logistics Resources Layer
+  hubs: ResponseHub[];
+  selectedHubId: string | null;
+  inventory: HubInventory[];
+  transactions: InventoryTransaction[];
+  setSelectedHubId: (id: string | null) => void;
+  getHubById: (id: string) => ResponseHub | undefined;
+  getHubInventory: (hubId: string) => HubInventory[];
+  getHubVehicles: (hubId: string) => VehicleTelemetry[];
+  getAvailableInventory: (hubId: string) => HubInventory[];
+  getAvailableVehicles: (hubId?: string) => VehicleTelemetry[];
+  findInventoryFeasibleHubs: (requiredItems: { resourceName: string; quantity: number }[]) => ResponseHub[];
+  updateHubStatus: (hubId: string, status: ResponseHub['status']) => Promise<boolean>;
+  updateHubDetails: (hub: Partial<ResponseHub> & { id: string }) => Promise<boolean>;
+  adjustHubInventory: (hubId: string, inventoryId: string, deltaQuantity: number, reason: string) => Promise<boolean>;
+  addHubInventoryItem: (hubId: string, item: Omit<HubInventory, 'id' | 'hubId' | 'lastUpdated'>) => Promise<boolean>;
+  reserveInventoryForMission: (hubId: string, allocations: { resourceName: string; quantity: number }[], missionId: string) => Promise<boolean>;
+  releaseMissionInventory: (hubId: string, missionId: string) => Promise<boolean>;
+  dispatchReservedInventory: (hubId: string, missionId: string) => Promise<boolean>;
+  assignVehicleToHub: (vehicleId: string, hubId: string) => Promise<boolean>;
+
+  // 14. Model A Road-Disruption Predictive Risk Layer
+  modelAPredictions: Record<string, ModelAPrediction>;
+  isModelALoading: boolean;
+  modelAError: string | null;
+  fetchModelAPrediction: (segmentId: string) => Promise<ModelAPrediction | null>;
+  fetchModelAPredictionsForSegments: (segmentIds: string[], forceFresh?: boolean) => Promise<Record<string, ModelAPrediction>>;
+  refreshModelAPredictions: () => Promise<void>;
+  getModelAPrediction: (segmentId: string) => ModelAPrediction | undefined;
 }
 
 const PravahStoreContext = createContext<PravahStoreContextType | null>(null);
@@ -343,6 +422,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           'GROUND_FEED',
           'BROADCAST_CENTER',
           'MOBILE_COCKPIT',
+          'HUBS_RESOURCES',
         ];
         if (stored && validViews.includes(stored as ActiveView)) {
           return stored as ActiveView;
@@ -679,6 +759,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     routes: true,
     fleet: true,
     roadStatus: false, // Default hidden so default map is clean!
+    modelA: true, // Visible by default for tactical hazard intelligence!
   });
 
   const toggleLayer = useCallback((layer: keyof PravahStoreContextType['activeLayers']) => {
@@ -699,8 +780,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Active road disruptions map
   const [activeDisruptions, setActiveDisruptions] = useState<Record<string, SegmentIncident>>(() => {
-    const persisted = typeof window !== 'undefined' ? getPersistedDisruptions() : null;
-    return persisted || {
+    const baseDisruptions: Record<string, SegmentIncident> = {
       'SEG-DIM-KOH-MAIN': {
         status: 'TOTAL_BLOCKAGE',
         cause: 'Landslide_Debris',
@@ -713,7 +793,15 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         description: 'Bilkhawthlir silt collapse - 18T load restriction',
         reportedBy: 'Insp. L. Hmar',
       },
+      'SEG-SK-TEESTA': {
+        status: 'TOTAL_BLOCKAGE',
+        cause: 'Rockfall_Washout',
+        description: '29th Mile Teesta River Canyon road breach',
+        reportedBy: 'Capt. P. Bhutia (BRO Project Swastik)',
+      },
     };
+    const persisted = typeof window !== 'undefined' ? getPersistedDisruptions() : null;
+    return persisted ? { ...baseDisruptions, ...persisted } : baseDisruptions;
   });
 
   useEffect(() => {
@@ -797,14 +885,84 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 6. Telemetry & Watchdog
   const [vehicles, setVehicles] = useState<VehicleTelemetry[]>(() =>
-    INITIAL_VEHICLES.map((v) => ({
-      ...v,
-      status: 'AVAILABLE' as const,
-      speed_kmh: 0,
-      mission_id: '',
-      route_progress_pct: 0,
-    }))
+    INITIAL_VEHICLES.map((v) => {
+      let defaultHubId = 'silchar';
+      if (v.vehicle_id.includes('Ration') || v.vehicle_id.includes('Rescue')) defaultHubId = 'dimapur';
+      else if (v.vehicle_id.includes('Supply') || v.vehicle_id.includes('Utility') || v.vehicle_id.includes('Command')) defaultHubId = 'guwahati';
+      else if (v.vehicle_id.includes('Oxy')) defaultHubId = 'gangtok';
+
+      let capacity = 3500;
+      if (v.vehicle_id.includes('Medic')) capacity = 900;
+      else if (v.vehicle_id.includes('Cargo') || v.vehicle_id.includes('Ration')) capacity = 5000;
+      else if (v.vehicle_id.includes('Oxy')) capacity = 12000;
+      else if (v.vehicle_id.includes('Engineer')) capacity = 8000;
+
+      return {
+        ...v,
+        hub_id: v.hub_id || defaultHubId,
+        capacity_kg: v.capacity_kg || capacity,
+        fuel_capacity_litres: v.fuel_capacity_litres || 250,
+        fuel_level_litres: v.fuel_level_litres || 210,
+        status: (v.status || 'AVAILABLE') as VehicleStatus,
+        speed_kmh: v.status === 'ON_ROUTE' ? (v.speed_kmh || v.nominal_speed_kmh || 38) : 0,
+        mission_id: v.mission_id || '',
+        route_progress_pct: v.route_progress_pct || 0,
+      };
+    })
   );
+
+  // 6a. Hubs & Emergency Logistics Resources State
+  const [hubs, setHubs] = useState<ResponseHub[]>(() => loadOfflineHubs());
+  const [selectedHubId, setSelectedHubId] = useState<string | null>(() => 'silchar');
+  const [inventory, setInventory] = useState<HubInventory[]>(() => loadOfflineInventory());
+  const [transactions, setTransactions] = useState<InventoryTransaction[]>(() => loadOfflineTransactions());
+
+  // Hubs & Inventory Offline Persistence
+  useEffect(() => {
+    saveOfflineHubs(hubs);
+  }, [hubs]);
+
+  useEffect(() => {
+    saveOfflineInventory(inventory);
+  }, [inventory]);
+
+  useEffect(() => {
+    saveOfflineTransactions(transactions);
+  }, [transactions]);
+
+  // Initial cloud fetch for Hubs, Inventory, and Transactions
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    fetchCloudHubs().then((cloudHubs) => {
+      if (cloudHubs && cloudHubs.length > 0) {
+        setHubs(cloudHubs);
+        saveOfflineHubs(cloudHubs);
+      }
+    });
+    fetchCloudInventory().then((cloudInv) => {
+      if (cloudInv && cloudInv.length > 0) {
+        setInventory(cloudInv);
+        saveOfflineInventory(cloudInv);
+      }
+    });
+    fetchCloudTransactions().then((cloudTx) => {
+      if (cloudTx && cloudTx.length > 0) {
+        setTransactions(cloudTx);
+        saveOfflineTransactions(cloudTx);
+      }
+    });
+    fetchCloudModelAPredictions().then((cloudPreds) => {
+      if (cloudPreds && Object.keys(cloudPreds).length > 0) {
+        setModelAPredictions((prev) => ({ ...cloudPreds, ...prev }));
+      }
+    });
+  }, [isSupabaseConfigured]);
+
+  // 14. Model A Road-Disruption Predictive Risk State
+  const [modelAPredictions, setModelAPredictions] = useState<Record<string, ModelAPrediction>>({});
+  const [isModelALoading, setIsModelALoading] = useState<boolean>(false);
+  const [modelAError, setModelAError] = useState<string | null>(null);
+
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<AlertEvent[]>([
     {
@@ -828,18 +986,13 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [activeMissions, setActiveMissions] = useState<ReliefMission[]>(() => {
     if (typeof localStorage !== 'undefined') {
       try {
-        const stored = localStorage.getItem('pravah_relief_missions');
-        if (
-          stored &&
-          (stored.includes('"MISSION-') ||
-            stored.includes('"MOCK-') ||
-            stored.includes('MISSION-MZ-') ||
-            stored.includes('ROUTE-MZ-02') ||
-            stored.includes('ROUTE-MZ-04') ||
-            stored.includes('ROUTE-NL-01'))
-        ) {
-          localStorage.removeItem('pravah_relief_missions');
-        }
+        [
+          'pravah_relief_missions',
+          'pravah_ner_missions_v1',
+          'pravah_ner_missions_v2',
+          'pravah_ner_missions_v3',
+          'pravah_ner_missions_v4',
+        ].forEach((k) => localStorage.removeItem(k));
       } catch {
         // ignore
       }
@@ -866,8 +1019,11 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         );
         const deduplicated = cleaned.filter((m) => !(m.status === 'SUGGESTED' && activeCommIds.has(m.communityId)));
 
-        // Sanitize any route references using COMMUNITY_ROUTING_PROFILES
-        const sanitized = deduplicated.map((pm: ReliefMission) => {
+        // Preserve explicit route geometry & rerouted status - NEVER sanitize rerouted missions
+        const preserved = deduplicated.map((pm: ReliefMission) => {
+          if (pm.isRerouted || (pm.routeGeometry && pm.routeGeometry.length > 0)) {
+            return pm;
+          }
           const profile = COMMUNITY_ROUTING_PROFILES[pm.communityId];
           if (profile && pm.assignedRouteId !== profile.routeId) {
             const r = FLEET_ROUTES[profile.routeId];
@@ -886,17 +1042,66 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           }
           return pm;
         });
-        return sanitized;
+
+        // Ensure baseline demo missions exist (3 Suggested, 3 In Transit, 2 Delivered)
+        const demoMissions = generateDeterministicDemoMissions();
+        const demoSuggestedIds = new Set(demoMissions.filter((d) => d.status === 'SUGGESTED').map((d) => d.id));
+        const legacyDemoIds = new Set(['DEMO-MSN-NL-KOH', 'DEMO-MSN-MZ-KOL', 'DEMO-MSN-SK-MAN', 'SUGG-NLKOH009', 'SUGG-SKMAN002', 'SUGG-NLKOH002', 'SUGG-MZAIF008', 'SUGG-ARTAW001', 'SUGG-MLJOW005', 'SUGG-ASJAT007', 'SUGG-MNNON006']);
+        const cleanedPreserved = preserved.filter((m) => {
+          if (m.status === 'SUGGESTED') {
+            return demoSuggestedIds.has(m.id);
+          }
+          return !legacyDemoIds.has(m.id);
+        });
+        const existingIds = new Set(cleanedPreserved.map((m) => m.id));
+        const missingDemos = demoMissions.filter((d) => !existingIds.has(d.id));
+
+        // Guarantee all 3 suggested missions (Shillong, Haflong, Bilkhawthlir) are in the queue
+        const currentSuggestedIds = new Set(cleanedPreserved.filter((m) => m.status === 'SUGGESTED').map((m) => m.id));
+        const missingSuggestedDemos = demoMissions.filter((d) => d.status === 'SUGGESTED' && !currentSuggestedIds.has(d.id));
+
+        const merged = [...cleanedPreserved, ...missingDemos];
+        missingSuggestedDemos.forEach((d) => {
+          if (!merged.some((m) => m.id === d.id)) {
+            merged.push(d);
+          }
+        });
+
+        return merged;
       }
     }
-    // Generate realistic dynamic suggestions from community depletion metrics
-    return generateDynamicMissionSuggestions(INITIAL_COMMUNITIES, INITIAL_VEHICLES, []);
+    // Default initial deterministic demo missions (4 Suggested, 3 In Transit, 2 Delivered)
+    return generateDeterministicDemoMissions();
   });
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(() => {
-    const first = activeMissions.find((m) => m.status === 'SUGGESTED' || m.status === 'IN_TRANSIT');
-    return first?.id || null;
+    const firstActive = activeMissions.find((m) => m.status === 'IN_TRANSIT' || m.status === 'APPROVED');
+    return firstActive?.id || null;
   });
   const activeMissionsRef = useRef<ReliefMission[]>(activeMissions);
+
+  // 6b-ii. Model B Route Options & Selection State
+  const [missionRouteOptionsByMissionId, setMissionRouteOptionsByMissionId] = useState<Record<string, MissionRouteOption[]>>(() => {
+    const initialMap: Record<string, MissionRouteOption[]> = {};
+    activeMissions.forEach((m) => {
+      if (m.routeOptions && m.routeOptions.length > 0) {
+        initialMap[m.id] = m.routeOptions;
+      }
+    });
+    return initialMap;
+  });
+  const [selectedRouteOptionByMissionId, setSelectedRouteOptionByMissionId] = useState<Record<string, string>>(() => {
+    const initialMap: Record<string, string> = {};
+    activeMissions.forEach((m) => {
+      if (m.selectedRouteOptionId) {
+        initialMap[m.id] = m.selectedRouteOptionId;
+      } else if (m.routeOptions && m.routeOptions.length > 0) {
+        initialMap[m.id] = m.routeOptions[0].id;
+      }
+    });
+    return initialMap;
+  });
+  const [modelBLoading, setModelBLoading] = useState<boolean>(false);
+  const [modelBError, setModelBError] = useState<string | null>(null);
 
   // 6c. Real-Time Hazard Polygons (APIs & Supabase Cloud)
   const [hazardPolygons, setHazardPolygons] = useState<RealtimeHazardPolygon[]>([]);
@@ -931,6 +1136,70 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     activeMissionsRef.current = activeMissions;
     persistMissions(activeMissions);
   }, [activeMissions]);
+
+  // Ensure all suggested relief missions are populated in the queue on mount with latest calibrated parameters
+  useEffect(() => {
+    setActiveMissions((prev) => {
+      const demoMissions = generateDeterministicDemoMissions();
+      const demoSuggested = demoMissions.filter((d) => d.status === 'SUGGESTED');
+      const demoSuggestedIds = new Set(demoSuggested.map((d) => d.id));
+      let changed = false;
+
+      // Filter out any stale suggested missions not in demoSuggested
+      const filtered = prev.filter((m) => {
+        if (m.status === 'SUGGESTED') {
+          return demoSuggestedIds.has(m.id);
+        }
+        return true;
+      });
+      if (filtered.length !== prev.length) {
+        changed = true;
+      }
+
+      const updated = filtered.map((m) => {
+        if (m.status === 'SUGGESTED') {
+          const fresh = demoSuggested.find((d) => d.id === m.id);
+          if (fresh) {
+            changed = true;
+            return {
+              ...m,
+              disasterZoneId: fresh.disasterZoneId,
+              disasterZoneName: fresh.disasterZoneName,
+              routeDurationMinutes: fresh.routeDurationMinutes,
+              routeDistanceKm: fresh.routeDistanceKm,
+              disruptionProbability: fresh.disruptionProbability,
+              routeGeometry: fresh.routeGeometry,
+              assignedRouteId: fresh.assignedRouteId,
+              selectedRouteOptionId: fresh.selectedRouteOptionId,
+              routeOptions: fresh.routeOptions,
+            };
+          }
+        }
+        return m;
+      });
+      demoSuggested.forEach((d) => {
+        if (!updated.some((m) => m.id === d.id)) {
+          updated.push(d);
+          changed = true;
+        }
+        if (d.routeOptions && d.routeOptions.length > 0) {
+          setMissionRouteOptionsByMissionId((prevOpts) => {
+            if (!prevOpts[d.id] || prevOpts[d.id].length < 2) {
+              return { ...prevOpts, [d.id]: d.routeOptions! };
+            }
+            return prevOpts;
+          });
+          setSelectedRouteOptionByMissionId((prevSel) => {
+            if (!prevSel[d.id] && d.selectedRouteOptionId) {
+              return { ...prevSel, [d.id]: d.selectedRouteOptionId };
+            }
+            return prevSel;
+          });
+        }
+      });
+      return changed ? updated : prev;
+    });
+  }, []);
 
   const [customizingMission, setCustomizingMission] = useState<ReliefMission | null>(null);
   const [pendingSOSAlert, setPendingSOSAlert] = useState<AlertEvent | null>(null);
@@ -1714,11 +1983,393 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [isOnline]);
 
-  // 13. Mission Dispatch & Customization
+  // 13. Model B Route Generation & Selection
+  const generateMissionRouteOptions = useCallback(
+    async (mission: ReliefMission): Promise<MissionRouteOption[]> => {
+      if (!mission) return [];
+      setModelBLoading(true);
+      setModelBError(null);
+      try {
+        const ranking = await generateAndRankMissionRoutes(mission, {
+          allSegments: NER_SEGMENTS,
+          rainfallMmHr: rainfallMmHr,
+          disruptions: activeDisruptions,
+        });
+
+        if (ranking.options.length > 0) {
+          setMissionRouteOptionsByMissionId((prev) => ({
+            ...prev,
+            [mission.id]: ranking.options,
+          }));
+
+          // Default selection to Rank 1 (MODEL B RECOMMENDED) if not already selected
+          const currentSelected = selectedRouteOptionByMissionId[mission.id];
+          const bestOption = ranking.options.find((o) => o.predictedPreferredRoute) || ranking.options[0];
+
+          if (!currentSelected && bestOption) {
+            setSelectedRouteOptionByMissionId((prev) => ({
+              ...prev,
+              [mission.id]: bestOption.id,
+            }));
+
+            // Sync onto mission record
+            setActiveMissions((prevMissions) => {
+              const updated = prevMissions.map((m) => {
+                if (m.id === mission.id) {
+                  return {
+                    ...m,
+                    selectedRouteOptionId: bestOption.id,
+                    routeGeometry: bestOption.geometry,
+                    routeDistanceKm: bestOption.distanceKm,
+                    routeDurationMinutes: bestOption.predictedEtaMinutes,
+                    assignedRouteId: bestOption.routeId,
+                    routeOptions: ranking.options,
+                  };
+                }
+                return m;
+              });
+              persistMissions(updated);
+              return updated;
+            });
+          }
+
+          // Persist route options to Supabase if configured
+          if (isOnline && isSupabaseConfigured) {
+            upsertCloudMissionRouteOptions(ranking.options);
+          }
+        }
+        return ranking.options;
+      } catch (err: any) {
+        console.error('[PRAVAH] generateMissionRouteOptions failed:', err);
+        setModelBError(err?.message || 'Model B route ranking failed');
+        return [];
+      } finally {
+        setModelBLoading(false);
+      }
+    },
+    [rainfallMmHr, activeDisruptions, selectedRouteOptionByMissionId, isOnline]
+  );
+
+  const fetchModelAPredictionsForSegments = useCallback(
+    async (segmentIds: string[], forceFresh?: boolean): Promise<Record<string, ModelAPrediction>> => {
+      if (!segmentIds || segmentIds.length === 0) return {};
+      setIsModelALoading(true);
+      setModelAError(null);
+      try {
+        const preds = await batchPredictSegmentRisks(segmentIds, rainfallMmHr, forceFresh);
+        setModelAPredictions((prev) => ({ ...prev, ...preds }));
+        if (isSupabaseConfigured) {
+          Object.values(preds).forEach((p) => upsertCloudModelAPrediction(p).catch(() => {}));
+        }
+        return preds;
+      } catch (err: any) {
+        setModelAError(err?.message || 'Failed to batch fetch Model A predictions');
+        return {};
+      } finally {
+        setIsModelALoading(false);
+      }
+    },
+    [rainfallMmHr, isSupabaseConfigured]
+  );
+
+  const selectMissionRoute = useCallback(
+    (missionId: string, optionId: string) => {
+      const targetMission = activeMissionsRef.current.find((m) => m.id === missionId);
+      const options = missionRouteOptionsByMissionId[missionId] || targetMission?.routeOptions || [];
+      const chosen = options.find((o) => o.id === optionId);
+      if (!chosen) {
+        console.warn(`[PRAVAH] selectMissionRoute: Option ${optionId} not found for mission ${missionId}`);
+        return;
+      }
+
+      setSelectedRouteOptionByMissionId((prev) => ({
+        ...prev,
+        [missionId]: optionId,
+      }));
+
+      // Trigger dynamic Model A risk prediction for the selected route option's segments
+      if (chosen.corridorSegmentIds && chosen.corridorSegmentIds.length > 0) {
+        fetchModelAPredictionsForSegments(chosen.corridorSegmentIds).catch(() => {});
+      }
+
+      // Calculate option's disruption probability
+      const optSegs = chosen.corridorSegmentIds || [];
+      const optExposure = calculateRouteModelAExposureFromCache(optSegs, modelAPredictions);
+      const optProb = chosen.disruptionProbability ?? optExposure.max_probability;
+
+      setActiveMissions((prevMissions) => {
+        const next = prevMissions.map((m) => {
+          if (m.id === missionId) {
+            const updated: ReliefMission = {
+              ...m,
+              selectedRouteOptionId: optionId,
+              corridorSegmentIds: optSegs.length > 0 ? optSegs : m.corridorSegmentIds,
+              routeGeometry: chosen.geometry,
+              routeDistanceKm: chosen.distanceKm,
+              routeDurationMinutes: chosen.predictedEtaMinutes,
+              assignedRouteId: chosen.routeId,
+              routeOptions: options,
+              disruptionProbability: optProb,
+            };
+            if (isOnline && isSupabaseConfigured) {
+              upsertCloudMission(updated);
+            }
+            return updated;
+          }
+          return m;
+        });
+        persistMissions(next);
+        return next;
+      });
+    },
+    [missionRouteOptionsByMissionId, isOnline, fetchModelAPredictionsForSegments, modelAPredictions]
+  );
+
+  const rerouteMission = useCallback(
+    async (missionId: string, customOption?: MissionRouteOption, customReason?: string): Promise<boolean> => {
+      const targetMission = activeMissionsRef.current.find((m) => m.id === missionId);
+      if (!targetMission) {
+        console.warn(`[PRAVAH] rerouteMission: Cannot find mission ${missionId}`);
+        return false;
+      }
+
+      setModelBLoading(true);
+      setModelBError(null);
+
+      try {
+        const assignedVeh = vehicles.find(
+          (v) => v.mission_id === missionId || v.vehicle_id === targetMission.assignedVehicleId
+        );
+
+        let chosenOption = customOption;
+        let rerouteReason = customReason;
+        const isVehicleInTransit = targetMission.status === 'IN_TRANSIT' && Boolean(assignedVeh?.current_coords);
+        let reroutedFrom = (isVehicleInTransit && assignedVeh?.current_coords)
+          ? assignedVeh.current_coords
+          : targetMission.originCoords || [24.8333, 92.7789];
+
+        // If no custom option was explicitly passed, check if user pre-selected a route option card
+        if (!chosenOption) {
+          const preSelectedId = selectedRouteOptionByMissionId[missionId] || targetMission.selectedRouteOptionId;
+          const availableOpts = missionRouteOptionsByMissionId[missionId] || targetMission.routeOptions || [];
+          if (preSelectedId && availableOpts.length > 0) {
+            chosenOption = availableOpts.find((o) => o.id === preSelectedId);
+          }
+        }
+
+        if (chosenOption) {
+          // Keep track of driver's location: splice route from vehicle's live GPS point forward to destination
+          if (isVehicleInTransit && assignedVeh?.current_coords) {
+            const splicedCoords = spliceRouteFromVehicleCoords(chosenOption.geometry, assignedVeh.current_coords);
+            const splicedDist = computePolylineDistanceKm(splicedCoords);
+            const ratio = chosenOption.distanceKm > 0 ? splicedDist / chosenOption.distanceKm : 1;
+            chosenOption = {
+              ...chosenOption,
+              geometry: splicedCoords,
+              distanceKm: splicedDist,
+              predictedEtaMinutes: Math.max(1, Math.round(chosenOption.predictedEtaMinutes * ratio)),
+              osrmDurationMinutes: Math.max(1, Math.round(chosenOption.osrmDurationMinutes * ratio)),
+            };
+          }
+        } else {
+          const rerouteResult = await calculateMissionReroute(targetMission, {
+            vehicle: assignedVeh,
+            allSegments: NER_SEGMENTS,
+            rainfallMmHr,
+            disruptions: activeDisruptions,
+            modelAPredictions,
+          });
+
+          chosenOption = rerouteResult.selectedOption;
+          rerouteReason = customReason || rerouteResult.reason;
+          reroutedFrom = rerouteResult.reroutedFromCoords;
+        }
+
+        if (!chosenOption) {
+          console.warn(`[PRAVAH] rerouteMission: No viable alternative route found for ${missionId}`);
+          return false;
+        }
+
+        const newGeom = chosenOption.geometry;
+        const newDist = chosenOption.distanceKm;
+        const newEta = chosenOption.predictedEtaMinutes;
+        const newRouteId = chosenOption.routeId;
+
+        let newCorridorSegmentIds =
+          chosenOption.corridorSegmentIds && chosenOption.corridorSegmentIds.length > 0
+            ? chosenOption.corridorSegmentIds
+            : resolveCorridorBypassSegments(targetMission.corridorSegmentIds?.[0], targetMission);
+        if (newCorridorSegmentIds.length === 0) {
+          newCorridorSegmentIds = resolveCorridorBypassSegments(undefined, targetMission);
+        }
+
+        // Record initial prior hazard probability on the old corridor before detour
+        const prevExposure = getAuthoritativeMissionExposure(targetMission, modelAPredictions, NER_SEGMENTS);
+        const initialProb = targetMission.initialDisruptionProbability ?? prevExposure.max_probability;
+
+        // Authoritatively re-evaluate Model A predictions fresh for the NEW route's corridor segments
+        let freshPreds: Record<string, ModelAPrediction> = {};
+        if (newCorridorSegmentIds.length > 0) {
+          try {
+            freshPreds = await fetchModelAPredictionsForSegments(newCorridorSegmentIds, true);
+          } catch (e) {
+            console.warn('[PRAVAH] Model A batch prediction failed for new segments:', e);
+          }
+        }
+
+        // Calculate the fresh probability of this new rerouted detour route
+        const combinedPreds = { ...modelAPredictions, ...freshPreds };
+        const newExposure = calculateRouteModelAExposureFromCache(newCorridorSegmentIds, combinedPreds);
+        const calculatedRerouteProb = newExposure.max_probability;
+
+        const updatedChosenOption: MissionRouteOption = {
+          ...chosenOption,
+          corridorSegmentIds: newCorridorSegmentIds,
+          disruptionProbability: calculatedRerouteProb,
+        };
+
+        const updatedMission: ReliefMission = {
+          ...targetMission,
+          isRerouted: true,
+          initialDisruptionProbability: initialProb,
+          disruptionProbability: calculatedRerouteProb,
+          reroutedDisruptionProbability: calculatedRerouteProb,
+          rerouteReason: rerouteReason || 'Model B Predictive Hazard Detour Applied',
+          reroutedAt: new Date().toISOString(),
+          reroutedFromCoords: reroutedFrom,
+          previousRouteGeometry: undefined, // Previous path is completely discarded!
+          routeGeometry: newGeom,
+          routeDistanceKm: newDist,
+          routeDurationMinutes: newEta,
+          assignedRouteId: newRouteId,
+          selectedRouteOptionId: updatedChosenOption.id,
+          corridorSegmentIds: newCorridorSegmentIds,
+          routeOptions: targetMission.routeOptions
+            ? [updatedChosenOption, ...targetMission.routeOptions.filter((o) => o.id !== updatedChosenOption.id)]
+            : [updatedChosenOption],
+        };
+
+        setActiveMissions((prev) => {
+          const next = prev.map((m) => (m.id === missionId ? updatedMission : m));
+          persistMissions(next);
+          return next;
+        });
+
+        // Store selected route option state
+        setSelectedRouteOptionByMissionId((prev) => ({
+          ...prev,
+          [missionId]: chosenOption!.id,
+        }));
+        setMissionRouteOptionsByMissionId((prev) => ({
+          ...prev,
+          [missionId]: updatedMission.routeOptions || [chosenOption!],
+        }));
+
+        // Keep vehicle at exact current coordinates and reset telemetry progress to beginning of new route
+        if (assignedVeh) {
+          setVehicles((prev) =>
+            prev.map((v) =>
+              v.vehicle_id === assignedVeh.vehicle_id
+                ? {
+                    ...v,
+                    assigned_route_id: newRouteId,
+                    traveled_distance_km: 0,
+                    route_progress_pct: 0,
+                  }
+                : v
+            )
+          );
+        }
+
+        const rerouteAlert: AlertEvent = {
+          id: `alert-reroute-${Date.now()}`,
+          vehicle_id: assignedVeh?.vehicle_id || targetMission.assignedVehicleId || 'Convoy',
+          vehicle_name: assignedVeh?.vehicle_name || 'Convoy Squadron',
+          cargo_type: targetMission.cargoAllocations?.[0]?.item || 'Relief Consignment',
+          timestamp: new Date().toISOString(),
+          severity: 'WARNING',
+          type: 'ROUTE_DEVIATION',
+          title: `DYNAMIC CONVOY REROUTE: ${targetMission.destinationName || targetMission.communityName}`,
+          message: `${rerouteReason}. Convoy routing updated from GPS [${reroutedFrom[0].toFixed(3)}, ${reroutedFrom[1].toFixed(3)}] to bypass high risk road.`,
+          coords: reroutedFrom,
+          acknowledged: false,
+        };
+
+        setAlerts((prev) => [rerouteAlert, ...prev]);
+
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('CONVOY_REROUTED', {
+            missionId,
+            vehicleId: assignedVeh?.vehicle_id,
+            updatedMission,
+            alert: rerouteAlert,
+          });
+        }
+
+        if (isOnline && isSupabaseConfigured) {
+          upsertCloudMission(updatedMission);
+        }
+
+        return true;
+      } catch (err: any) {
+        console.error('[PRAVAH] rerouteMission failed:', err);
+        setModelBError(err?.message || 'Failed to calculate dynamic reroute');
+        return false;
+      } finally {
+        setModelBLoading(false);
+      }
+    },
+    [vehicles, rainfallMmHr, activeDisruptions, modelAPredictions, isOnline, fetchModelAPredictionsForSegments]
+  );
+
+  // Automatically precalculate Model B options for SUGGESTED missions
+  useEffect(() => {
+    const suggested = activeMissions.filter((m) => m.status === 'SUGGESTED');
+    suggested.forEach((m) => {
+      const currentOpts = missionRouteOptionsByMissionId[m.id];
+      if (!currentOpts || currentOpts.length < 2) {
+        generateMissionRouteOptions(m);
+      }
+    });
+  }, [activeMissions, missionRouteOptionsByMissionId, generateMissionRouteOptions]);
+
+  // 14. Mission Dispatch & Customization
   const approveMission = useCallback((missionId: string) => {
     const existing = activeMissionsRef.current.find((m) => m.id === missionId);
     if (!existing) return;
-    const targetMission: ReliefMission = { ...existing, status: 'APPROVED' as const };
+
+    // Ensure selected route option or Rank 1 is preserved
+    const routeOptions = existing.routeOptions || missionRouteOptionsByMissionId[missionId] || [];
+    const chosenOption = existing.selectedRouteOptionId
+      ? routeOptions.find((o) => o.id === existing.selectedRouteOptionId)
+      : (selectedRouteOptionByMissionId[missionId]
+          ? routeOptions.find((o) => o.id === selectedRouteOptionByMissionId[missionId])
+          : routeOptions.find((o) => o.predictedPreferredRoute) || routeOptions[0]);
+
+    // Compute Model A disruption probability for the approved route option
+    let chosenProb = chosenOption?.disruptionProbability;
+    if (chosenProb === undefined && chosenOption?.corridorSegmentIds && chosenOption.corridorSegmentIds.length > 0) {
+      const exp = calculateRouteModelAExposureFromCache(chosenOption.corridorSegmentIds, modelAPredictions);
+      chosenProb = exp.max_probability;
+    }
+    chosenProb = chosenProb ?? existing.disruptionProbability ?? 0.81;
+
+    // Trigger asynchronous Model A feature predictions for the approved route segments
+    if (chosenOption?.corridorSegmentIds && chosenOption.corridorSegmentIds.length > 0) {
+      fetchModelAPredictionsForSegments(chosenOption.corridorSegmentIds).catch(() => {});
+    }
+
+    const targetMission: ReliefMission = {
+      ...existing,
+      status: 'APPROVED' as const,
+      selectedRouteOptionId: chosenOption?.id || existing.selectedRouteOptionId,
+      routeGeometry: chosenOption?.geometry || existing.routeGeometry,
+      routeDistanceKm: chosenOption?.distanceKm || existing.routeDistanceKm,
+      routeDurationMinutes: chosenOption?.predictedEtaMinutes || existing.routeDurationMinutes,
+      assignedRouteId: chosenOption?.routeId || existing.assignedRouteId,
+      routeOptions: routeOptions.length > 0 ? routeOptions : existing.routeOptions,
+      disruptionProbability: chosenProb,
+    };
 
     setActiveMissions((prev) => {
       // Evict any other SUGGESTED mission for this community
@@ -1736,7 +2387,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } else {
       queueOfflineMutation({ type: 'APPROVE_MISSION', entityId: targetMission.id, payload: targetMission });
     }
-  }, [isOnline]);
+  }, [isOnline, missionRouteOptionsByMissionId, selectedRouteOptionByMissionId]);
 
   const dispatchMission = useCallback((missionId: string, vehicleId?: string) => {
     const targetMission = activeMissionsRef.current.find((m) => m.id === missionId);
@@ -1752,12 +2403,33 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const originCoords = targetMission.originCoords || [24.8333, 92.7789];
     const destName = targetMission.destinationName || targetMission.communityName || 'Disaster Operational Target';
 
+    // Resolve selected route option or Rank 1 default
+    const routeOptions = targetMission.routeOptions || missionRouteOptionsByMissionId[missionId] || [];
+    const chosenOption = targetMission.selectedRouteOptionId
+      ? routeOptions.find((o) => o.id === targetMission.selectedRouteOptionId)
+      : (selectedRouteOptionByMissionId[missionId]
+          ? routeOptions.find((o) => o.id === selectedRouteOptionByMissionId[missionId])
+          : routeOptions.find((o) => o.predictedPreferredRoute) || routeOptions[0]);
+
+    const finalRouteGeom = chosenOption?.geometry && chosenOption.geometry.length > 0
+      ? chosenOption.geometry
+      : targetMission.routeGeometry;
+    const finalDistKm = chosenOption?.distanceKm || targetMission.routeDistanceKm;
+    const finalDurMin = chosenOption?.predictedEtaMinutes || targetMission.routeDurationMinutes;
+    const finalRouteId = chosenOption?.routeId || targetMission.assignedRouteId;
+
     // 2. Transition mission to IN_TRANSIT with confirmed vehicle assignment
     const updatedMission: ReliefMission = {
       ...targetMission,
       status: 'IN_TRANSIT' as const,
       assignedVehicleId: assignedVehId,
       dispatchedAt: new Date().toISOString(),
+      selectedRouteOptionId: chosenOption?.id || targetMission.selectedRouteOptionId,
+      routeGeometry: finalRouteGeom,
+      routeDistanceKm: finalDistKm,
+      routeDurationMinutes: finalDurMin,
+      assignedRouteId: finalRouteId,
+      routeOptions: routeOptions.length > 0 ? routeOptions : targetMission.routeOptions,
     };
 
     setActiveMissions((prev) => {
@@ -1787,7 +2459,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
               ...v,
               status: 'ON_ROUTE',
               mission_id: missionId,
-              assigned_route_id: targetMission?.assignedRouteId || missionId,
+              assigned_route_id: finalRouteId || missionId,
               destination_name: destName,
               speed_kmh: 42,
               is_stopped_manual: false,
@@ -1817,7 +2489,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           cargo_manifest: targetMission?.cargoAllocations || [{ item: 'Critical Supplies', quantity: 500, unit: 'kg' }],
           destination_community_id: targetMission?.communityId || missionId,
           destination_name: destName,
-          assigned_route_id: targetMission?.assignedRouteId || missionId,
+          assigned_route_id: finalRouteId || missionId,
           current_coords: originCoords,
           nominal_speed_kmh: 45,
           speed_kmh: 42,
@@ -1876,7 +2548,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (socketRef.current?.connected) {
       socketRef.current.emit('DISPATCH_MISSION', { missionId, vehicleId: assignedVehId });
     }
-  }, [isOnline]);
+  }, [isOnline, missionRouteOptionsByMissionId, selectedRouteOptionByMissionId]);
 
   const approveAndDispatchMission = useCallback((missionId: string, vehicleId?: string) => {
     approveMission(missionId);
@@ -2232,11 +2904,17 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         description: 'Bilkhawthlir silt collapse - 18T load restriction',
         reportedBy: 'Insp. L. Hmar',
       },
+      'SEG-SK-TEESTA': {
+        status: 'TOTAL_BLOCKAGE',
+        cause: 'Rockfall_Washout',
+        description: '29th Mile Teesta River Canyon road breach',
+        reportedBy: 'Capt. P. Bhutia (BRO Project Swastik)',
+      },
     });
     setVehicles(INITIAL_VEHICLES);
-    const freshDynamicSuggestions = generateDynamicMissionSuggestions(INITIAL_COMMUNITIES, INITIAL_VEHICLES, []);
-    setActiveMissions(freshDynamicSuggestions);
-    persistMissions(freshDynamicSuggestions);
+    const freshDemoMissions = generateDeterministicDemoMissions();
+    setActiveMissions(freshDemoMissions);
+    persistMissions(freshDemoMissions);
     setPendingSOSAlert(null);
     setRainfallMmHr(24);
     setIsMonsoonDownpourSimulated(false);
@@ -2617,6 +3295,45 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           if (payload?.draftId) {
             setDraftPlots((prev) => prev.filter((item) => item.id !== payload.draftId));
             setApprovedDraftPlots((prev) => prev.filter((item) => item.id !== payload.draftId));
+          }
+        })
+        .on('broadcast', { event: 'HUB_UPDATED' }, ({ payload }: any) => {
+          if (payload?.hub) {
+            setHubs((prev) => {
+              const next = prev.map((h) => (h.id === payload.hub.id ? payload.hub : h));
+              if (!next.some((h) => h.id === payload.hub.id)) next.push(payload.hub);
+              saveOfflineHubs(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'HUB_INVENTORY_UPDATED' }, ({ payload }: any) => {
+          if (payload?.item) {
+            setInventory((prev) => {
+              const next = prev.map((item) => (item.id === payload.item.id ? payload.item : item));
+              if (!next.some((item) => item.id === payload.item.id)) next.push(payload.item);
+              saveOfflineInventory(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'INVENTORY_TRANSACTION_CREATED' }, ({ payload }: any) => {
+          if (payload?.transaction) {
+            setTransactions((prev) => {
+              if (prev.some((tx) => tx.id === payload.transaction.id)) return prev;
+              const next = [payload.transaction, ...prev];
+              saveOfflineTransactions(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'MODEL_A_PREDICTION_UPDATED' }, ({ payload }: any) => {
+          if (payload?.prediction) {
+            const p = payload.prediction as ModelAPrediction;
+            setModelAPredictions((prev) => ({
+              ...prev,
+              [p.segment_id]: p,
+            }));
           }
         })
         .on('broadcast', { event: 'INCIDENT_ADDED' }, ({ payload }: any) => {
@@ -3207,6 +3924,19 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
 
       for (const mission of affectedMissions) {
         const vehicle = vehicles.find((v) => v.vehicle_id === mission.assignedVehicleId) || vehicles[0];
+        const proposedRouteId = corridorId.includes('DIM-KOH') ? 'ROUTE-NL-02' : 'ROUTE-SUG-02';
+        const proposedRouteName = corridorId.includes('DIM-KOH')
+          ? 'Mokokchung / Wokha Mountain Bypass'
+          : 'NH-108 Tripura / Mamit High-Clearance Bypass';
+
+        const optCandidate = missionRouteOptionsByMissionId[mission.id]?.find((o) => o.id === proposedRouteId);
+        const detourSegs = optCandidate?.corridorSegmentIds && optCandidate.corridorSegmentIds.length > 0
+          ? optCandidate.corridorSegmentIds
+          : resolveCorridorBypassSegments(corridorId, mission);
+        const detourProb = detourSegs.length > 0
+          ? calculateRouteModelAExposureFromCache(detourSegs, modelAPredictions).max_probability
+          : (optCandidate?.disruptionProbability ?? 0.18);
+
         const newProposal: RerouteProposal = {
           id: `REROUTE-${mission.id}-${Date.now()}`,
           missionId: mission.id,
@@ -3217,19 +3947,18 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
           blockedSegmentName: target.corridor,
           incidentSummary: target.summary,
           currentRouteId: mission.assignedRouteId || 'ROUTE-DEFAULT',
-          proposedRouteId: corridorId.includes('DIM-KOH') ? 'ROUTE-NL-02' : 'ROUTE-SUG-02',
-          proposedRouteName: corridorId.includes('DIM-KOH')
-            ? 'Mokokchung / Wokha Mountain Bypass'
-            : 'NH-108 Tripura / Mamit High-Clearance Bypass',
+          proposedRouteId,
+          proposedRouteName,
           distanceDeltaKm: 34.5,
           etaDeltaMinutes: 55,
           status: 'PENDING_APPROVAL',
           proposedAt: new Date().toISOString(),
+          disruptionProbability: detourProb,
         };
         setRerouteProposals((prev) => [newProposal, ...prev.filter((p) => p.missionId !== mission.id)]);
       }
     },
-    [draftPlots, approvedDraftPlots, activeMissions, vehicles, isOnline, isSupabaseConfigured, focusMapOnCoords]
+    [draftPlots, approvedDraftPlots, activeMissions, vehicles, isOnline, isSupabaseConfigured, focusMapOnCoords, missionRouteOptionsByMissionId, modelAPredictions]
   );
 
   const dismissDraftPlot = useCallback((draftId: string) => {
@@ -3252,7 +3981,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
   }, [draftPlots]);
 
   const approveRerouteProposal = useCallback(
-    (proposalId: string) => {
+    async (proposalId: string) => {
       const proposal = rerouteProposals.find((p) => p.id === proposalId);
       if (!proposal) return;
 
@@ -3260,53 +3989,13 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
         prev.map((p) => (p.id === proposalId ? { ...p, status: 'APPROVED' as const } : p))
       );
 
-      // Update mission assigned route
-      setActiveMissions((prev) =>
-        prev.map((m) => {
-          if (m.id === proposal.missionId) {
-            return {
-              ...m,
-              assignedRouteId: proposal.proposedRouteId,
-            };
-          }
-          return m;
-        })
-      );
-
-      // Update vehicle route & push dispatch alert
-      setVehicles((prev) =>
-        prev.map((v) => {
-          if (v.vehicle_id === proposal.vehicleId) {
-            return {
-              ...v,
-              assigned_route_id: proposal.proposedRouteId,
-            };
-          }
-          return v;
-        })
-      );
-
-      const targetVeh = vehicles.find((v) => v.vehicle_id === proposal.vehicleId);
-      const rerouteAlert: AlertEvent = {
-        id: `alert-reroute-${Date.now()}`,
-        vehicle_id: proposal.vehicleId,
-        vehicle_name: proposal.vehicleName,
-        cargo_type: 'Relief Convoy',
-        timestamp: new Date().toISOString(),
-        severity: 'WARNING',
-        type: 'ROUTE_DEVIATION',
-        title: 'OFFICIAL DETOUR ROUTE ASSIGNED',
-        message: `Command Dispatch has approved ${proposal.proposedRouteName} due to blockage on ${proposal.blockedSegmentName}. GPS guidance updated.`,
-        coords: targetVeh?.current_coords || [24.833, 92.778],
-        acknowledged: false,
-      };
-      setAlerts((prev) => [rerouteAlert, ...prev]);
-
-      if (socketRef.current?.connected) {
-        socketRef.current.emit('DRIVER_REROUTE_ASSIGNED', { proposal, alert: rerouteAlert });
-      }
+      // Trigger authoritative complete reroute: updates geometry, segments, distance, ETA, Model A, and persists
+      const reason = proposal.incidentSummary
+        ? `Approved Dispatch Detour: ${proposal.incidentSummary}`
+        : `Approved Detour via ${proposal.proposedRouteName} bypassing ${proposal.blockedSegmentName}`;
+      await rerouteMission(proposal.missionId, undefined, reason);
     },
-    [rerouteProposals]
+    [rerouteProposals, rerouteMission]
   );
 
   const dismissRerouteProposal = useCallback((proposalId: string) => {
@@ -3337,116 +4026,592 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
     [rerouteProposals]
   );
 
-  const value = {
-    userContext,
-    activeRole,
-    switchRole,
-    activeView,
-    setActiveView,
-    theme,
-    toggleTheme,
-    isOnline,
-    isSimulatedOffline,
-    offlineQueueCount: offlineQueue.length + getOfflineMutationQueue().length,
-    offlineQueue,
-    lastDataSyncTime,
-    lastOfflineTransitionTime,
-    toggleSimulatedOffline,
-    flushOfflineQueue,
-    isSupabaseConfigured,
-    originHub,
-    setOriginHub,
-    destinationHub,
-    setDestinationHub,
-    selectedVehicle,
-    setSelectedVehicle,
-    candidateRoutes,
-    selectedRouteIndex,
-    setSelectedRouteIndex,
-    activeDisruptions,
-    setSegmentDisruption,
-    clearAllDisruptions,
-    triggerScenarioNH6Landslide,
-    triggerScenarioNH29FlashFlood,
-    triggerScenarioHaflongBridgeRisk,
-    activeLayers,
-    toggleLayer,
-    imdFilter,
-    setImdFilter,
-    rainfallMmHr,
-    setRainfallMmHr,
-    isMonsoonDownpourSimulated,
-    toggleMonsoonDownpourSimulation,
-    vehicles,
-    selectedVehicleId,
-    setSelectedVehicleId,
-    alerts,
-    acknowledgeAlert,
-    isSimulationRunning,
-    toggleSimulation,
-    simulationSpeed,
-    setSimulationSpeed,
-    toggleVehicleHalt,
-    toggleVehicleDeviation,
-    triggerVehicleSOS,
-    cancelVehicleSOS,
-    communities,
-    selectedCommunityId,
-    setSelectedCommunityId,
-    advanceCommunityElapsedHours,
-    incidents,
-    addIncident,
-    voteIncident,
-    addIncidentUpdate,
-    districtsHealth,
-    broBottlenecks,
-    deployBROAsset,
-    currentLanguage,
-    setLanguage,
-    broadcastDrafts,
-    activeBroadcastLanguage,
-    setActiveBroadcastLanguage,
-    sendBroadcast,
-    markMissionDelivered,
-    activeMissions,
-    selectedMissionId,
-    setSelectedMissionId,
-    customizingMission,
-    setCustomizingMission,
-    approveMission,
-    dispatchMission,
-    approveAndDispatchMission,
-    customizeMission,
-    reportMissionDeliveryByField,
-    adminCloseoutMission,
-    hazardPolygons,
-    refreshHazardPolygons,
-    pendingSOSAlert,
-    setPendingSOSAlert,
-    runDemoStep1,
-    runDemoStep2,
-    runDemoStep3,
-    resetDemoSimulation,
-    // 12. Gemini AI Intelligence Pipeline
-    draftPlots,
-    approvedDraftPlots,
-    rejectedReports,
-    rerouteProposals,
-    geminiApiKey,
-    setGeminiApiKey,
-    submitCitizenReport,
-    submitOfficerReport,
-    addDraftPlot,
-    approveDraftPlot,
-    dismissDraftPlot,
-    approveRerouteProposal,
-    dismissRerouteProposal,
-    updateMissionWithAi,
-    updateRerouteWithAi,
-    pendingMapFocus,
-    setPendingMapFocus,
-    focusMapOnCoords,
-  };
+    // 13. Hubs & Emergency Logistics Actions
+    const getHubById = useCallback((id: string): ResponseHub | undefined => {
+      return hubs.find((h) => h.id === id);
+    }, [hubs]);
+
+    const getHubInventory = useCallback((hubId: string): HubInventory[] => {
+      return inventory.filter((item) => item.hubId === hubId);
+    }, [inventory]);
+
+    const getHubVehicles = useCallback((hubId: string): VehicleTelemetry[] => {
+      return vehicles.filter((v) => v.hub_id === hubId);
+    }, [vehicles]);
+
+    const getAvailableInventory = useCallback((hubId: string): HubInventory[] => {
+      return inventory.filter((item) => item.hubId === hubId && calculateAvailableQuantity(item) > 0);
+    }, [inventory]);
+
+    const getAvailableVehicles = useCallback((hubId?: string): VehicleTelemetry[] => {
+      return vehicles.filter((v) => (!hubId || v.hub_id === hubId) && v.status === 'AVAILABLE');
+    }, [vehicles]);
+
+    const findInventoryFeasibleHubs = useCallback(
+      (requiredItems: { resourceName: string; quantity: number }[]): ResponseHub[] => {
+        return hubs.filter((h) => {
+          if (h.status === 'TEMPORARILY_CLOSED') return false;
+          const check = checkHubInventoryFeasibility(h.id, inventory, requiredItems);
+          return check.isFeasible;
+        });
+      },
+      [hubs, inventory]
+    );
+
+    const updateHubStatus = useCallback(
+      async (hubId: string, status: ResponseHub['status']): Promise<boolean> => {
+        let updatedHub: ResponseHub | undefined;
+        setHubs((prev) => {
+          const next = prev.map((h) => {
+            if (h.id === hubId) {
+              updatedHub = { ...h, status, updatedAt: new Date().toISOString() };
+              return updatedHub;
+            }
+            return h;
+          });
+          saveOfflineHubs(next);
+          return next;
+        });
+        if (updatedHub && isOnline && isSupabaseConfigured) {
+          upsertCloudHub(updatedHub);
+        }
+        return true;
+      },
+      [isOnline]
+    );
+
+    const updateHubDetails = useCallback(
+      async (hubUpdate: Partial<ResponseHub> & { id: string }): Promise<boolean> => {
+        let updatedHub: ResponseHub | undefined;
+        setHubs((prev) => {
+          const next = prev.map((h) => {
+            if (h.id === hubUpdate.id) {
+              updatedHub = { ...h, ...hubUpdate, updatedAt: new Date().toISOString() };
+              return updatedHub;
+            }
+            return h;
+          });
+          saveOfflineHubs(next);
+          return next;
+        });
+        if (updatedHub && isOnline && isSupabaseConfigured) {
+          upsertCloudHub(updatedHub);
+        }
+        return true;
+      },
+      [isOnline]
+    );
+
+    const adjustHubInventory = useCallback(
+      async (hubId: string, inventoryId: string, deltaQuantity: number, reason: string): Promise<boolean> => {
+        const item = inventory.find((i) => i.id === inventoryId && i.hubId === hubId);
+        if (!item) {
+          console.warn(`[PRAVAH Hubs] Inventory item ${inventoryId} not found in hub ${hubId}`);
+          return false;
+        }
+
+        const newQuantity = Number(item.quantity) + deltaQuantity;
+        if (newQuantity < item.reservedQuantity) {
+          console.warn(`[PRAVAH Hubs] Cannot reduce stock below reserved quantity (${item.reservedQuantity})`);
+          return false;
+        }
+        if (newQuantity < 0) {
+          console.warn('[PRAVAH Hubs] Cannot reduce stock below zero');
+          return false;
+        }
+
+        const updatedItem: HubInventory = {
+          ...item,
+          quantity: newQuantity,
+          lastUpdated: new Date().toISOString(),
+        };
+
+        const tx: InventoryTransaction = {
+          id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          hubId,
+          inventoryId,
+          type: deltaQuantity >= 0 ? 'ADD' : 'ADJUSTMENT',
+          quantity: Math.abs(deltaQuantity),
+          previousQuantity: item.quantity,
+          newQuantity,
+          previousReserved: item.reservedQuantity,
+          newReserved: item.reservedQuantity,
+          performedBy: userContext.name || 'Logistics Officer',
+          note: reason || 'Inventory adjustment via command deck',
+          timestamp: new Date().toISOString(),
+        };
+
+        setInventory((prev) => {
+          const next = prev.map((i) => (i.id === inventoryId ? updatedItem : i));
+          saveOfflineInventory(next);
+          return next;
+        });
+
+        setTransactions((prev) => {
+          const next = [tx, ...prev];
+          saveOfflineTransactions(next);
+          return next;
+        });
+
+        if (isOnline && isSupabaseConfigured) {
+          upsertCloudInventory(updatedItem);
+          insertCloudTransaction(tx);
+        }
+        return true;
+      },
+      [inventory, isOnline, userContext.name]
+    );
+
+    const addHubInventoryItem = useCallback(
+      async (hubId: string, itemData: Omit<HubInventory, 'id' | 'hubId' | 'lastUpdated'>): Promise<boolean> => {
+        const newItem: HubInventory = {
+          ...itemData,
+          id: `inv-${hubId}-${itemData.resourceType.toLowerCase()}-${Date.now().toString().slice(-4)}`,
+          hubId,
+          reservedQuantity: 0,
+          lastUpdated: new Date().toISOString(),
+        };
+
+        const tx: InventoryTransaction = {
+          id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          hubId,
+          inventoryId: newItem.id,
+          type: 'ADD',
+          quantity: newItem.quantity,
+          previousQuantity: 0,
+          newQuantity: newItem.quantity,
+          previousReserved: 0,
+          newReserved: 0,
+          performedBy: userContext.name || 'Logistics Officer',
+          note: `New commodity ${newItem.resourceName} added to hub inventory`,
+          timestamp: new Date().toISOString(),
+        };
+
+        setInventory((prev) => {
+          const next = [...prev, newItem];
+          saveOfflineInventory(next);
+          return next;
+        });
+
+        setTransactions((prev) => {
+          const next = [tx, ...prev];
+          saveOfflineTransactions(next);
+          return next;
+        });
+
+        if (isOnline && isSupabaseConfigured) {
+          upsertCloudInventory(newItem);
+          insertCloudTransaction(tx);
+        }
+        return true;
+      },
+      [isOnline, userContext.name]
+    );
+
+    const reserveInventoryForMission = useCallback(
+      async (hubId: string, allocations: { resourceName: string; quantity: number }[], missionId: string): Promise<boolean> => {
+        const hubItems = inventory.filter((i) => i.hubId === hubId);
+        const newTransactions: InventoryTransaction[] = [];
+        const updatedItems: HubInventory[] = [];
+
+        for (const alloc of allocations) {
+          const item = hubItems.find(
+            (i) => i.resourceName.toLowerCase().includes(alloc.resourceName.toLowerCase()) ||
+                   alloc.resourceName.toLowerCase().includes(i.resourceName.toLowerCase())
+          );
+          if (item) {
+            const available = calculateAvailableQuantity(item);
+            const reserveAmt = Math.min(available, alloc.quantity);
+            const newReserved = Number(item.reservedQuantity || 0) + reserveAmt;
+
+            const updated: HubInventory = {
+              ...item,
+              reservedQuantity: newReserved,
+              lastUpdated: new Date().toISOString(),
+            };
+            updatedItems.push(updated);
+
+            newTransactions.push({
+              id: `tx-res-${missionId}-${item.id.slice(-4)}-${Date.now()}`,
+              hubId,
+              inventoryId: item.id,
+              missionId,
+              type: 'RESERVE',
+              quantity: reserveAmt,
+              previousQuantity: item.quantity,
+              newQuantity: item.quantity,
+              previousReserved: item.reservedQuantity,
+              newReserved,
+              performedBy: userContext.name || 'Mission Dispatcher',
+              note: `Reserved ${reserveAmt} ${item.unit} for mission ${missionId}`,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+
+        if (updatedItems.length > 0) {
+          setInventory((prev) => {
+            const next = prev.map((item) => {
+              const matched = updatedItems.find((u) => u.id === item.id);
+              return matched || item;
+            });
+            saveOfflineInventory(next);
+            return next;
+          });
+
+          setTransactions((prev) => {
+            const next = [...newTransactions, ...prev];
+            saveOfflineTransactions(next);
+            return next;
+          });
+
+          if (isOnline && isSupabaseConfigured) {
+            updatedItems.forEach((u) => upsertCloudInventory(u));
+            newTransactions.forEach((tx) => insertCloudTransaction(tx));
+          }
+        }
+        return true;
+      },
+      [inventory, isOnline, userContext.name]
+    );
+
+    const releaseMissionInventory = useCallback(
+      async (hubId: string, missionId: string): Promise<boolean> => {
+        const relatedTxs = transactions.filter((tx) => tx.hubId === hubId && tx.missionId === missionId && tx.type === 'RESERVE');
+        if (relatedTxs.length === 0) return false;
+
+        const updatedItems: HubInventory[] = [];
+        const releaseTxs: InventoryTransaction[] = [];
+
+        relatedTxs.forEach((rtx) => {
+          const item = inventory.find((i) => i.id === rtx.inventoryId);
+          if (item) {
+            const newReserved = Math.max(0, item.reservedQuantity - rtx.quantity);
+            const updated: HubInventory = {
+              ...item,
+              reservedQuantity: newReserved,
+              lastUpdated: new Date().toISOString(),
+            };
+            updatedItems.push(updated);
+
+            releaseTxs.push({
+              id: `tx-rel-${missionId}-${item.id.slice(-4)}-${Date.now()}`,
+              hubId,
+              inventoryId: item.id,
+              missionId,
+              type: 'RELEASE',
+              quantity: rtx.quantity,
+              previousQuantity: item.quantity,
+              newQuantity: item.quantity,
+              previousReserved: item.reservedQuantity,
+              newReserved,
+              performedBy: userContext.name || 'Mission Controller',
+              note: `Released reserved ${rtx.quantity} ${item.unit} on mission ${missionId} modification/cancellation`,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        });
+
+        if (updatedItems.length > 0) {
+          setInventory((prev) => {
+            const next = prev.map((item) => {
+              const matched = updatedItems.find((u) => u.id === item.id);
+              return matched || item;
+            });
+            saveOfflineInventory(next);
+            return next;
+          });
+
+          setTransactions((prev) => {
+            const next = [...releaseTxs, ...prev];
+            saveOfflineTransactions(next);
+            return next;
+          });
+
+          if (isOnline && isSupabaseConfigured) {
+            updatedItems.forEach((u) => upsertCloudInventory(u));
+            releaseTxs.forEach((tx) => insertCloudTransaction(tx));
+          }
+        }
+        return true;
+      },
+      [inventory, transactions, isOnline, userContext.name]
+    );
+
+    const dispatchReservedInventory = useCallback(
+      async (hubId: string, missionId: string): Promise<boolean> => {
+        const relatedTxs = transactions.filter((tx) => tx.hubId === hubId && tx.missionId === missionId && tx.type === 'RESERVE');
+        if (relatedTxs.length === 0) return false;
+
+        const updatedItems: HubInventory[] = [];
+        const dispatchTxs: InventoryTransaction[] = [];
+
+        relatedTxs.forEach((rtx) => {
+          const item = inventory.find((i) => i.id === rtx.inventoryId);
+          if (item) {
+            const newQuantity = Math.max(0, item.quantity - rtx.quantity);
+            const newReserved = Math.max(0, item.reservedQuantity - rtx.quantity);
+            const updated: HubInventory = {
+              ...item,
+              quantity: newQuantity,
+              reservedQuantity: newReserved,
+              lastUpdated: new Date().toISOString(),
+            };
+            updatedItems.push(updated);
+
+            dispatchTxs.push({
+              id: `tx-dsp-${missionId}-${item.id.slice(-4)}-${Date.now()}`,
+              hubId,
+              inventoryId: item.id,
+              missionId,
+              type: 'DISPATCH',
+              quantity: rtx.quantity,
+              previousQuantity: item.quantity,
+              newQuantity,
+              previousReserved: item.reservedQuantity,
+              newReserved,
+              performedBy: userContext.name || 'Fleet Dispatcher',
+              note: `Dispatched ${rtx.quantity} ${item.unit} for convoy transit under mission ${missionId}`,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        });
+
+        if (updatedItems.length > 0) {
+          setInventory((prev) => {
+            const next = prev.map((item) => {
+              const matched = updatedItems.find((u) => u.id === item.id);
+              return matched || item;
+            });
+            saveOfflineInventory(next);
+            return next;
+          });
+
+          setTransactions((prev) => {
+            const next = [...dispatchTxs, ...prev];
+            saveOfflineTransactions(next);
+            return next;
+          });
+
+          if (isOnline && isSupabaseConfigured) {
+            updatedItems.forEach((u) => upsertCloudInventory(u));
+            dispatchTxs.forEach((tx) => insertCloudTransaction(tx));
+          }
+        }
+        return true;
+      },
+      [inventory, transactions, isOnline, userContext.name]
+    );
+
+    const assignVehicleToHub = useCallback(
+      async (vehicleId: string, hubId: string): Promise<boolean> => {
+        setVehicles((prev) => {
+          const next = prev.map((v) => (v.vehicle_id === vehicleId ? { ...v, hub_id: hubId } : v));
+          return next;
+        });
+        return true;
+      },
+      []
+    );
+
+    // 14. Model A Road-Disruption Predictive Risk Actions
+    const getModelAPrediction = useCallback(
+      (segmentId: string): ModelAPrediction | undefined => {
+        return modelAPredictions[segmentId];
+      },
+      [modelAPredictions]
+    );
+
+    const fetchModelAPrediction = useCallback(
+      async (segmentId: string): Promise<ModelAPrediction | null> => {
+        setIsModelALoading(true);
+        setModelAError(null);
+        try {
+          const features = buildModelAFeatures(segmentId, rainfallMmHr);
+          const pred = await predictSegmentRisk(segmentId, features, rainfallMmHr);
+          if (pred) {
+            setModelAPredictions((prev) => ({ ...prev, [segmentId]: pred }));
+            if (isSupabaseConfigured) {
+              upsertCloudModelAPrediction(pred).catch(() => {});
+            }
+          }
+          return pred;
+        } catch (err: any) {
+          setModelAError(err?.message || 'Failed to fetch Model A prediction');
+          return null;
+        } finally {
+          setIsModelALoading(false);
+        }
+      },
+      [rainfallMmHr, isSupabaseConfigured]
+    );
+
+    const refreshModelAPredictions = useCallback(async () => {
+      const allIds = NER_SEGMENTS.map((s) => s.id);
+      await fetchModelAPredictionsForSegments(allIds);
+    }, [fetchModelAPredictionsForSegments]);
+
+    // Background warmup/update on rainfall or mount
+    // When rainfallMmHr changes, clear the prediction cache first so
+    // batchPredictSegmentRisks doesn't return stale cached values.
+    useEffect(() => {
+      let isMounted = true;
+      // Evict all cached predictions so fresh values are computed with the new rainfall
+      clearModelCache();
+      setModelAPredictions({});
+      const allIds = NER_SEGMENTS.map((s) => s.id);
+      fetchModelAPredictionsForSegments(allIds).catch(() => {});
+      return () => {
+        isMounted = false;
+      };
+    }, [rainfallMmHr, fetchModelAPredictionsForSegments]);
+
+    const value = {
+      userContext,
+      activeRole,
+      switchRole,
+      activeView,
+      setActiveView,
+      theme,
+      toggleTheme,
+      isOnline,
+      isSimulatedOffline,
+      offlineQueueCount: offlineQueue.length + getOfflineMutationQueue().length,
+      offlineQueue,
+      lastDataSyncTime,
+      lastOfflineTransitionTime,
+      toggleSimulatedOffline,
+      flushOfflineQueue,
+      isSupabaseConfigured,
+      originHub,
+      setOriginHub,
+      destinationHub,
+      setDestinationHub,
+      selectedVehicle,
+      setSelectedVehicle,
+      candidateRoutes,
+      selectedRouteIndex,
+      setSelectedRouteIndex,
+      activeDisruptions,
+      setSegmentDisruption,
+      clearAllDisruptions,
+      triggerScenarioNH6Landslide,
+      triggerScenarioNH29FlashFlood,
+      triggerScenarioHaflongBridgeRisk,
+      activeLayers,
+      toggleLayer,
+      imdFilter,
+      setImdFilter,
+      rainfallMmHr,
+      setRainfallMmHr,
+      isMonsoonDownpourSimulated,
+      toggleMonsoonDownpourSimulation,
+      vehicles,
+      selectedVehicleId,
+      setSelectedVehicleId,
+      alerts,
+      acknowledgeAlert,
+      isSimulationRunning,
+      toggleSimulation,
+      simulationSpeed,
+      setSimulationSpeed,
+      toggleVehicleHalt,
+      toggleVehicleDeviation,
+      triggerVehicleSOS,
+      cancelVehicleSOS,
+      communities,
+      selectedCommunityId,
+      setSelectedCommunityId,
+      advanceCommunityElapsedHours,
+      incidents,
+      addIncident,
+      voteIncident,
+      addIncidentUpdate,
+      districtsHealth,
+      broBottlenecks,
+      deployBROAsset,
+      currentLanguage,
+      setLanguage,
+      broadcastDrafts,
+      activeBroadcastLanguage,
+      setActiveBroadcastLanguage,
+      sendBroadcast,
+      markMissionDelivered,
+      activeMissions,
+      selectedMissionId,
+      setSelectedMissionId,
+      customizingMission,
+      setCustomizingMission,
+      approveMission,
+      dispatchMission,
+      approveAndDispatchMission,
+      customizeMission,
+      reportMissionDeliveryByField,
+      adminCloseoutMission,
+      // Model B Route Options & Dynamic Routing
+      missionRouteOptionsByMissionId,
+      selectedRouteOptionByMissionId,
+      modelBLoading,
+      modelBError,
+      generateMissionRouteOptions,
+      selectMissionRoute,
+      rerouteMission,
+      hazardPolygons,
+      refreshHazardPolygons,
+      pendingSOSAlert,
+      setPendingSOSAlert,
+      runDemoStep1,
+      runDemoStep2,
+      runDemoStep3,
+      resetDemoSimulation,
+      // 12. Gemini AI Intelligence Pipeline
+      draftPlots,
+      approvedDraftPlots,
+      rejectedReports,
+      rerouteProposals,
+      geminiApiKey,
+      setGeminiApiKey,
+      submitCitizenReport,
+      submitOfficerReport,
+      addDraftPlot,
+      approveDraftPlot,
+      dismissDraftPlot,
+      approveRerouteProposal,
+      dismissRerouteProposal,
+      updateMissionWithAi,
+      updateRerouteWithAi,
+      pendingMapFocus,
+      setPendingMapFocus,
+      focusMapOnCoords,
+      // 13. Hubs & Resources Logistics
+      hubs,
+      selectedHubId,
+      inventory,
+      transactions,
+      setSelectedHubId,
+      getHubById,
+      getHubInventory,
+      getHubVehicles,
+      getAvailableInventory,
+      getAvailableVehicles,
+      findInventoryFeasibleHubs,
+      updateHubStatus,
+      updateHubDetails,
+      adjustHubInventory,
+      addHubInventoryItem,
+      reserveInventoryForMission,
+      releaseMissionInventory,
+      dispatchReservedInventory,
+      assignVehicleToHub,
+      // 14. Model A Road-Disruption Predictive Risk
+      modelAPredictions,
+      isModelALoading,
+      modelAError,
+      fetchModelAPrediction,
+      fetchModelAPredictionsForSegments,
+      refreshModelAPredictions,
+      getModelAPrediction,
+    };
 
   return <PravahStoreContext.Provider value={value}>{children}</PravahStoreContext.Provider>;
 };

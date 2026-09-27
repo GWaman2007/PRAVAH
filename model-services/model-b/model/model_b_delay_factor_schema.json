@@ -1,0 +1,37 @@
+{
+  "model_name": "PRAVAH Model B Delay Factor",
+  "model_version": "prototype_v2_delay_factor",
+  "features": [
+    "distance_km",
+    "osrm_duration_minutes",
+    "straight_distance_km",
+    "route_speed_kmh",
+    "detour_ratio",
+    "route_mean_rainfall_24h",
+    "route_max_rainfall_24h",
+    "route_mean_rainfall_72h",
+    "route_max_rainfall_72h",
+    "route_mean_rainfall_7d",
+    "route_max_rainfall_7d",
+    "route_mean_target",
+    "route_max_target",
+    "origin_rainfall_24h",
+    "origin_rainfall_72h",
+    "origin_rainfall_7d",
+    "origin_target",
+    "destination_rainfall_24h",
+    "destination_rainfall_72h",
+    "destination_rainfall_7d",
+    "destination_target"
+  ],
+  "target": "synthetic_delay_factor",
+  "eta_reconstruction": "predicted_eta_minutes = osrm_duration_minutes * predicted_delay_factor",
+  "delay_factor_bounds": {
+    "minimum": 1.0,
+    "maximum": 1.75
+  },
+  "training_data": "model_b_final_labeled_dataset.csv",
+  "target_type": "synthetic",
+  "split_type": "grouped_by_trip",
+  "random_state": 42
+}

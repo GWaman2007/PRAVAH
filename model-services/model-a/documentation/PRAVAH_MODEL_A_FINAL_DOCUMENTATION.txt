@@ -1,0 +1,529 @@
+============================================================
+PRAVAH MODEL A — FINAL DOCUMENTATION
+Road / Bridge Disruption Event Classifier
+============================================================
+
+DOCUMENT STATUS
+------------------------------------------------------------
+Status:
+FROZEN — FINAL BASELINE MODEL
+
+Model:
+XGBoost Classifier
+
+Model file:
+pravah_model_a_baseline_xgb.json
+
+Documentation generated:
+2026-09-21 15:44:43
+
+============================================================
+1. OBJECTIVE
+============================================================
+
+PRAVAH Model A is an operational classifier intended to estimate
+the likelihood of a documented future road-associated disruption
+event for an observation at prediction time T.
+
+The model is separate from the existing district-level regression
+model.
+
+The existing regression model remains unchanged.
+
+Model A is NOT a thresholded version of the regression vulnerability
+score.
+
+============================================================
+2. TARGET DEFINITION
+============================================================
+
+Target = 1:
+A verified/documented road-associated disruption event occurs
+within the defined prediction horizon after prediction time T.
+
+Target = 0:
+No documented event was present in the available event inventory
+for the controlled negative observation.
+
+IMPORTANT LIMITATION:
+
+Target = 0 does not prove that a physical disruption did not occur.
+It means that no corresponding documented event was available in
+the finite event inventory under the negative-sampling procedure.
+
+Therefore, the model should be described as estimating the likelihood
+of a DOCUMENTED ROAD-ASSOCIATED EVENT rather than guaranteeing the
+absence or presence of every physical road closure.
+
+============================================================
+3. DATASET CONSTRUCTION
+============================================================
+
+Positive event inventory:
+28 exact-date road-associated landslide/disruption records.
+
+Rainfall-complete positive prediction observations:
+27.
+
+Controlled negative observations:
+56.
+
+Total baseline observations:
+83.
+
+Positive/negative construction was performed using documented event
+records and controlled negative sampling.
+
+Negative observations were sampled from selected districts and were
+excluded from a +/- 3 day window around documented events in the
+same district.
+
+The negative observations use representative district coordinates
+where an actual road-level negative observation was unavailable.
+
+This is an important limitation and should be stated in any
+interpretation of Model A.
+
+============================================================
+4. PREDICTION-TIME ALIGNMENT
+============================================================
+
+For positive observations:
+
+Prediction time T = event date - 1 day.
+
+Features available only through T were used for the prediction.
+
+This prevents information from after the event from entering the
+prediction features.
+
+Historical landslide exposure was calculated using only historical
+records occurring before the prediction year.
+
+============================================================
+5. LEAKAGE CONTROLS
+============================================================
+
+The following leakage controls were applied:
+
+1. Rainfall features use observations available through prediction
+   time T.
+
+2. Historical landslide counts use historical records only.
+
+3. Post-disruption information was not used as a prediction feature.
+
+4. The dataset was split chronologically rather than randomly.
+
+5. The final model was frozen before the final reload and inference
+   verification.
+
+============================================================
+6. FROZEN FEATURE SCHEMA
+============================================================
+
+The final Model A contains 17 features:
+
+1. rainfall_24h
+2. rainfall_72h
+3. rainfall_7d
+4. elevation_m
+5. slope_degrees
+6. historical_road_landslide_count
+7. historical_road_landslide_presence
+8. bt_road_km
+9. icbp_km
+10. cement_concrete_km
+11. paver_block_km
+12. total_paved_road_km
+13. bt_road_ratio
+14. icbp_ratio
+15. cement_concrete_ratio
+16. paver_block_ratio
+17. road_surface_diversity
+
+============================================================
+7. FEATURES NOT INCLUDED IN BASELINE
+============================================================
+
+The following potential data sources were not included in the
+baseline because adequate coverage/temporal alignment was not
+available:
+
+- Weather / forecast features
+- Flood/water-level features
+- Traffic features
+- Live field evidence
+- IIT landslide vulnerability raster
+
+Water-level observations had insufficient same-day coverage and
+large nearest-station distances.
+
+The IIT raster had class-associated missingness:
+coverage was available for positive observations but not for
+negative observations, so it was excluded from the baseline rather
+than introducing biased imputation.
+
+============================================================
+8. CHRONOLOGICAL DATA SPLIT
+============================================================
+
+Training:
+40 observations
+35 negative
+5 positive
+
+Validation:
+13 observations
+11 negative
+2 positive
+
+Test:
+30 observations
+10 negative
+20 positive
+
+Training period:
+2014-05-09 to 2018-03-28
+
+Validation period:
+2018-04-23 to 2019-07-27
+
+Test period:
+2019-08-03 to 2020-09-25
+
+No date overlap exists between the three partitions.
+
+IMPORTANT:
+
+The validation set contains only two positive observations.
+Therefore validation-based tuning conclusions are highly uncertain.
+
+The test set also has a high positive proportion and should not be
+interpreted as representative of the prevalence of all future
+road disruptions.
+
+============================================================
+9. BASELINE XGBOOST CONFIGURATION
+============================================================
+
+Algorithm:
+XGBoost Classifier
+
+Parameters:
+
+n_estimators      = 100
+max_depth         = 3
+learning_rate     = 0.05
+subsample         = 0.8
+colsample_bytree  = 0.8
+min_child_weight  = 2
+reg_alpha         = 0.1
+reg_lambda        = 1.0
+objective         = binary:logistic
+eval_metric       = logloss
+scale_pos_weight  = 7.0
+random_state      = 42
+n_jobs            = -1
+
+============================================================
+10. FEATURE IMPORTANCE
+============================================================
+
+The strongest baseline feature contributions were:
+
+icbp_ratio                         0.250479
+historical_road_landslide_count    0.244986
+rainfall_24h                       0.235001
+rainfall_72h                       0.086924
+slope_degrees                      0.053917
+icbp_km                            0.043673
+bt_road_km                         0.035012
+elevation_m                        0.025970
+rainfall_7d                        0.024038
+
+Several remaining features had zero tree importance in the baseline.
+
+Zero importance does NOT mean those variables are universally
+irrelevant. It only describes their contribution in this fitted
+baseline model and dataset.
+
+============================================================
+11. VALIDATION / TUNING
+============================================================
+
+Conservative XGBoost tuning was performed.
+
+The tested configurations did not materially improve validation
+performance.
+
+The validation ROC-AUC remained approximately 0.45 for the baseline
+and several alternative configurations.
+
+Because the validation set contained only two positive observations,
+no aggressive hyperparameter optimization was performed.
+
+The baseline configuration was therefore retained and frozen.
+
+============================================================
+12. FINAL FROZEN TEST RESULTS
+============================================================
+
+Test observations:
+30
+
+Actual positives:
+20
+
+Actual negatives:
+10
+
+Predicted positives:
+20
+
+Predicted negatives:
+10
+
+
+Accuracy:
+0.9333
+
+Precision:
+0.9500
+
+Recall:
+0.9500
+
+F1 Score:
+0.9500
+
+ROC-AUC:
+0.9275
+
+PR-AUC:
+0.9460
+
+
+Confusion Matrix:
+
+                 Predicted 0    Predicted 1
+
+Actual 0              9              1
+
+Actual 1              1             19
+
+
+Therefore:
+
+True Negatives  = 9
+False Positives = 1
+False Negatives = 1
+True Positives  = 19
+
+============================================================
+13. FINAL TEST INTERPRETATION
+============================================================
+
+On the held-out chronological test observations, the frozen model
+correctly classified 28 of 30 observations.
+
+It identified 19 of 20 documented-event observations and correctly
+identified 9 of 10 no-documented-event observations.
+
+The model therefore demonstrated strong performance on this specific
+held-out test sample.
+
+However, the result should not be interpreted as production-level
+generalization because the overall event dataset is small, the
+validation set contains only two positive observations, and the
+negative class is based on absence from the available documentation.
+
+============================================================
+14. FINAL RELOAD VERIFICATION
+============================================================
+
+The frozen XGBoost model was reloaded from disk and evaluated again.
+
+Verification results:
+
+Feature schema match:
+TRUE
+
+Actual labels match:
+TRUE
+
+Predicted classes match:
+TRUE
+
+Probability arrays numerically consistent:
+TRUE
+
+Maximum probability difference after reload:
+approximately 1.99e-08
+
+Mean probability difference after reload:
+approximately 1.14e-08
+
+This confirms that the saved model can be reloaded and reproduce
+the expected predictions within numerical floating-point tolerance.
+
+============================================================
+15. INFERENCE FUNCTION
+============================================================
+
+A reusable inference function was created:
+
+predict_pravah_model_a(observation, threshold=0.50)
+
+The function:
+
+1. Loads the frozen model.
+2. Loads the frozen feature schema.
+3. Validates all 17 required features.
+4. Converts feature values to numeric form.
+5. Rejects missing required values.
+6. Generates an event probability.
+7. Applies the configured classification threshold.
+8. Returns the probability, prediction and interpretation.
+
+A sample inference produced:
+
+Event probability:
+0.940913
+
+Prediction:
+1
+
+Interpretation:
+Elevated likelihood of a documented road-associated event within
+the prediction horizon.
+
+============================================================
+16. IMPORTANT MODEL LIMITATIONS
+============================================================
+
+1. Small dataset:
+   Only 83 baseline observations were available.
+
+2. Limited positive events:
+   Only 27 positive observations were usable for the baseline.
+
+3. Negative-label uncertainty:
+   A negative label represents absence of a documented event rather
+   than guaranteed physical absence of disruption.
+
+4. Representative negative coordinates:
+   Some negative observations use district representative
+   coordinates instead of actual road-segment coordinates.
+
+5. Limited validation sample:
+   Only two positive observations are present in validation.
+
+6. Limited spatial coverage:
+   The event inventory and supporting datasets do not provide
+   complete road-level coverage across Assam.
+
+7. Missing live operational variables:
+   Traffic, real-time field evidence, adequate water-level coverage,
+   and forecast variables were not available at sufficient quality
+   for the baseline.
+
+8. Test-set composition:
+   The held-out test set contains 20 positives and 10 negatives,
+   so the reported metrics should not be interpreted as population-
+   level event prevalence or universal future performance.
+
+============================================================
+17. FUTURE DATA REQUIREMENTS
+============================================================
+
+For a stronger operational PRAVAH Model A, the highest-priority
+improvements are:
+
+1. Verified road/bridge disruption events with:
+   - exact timestamp
+   - exact coordinates
+   - road/bridge stable ID
+   - disruption type
+   - severity
+   - closure/open status
+   - verification source
+
+2. True non-event observations with adequate observation coverage.
+
+3. Road-segment geometry and stable road IDs.
+
+4. Better timestamped river/water-level coverage.
+
+5. Traffic observations.
+
+6. Weather and forecast observations aligned to prediction time.
+
+7. Live field reports/evidence.
+
+8. A substantially larger number of positive disruption events.
+
+============================================================
+18. MODEL FILES
+============================================================
+
+Frozen model:
+models/pravah_model_a/pravah_model_a_baseline_xgb.json
+
+Frozen feature schema:
+models/pravah_model_a/pravah_model_a_frozen_feature_schema.csv
+
+Final test predictions:
+models/pravah_model_a/pravah_model_a_final_independent_test.csv
+
+Final test metrics:
+models/pravah_model_a/pravah_model_a_final_test_metrics.json
+
+Reload verification:
+models/pravah_model_a/model_reload_verification.json
+
+Evaluation metrics:
+models/pravah_model_a/baseline_evaluation_metrics.csv
+
+Feature importance:
+models/pravah_model_a/baseline_feature_importance.csv
+
+Validation diagnostics:
+models/pravah_model_a/validation_event_diagnostic.csv
+
+Distribution shift analysis:
+models/pravah_model_a/train_validation_distribution_shift.csv
+
+============================================================
+19. FINAL STATUS
+============================================================
+
+PRAVAH Model A baseline classifier development is COMPLETE.
+
+The model has been:
+
+[✓] Dataset constructed
+[✓] Prediction-time features aligned
+[✓] Leakage controls applied
+[✓] Frozen feature schema created
+[✓] Chronological train/validation/test split created
+[✓] XGBoost classifier trained
+[✓] Validation diagnostics performed
+[✓] Conservative tuning attempted
+[✓] Baseline model frozen
+[✓] Model reloaded successfully
+[✓] Predictions reproduced after reload
+[✓] Final held-out test evaluated
+[✓] Inference function created
+[✓] Documentation generated
+
+The model is suitable as a research/development baseline.
+
+It should not yet be described as a fully validated operational
+road-closure prediction system without substantially better event
+labels, road-level negative observations, spatial coverage and
+larger temporal validation data.
+
+============================================================
+END OF PRAVAH MODEL A DOCUMENTATION
+============================================================

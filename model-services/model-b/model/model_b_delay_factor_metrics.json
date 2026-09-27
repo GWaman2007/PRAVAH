@@ -1,0 +1,10 @@
+{
+  "rows": 2020,
+  "unique_trips": 10,
+  "train_trip_count": 8,
+  "test_trip_count": 2,
+  "delay_factor_mae": 0.04834221244627629,
+  "reconstructed_eta_mae_minutes": 22.26444751356267,
+  "reconstructed_eta_rmse_minutes": 28.64195764030837,
+  "warning": "Synthetic target and only 10 unique trips. Metrics are prototype consistency measurements, not real-world validation."
+}

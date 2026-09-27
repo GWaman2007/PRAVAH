@@ -248,7 +248,7 @@ export const MapLegend: React.FC = () => {
                   </div>
                   <div>
                     <span className="font-semibold text-white">Active Selected Mission Corridor</span>
-                    <span className="text-slate-400 block text-[9.5px]">Highlighted route connecting depot to community</span>
+                    <span className="text-slate-400 block text-[9.5px]">Highlighted corridor (Red &ge; 80%, Orange &ge; 50%, Royal Blue &lt; 50% or Rerouted Main Route)</span>
                   </div>
                 </div>
 
@@ -293,6 +293,54 @@ export const MapLegend: React.FC = () => {
                   <div>
                     <span className="font-medium text-red-400">Active Road Breakdown / Obstacle</span>
                     <span className="text-slate-400 block text-[9.5px]">Click for estimated clearance hours &amp; affected missions</span>
+                  </div>
+                </div>
+
+                {/* Model A Predictive Disruption Risk Overlay */}
+                <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[10px] text-orange-400 uppercase tracking-wider flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-orange-500 shadow-xs" />
+                      <span>Model A Predictive Risk Overlay</span>
+                    </span>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-300 border border-orange-500/30">
+                      Frozen XGBoost
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 flex items-center justify-center shrink-0">
+                      <div className="w-6 h-1.5 rounded-full bg-[#DC2626] shadow-sm border border-red-950" />
+                    </div>
+                    <div>
+                      <span className="font-medium text-red-400">High Disruption Risk (P &ge; 80%)</span>
+                      <span className="text-slate-400 block text-[9.5px]">Severe terrain vulnerability &amp; rainfall saturation trigger. Rendered in Tactical Red.</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 flex items-center justify-center shrink-0">
+                      <div className="w-6 h-1.5 rounded-full bg-[#EA580C] shadow-sm border border-orange-950" />
+                    </div>
+                    <div>
+                      <span className="font-medium text-orange-400">Elevated Disruption Risk (50% &le; P &lt; 80%)</span>
+                      <span className="text-slate-400 block text-[9.5px]">Rendered in Tactical Orange. High probability of disruption under 17 environmental features.</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 flex items-center justify-center shrink-0">
+                      <div className="w-6 h-1.5 rounded-full bg-[#2563EB] shadow-sm border border-blue-950" />
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-400">Low Disruption Risk (P &lt; 50%) / Rerouted Main Route</span>
+                      <span className="text-slate-400 block text-[9.5px]">Rendered in Royal Blue. Safe corridor or verified active bypass corridor.</span>
+                    </div>
+                  </div>
+
+                  <div className="p-1.5 rounded bg-slate-900 border border-slate-800 text-[9px] text-slate-400 leading-tight">
+                    <span className="text-amber-300 font-semibold">Operational Distinction: </span>
+                    Model A orange highlights represent ML predicted disruption risk, NOT confirmed operational closure. Road usability is verified via field ground intelligence and BRO reports.
                   </div>
                 </div>
               </div>

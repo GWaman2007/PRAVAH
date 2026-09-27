@@ -1,4 +1,4 @@
-import type { ChokePoint } from '../types';
+import type { ChokePoint, Segment } from '../types';
 
 export interface StationWeatherTelemetry extends ChokePoint {
   precipitation_mm: number;
@@ -141,4 +141,151 @@ export async function fetchLiveChokePointWeather(chokePoints: ChokePoint[]): Pro
       error: err?.message,
     };
   }
+}
+
+export interface SegmentRainfallTelemetry {
+  rainfall_24h: number;
+  rainfall_72h: number;
+  rainfall_7d: number;
+  timestamp: string;
+}
+
+const multiDayCache = new Map<string, { data: SegmentRainfallTelemetry; expiresAt: number }>();
+
+/**
+ * Retrieves authentic multi-day precipitation observations (24h, 72h, 7d) directly
+ * from Open-Meteo historical daily sums without arbitrary multipliers.
+ */
+export async function fetchLiveMultiDayRainfall(lat: number, lng: number): Promise<SegmentRainfallTelemetry | null> {
+  const cacheKey = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  const cached = multiDayCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data;
+  }
+
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&daily=precipitation_sum&past_days=7&forecast_days=1&timezone=Asia%2FKolkata`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return null;
+    const json = await response.json();
+    const precipArr: number[] = json?.daily?.precipitation_sum || [];
+    if (precipArr.length < 7) return null;
+
+    // Last 24h: most recent completed day
+    const r24 = precipArr[precipArr.length - 2] ?? precipArr[precipArr.length - 1] ?? 0;
+    // Last 72h: sum of last 3 days
+    const r72 = precipArr.slice(-4, -1).reduce((acc, v) => acc + (v || 0), 0);
+    // Last 7d: sum of 7 past days
+    const r7d = precipArr.slice(0, 7).reduce((acc, v) => acc + (v || 0), 0);
+
+    const result: SegmentRainfallTelemetry = {
+      rainfall_24h: Math.round(r24 * 10) / 10,
+      rainfall_72h: Math.round(r72 * 10) / 10,
+      rainfall_7d: Math.round(r7d * 10) / 10,
+      timestamp: new Date().toISOString(),
+    };
+
+    multiDayCache.set(cacheKey, { data: result, expiresAt: Date.now() + 30 * 60 * 1000 });
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Batch retrieves authentic multi-day precipitation observations for multiple road segments
+ * directly from Open-Meteo historical daily sums without arbitrary multipliers.
+ */
+export async function fetchLiveSegmentsMultiDayRainfall(
+  segments: (Segment | string)[],
+  allSegmentsMap?: Map<string, Segment>
+): Promise<Record<string, SegmentRainfallTelemetry>> {
+  const results: Record<string, SegmentRainfallTelemetry> = {};
+  if (!segments || segments.length === 0) return results;
+
+  const resolvedSegs: Segment[] = segments
+    .map((s) => {
+      if (typeof s !== 'string') return s;
+      if (allSegmentsMap?.has(s)) return allSegmentsMap.get(s)!;
+      return null as any;
+    })
+    .filter(Boolean);
+
+  if (resolvedSegs.length === 0) return results;
+
+  const missingSegs: Segment[] = [];
+  for (const seg of resolvedSegs) {
+    const midIdx = seg.coordinates ? Math.floor(seg.coordinates.length / 2) : 0;
+    const pt = seg.coordinates && seg.coordinates[midIdx] ? seg.coordinates[midIdx] : [26.14, 91.73];
+    const cacheKey = `${pt[0].toFixed(2)},${pt[1].toFixed(2)}`;
+    const cached = multiDayCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      results[seg.id] = cached.data;
+    } else {
+      missingSegs.push(seg);
+    }
+  }
+
+  if (missingSegs.length === 0) return results;
+
+  const lats = missingSegs
+    .map((s) => {
+      const midIdx = s.coordinates ? Math.floor(s.coordinates.length / 2) : 0;
+      return (s.coordinates && s.coordinates[midIdx] ? s.coordinates[midIdx][0] : 26.14).toFixed(4);
+    })
+    .join(',');
+
+  const lngs = missingSegs
+    .map((s) => {
+      const midIdx = s.coordinates ? Math.floor(s.coordinates.length / 2) : 0;
+      return (s.coordinates && s.coordinates[midIdx] ? s.coordinates[midIdx][1] : 91.73).toFixed(4);
+    })
+    .join(',');
+
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lngs}&daily=precipitation_sum&past_days=7&forecast_days=1&timezone=Asia%2FKolkata`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      const rawList = Array.isArray(data) ? data : [data];
+
+      missingSegs.forEach((seg, idx) => {
+        const item = rawList[idx] || {};
+        const precipArr: number[] = item?.daily?.precipitation_sum || [];
+        if (precipArr.length >= 7) {
+          const r24 = precipArr[precipArr.length - 2] ?? precipArr[precipArr.length - 1] ?? 0;
+          const r72 = precipArr.slice(-4, -1).reduce((acc, v) => acc + (v || 0), 0);
+          const r7d = precipArr.slice(0, 7).reduce((acc, v) => acc + (v || 0), 0);
+
+          const telemetry: SegmentRainfallTelemetry = {
+            rainfall_24h: Math.round(r24 * 10) / 10,
+            rainfall_72h: Math.round(r72 * 10) / 10,
+            rainfall_7d: Math.round(r7d * 10) / 10,
+            timestamp: new Date().toISOString(),
+          };
+
+          const midIdx = seg.coordinates ? Math.floor(seg.coordinates.length / 2) : 0;
+          const pt = seg.coordinates && seg.coordinates[midIdx] ? seg.coordinates[midIdx] : [26.14, 91.73];
+          const cacheKey = `${pt[0].toFixed(2)},${pt[1].toFixed(2)}`;
+          multiDayCache.set(cacheKey, { data: telemetry, expiresAt: Date.now() + 30 * 60 * 1000 });
+
+          results[seg.id] = telemetry;
+        }
+      });
+    }
+  } catch {
+    // Graceful offline fallback
+  }
+
+  return results;
 }

@@ -114,6 +114,22 @@ export const NER_NODES: Record<string, NetworkNode> = {
     isHub: false,
     elevationMeters: 610,
   },
+  teesta: {
+    id: 'teesta',
+    name: 'Teesta Canyon 29th Mile Hub',
+    state: 'Sikkim',
+    coordinates: [27.0288, 88.4714],
+    isHub: false,
+    elevationMeters: 280,
+  },
+  tawang: {
+    id: 'tawang',
+    name: 'Tawang Forward Valley Command',
+    state: 'Arunachal Pradesh',
+    coordinates: [27.5861, 91.8594],
+    isHub: false,
+    elevationMeters: 3048,
+  },
 };
 
 export const VEHICLE_PROFILES: VehicleProfile[] = [
@@ -190,6 +206,31 @@ export const NER_SEGMENTS: Segment[] = [
       [25.9010, 91.8780],
       [25.7520, 91.8950],
       [25.6650, 91.9120],
+      [25.5788, 91.8933],
+    ],
+  },
+  // --- GUWAHATI TO SHILLONG VIA UMIAM EAST RIDGE BYPASS (SH-8 / BHOIRYMBONG) ---
+  {
+    id: 'SEG-ML-SHL-BYPASS',
+    name: 'NH-106 / SH-8 Umiam East Ridge Bypass (via Bhoirymbong)',
+    highway: 'SH-8 / NH-106',
+    fromNode: 'guwahati',
+    toNode: 'shillong',
+    distance_km: 125.6,
+    base_speed_kmh: 46,
+    max_weight_limit: 38.0,
+    max_height_limit: 4.6,
+    max_width_limit: 3.8,
+    bhuvan_lhz_level: 1,
+    gradient_pct: 3.2,
+    surface_type: 'paved',
+    bridgeName: 'Umroi Bridge',
+    coordinates: [
+      [26.1445, 91.7362],
+      [26.0420, 91.8480],
+      [25.8500, 91.9500],
+      [25.7200, 91.9800],
+      [25.6200, 91.9400],
       [25.5788, 91.8933],
     ],
   },
@@ -320,8 +361,8 @@ export const NER_SEGMENTS: Segment[] = [
     max_weight_limit: 22.0, // Narrow mountain bypass
     max_height_limit: 3.8,
     max_width_limit: 2.8,
-    bhuvan_lhz_level: 3,
-    gradient_pct: 11.2,
+    bhuvan_lhz_level: 1,
+    gradient_pct: 4.8,
     surface_type: 'paved',
     bridgeName: 'Doyang River Bailey Bridge (22T Limit)',
     coordinates: [
@@ -342,8 +383,8 @@ export const NER_SEGMENTS: Segment[] = [
     max_weight_limit: 25.0,
     max_height_limit: 4.0,
     max_width_limit: 3.0,
-    bhuvan_lhz_level: 3,
-    gradient_pct: 7.5,
+    bhuvan_lhz_level: 1,
+    gradient_pct: 4.2,
     surface_type: 'paved',
     coordinates: [
       [26.1025, 94.2638],
@@ -412,8 +453,8 @@ export const NER_SEGMENTS: Segment[] = [
     max_weight_limit: 20.0,
     max_height_limit: 3.8,
     max_width_limit: 2.8,
-    bhuvan_lhz_level: 3,
-    gradient_pct: 9.5,
+    bhuvan_lhz_level: 1,
+    gradient_pct: 4.5,
     surface_type: 'paved',
     coordinates: [
       [24.2246, 92.6784],
@@ -434,8 +475,8 @@ export const NER_SEGMENTS: Segment[] = [
     max_weight_limit: 40.0,
     max_height_limit: 4.8,
     max_width_limit: 3.8,
-    bhuvan_lhz_level: 4,
-    gradient_pct: 8.0,
+    bhuvan_lhz_level: 2,
+    gradient_pct: 4.0,
     surface_type: 'paved',
     bridgeName: 'Diyung River Bridge',
     coordinates: [
@@ -468,6 +509,102 @@ export const NER_SEGMENTS: Segment[] = [
       [24.8333, 92.7789],
     ],
   },
+  // --- SIKKIM: GANGTOK TO TEESTA CANYON (NH-10 TEESTA RIVER SLIDE BELT) ---
+  {
+    id: 'SEG-SK-TEESTA',
+    name: 'Gangtok - Singtam - Rangpo - 29th Mile Teesta Canyon',
+    highway: 'NH-10',
+    fromNode: 'gangtok',
+    toNode: 'teesta',
+    distance_km: 80.6,
+    base_speed_kmh: 38,
+    max_weight_limit: 35.0,
+    max_height_limit: 4.5,
+    max_width_limit: 3.5,
+    bhuvan_lhz_level: 4, // High Landslide Hazard Zone
+    gradient_pct: 8.8,
+    surface_type: 'under_construction',
+    bridgeName: 'Teesta River 29th Mile Bridge',
+    coordinates: [
+      [27.3314, 88.6138],
+      [27.2340, 88.5020],
+      [27.1770, 88.5130],
+      [27.0850, 88.4850],
+      [27.0288, 88.4714],
+    ],
+  },
+  // --- SIKKIM: GANGTOK TO TEESTA VIA EASTERN RIDGE (NH-717A BYPASS) ---
+  {
+    id: 'SEG-SK-EAST',
+    name: 'Gangtok - Pakyong - Rhenock - Lava - Kalimpong Bypass',
+    highway: 'NH-717A',
+    fromNode: 'gangtok',
+    toNode: 'teesta',
+    distance_km: 83.8,
+    base_speed_kmh: 34,
+    max_weight_limit: 28.0,
+    max_height_limit: 4.2,
+    max_width_limit: 3.2,
+    bhuvan_lhz_level: 1,
+    gradient_pct: 4.2,
+    surface_type: 'paved',
+    bridgeName: 'Reshi Khola Bailey Crossing',
+    coordinates: [
+      [27.3314, 88.6138],
+      [27.2300, 88.5800],
+      [27.1500, 88.6400],
+      [27.0900, 88.5600],
+      [27.0288, 88.4714],
+    ],
+  },
+  // --- ARUNACHAL: GUWAHATI TO TAWANG VIA SELA PASS (NH-13) ---
+  {
+    id: 'SEG-AR-TAW-SELA',
+    name: 'Guwahati - Tezpur - Bhalukpong - Sela Pass - Tawang',
+    highway: 'NH-13',
+    fromNode: 'guwahati',
+    toNode: 'tawang',
+    distance_km: 427.0,
+    base_speed_kmh: 40,
+    max_weight_limit: 40.0,
+    max_height_limit: 4.8,
+    max_width_limit: 3.8,
+    bhuvan_lhz_level: 4, // Sela Pass high-altitude frost & rockfall axis
+    gradient_pct: 11.2,
+    surface_type: 'paved',
+    tunnelName: 'Sela Tunnel Portal (13,000 ft)',
+    coordinates: [
+      [26.1445, 91.7362],
+      [26.6500, 92.8000],
+      [27.0100, 92.5600],
+      [27.5050, 92.1000],
+      [27.5861, 91.8594],
+    ],
+  },
+  // --- ARUNACHAL: GUWAHATI TO TAWANG VIA ORANG / KALAKTANG ---
+  {
+    id: 'SEG-AR-TAW-KAL',
+    name: 'Guwahati - Orang - Kalaktang - Rupa - Tawang Bypass',
+    highway: 'Trans-Arunachal Highway',
+    fromNode: 'guwahati',
+    toNode: 'tawang',
+    distance_km: 447.0,
+    base_speed_kmh: 36,
+    max_weight_limit: 32.0,
+    max_height_limit: 4.4,
+    max_width_limit: 3.4,
+    bhuvan_lhz_level: 3,
+    gradient_pct: 8.5,
+    surface_type: 'paved',
+    bridgeName: 'Tenga River Bridge',
+    coordinates: [
+      [26.1445, 91.7362],
+      [26.7000, 92.3000],
+      [27.1200, 92.1000],
+      [27.3500, 92.0500],
+      [27.5861, 91.8594],
+    ],
+  },
 ];
 
 /**
@@ -478,6 +615,18 @@ export function resolveCorridorSegmentId(corridorText?: string, coords?: [number
   const text = (corridorText || '').toLowerCase();
 
   // 1. Direct Highway / Corridor Keyword Resolution
+  if (text.includes('sikkim') || text.includes('teesta') || text.includes('sk-man') || text.includes('skman') || text.includes('gangtok')) {
+    if (text.includes('alt') || text.includes('pakyong') || text.includes('lava') || text.includes('kalimpong') || text.includes('717')) {
+      return 'SEG-SK-EAST';
+    }
+    return 'SEG-SK-TEESTA';
+  }
+  if (text.includes('tawang') || text.includes('arunachal') || text.includes('sela') || text.includes('ar-taw') || text.includes('artaw')) {
+    if (text.includes('alt') || text.includes('kalaktang') || text.includes('orang') || text.includes('trans')) {
+      return 'SEG-AR-TAW-KAL';
+    }
+    return 'SEG-AR-TAW-SELA';
+  }
   if (
     text.includes('nh-29') ||
     text.includes('dimapur') ||
@@ -497,6 +646,15 @@ export function resolveCorridorSegmentId(corridorText?: string, coords?: [number
     text.includes('bilkhawthlir')
   ) {
     return 'SEG-SIL-KOL';
+  }
+  if (
+    text.includes('bhoirymbong') ||
+    text.includes('east ridge') ||
+    text.includes('sh-8') ||
+    text.includes('umroi') ||
+    (text.includes('bypass') && text.includes('shillong'))
+  ) {
+    return 'SEG-ML-SHL-BYPASS';
   }
   if (text.includes('nh-106') || text.includes('nongpoh') || (text.includes('guwahati') && text.includes('shillong'))) {
     return 'SEG-GHY-SHL';
@@ -548,3 +706,34 @@ export function resolveCorridorSegmentId(corridorText?: string, coords?: [number
 
   return 'SEG-DIM-KOH-MAIN';
 }
+
+export const ROUTE_SEGMENT_MAPPING: Record<string, string[]> = {
+  'ROUTE-MZ-04': ['SEG-SIL-KOL'],
+  'ROUTE-MZ-02': ['SEG-SIL-KOL'],
+  'ROUTE-SUG-01': ['SEG-SIL-KOL'],
+  'ROUTE-MZ-01': ['SEG-SIL-KOL', 'SEG-KOL-AIZ'],
+  'ROUTE-NL-01': ['SEG-DIM-KOH-MAIN'],
+  'ROUTE-SUG-02': ['SEG-DIM-KOH-MAIN'],
+  'ROUTE-NL-02': ['SEG-DIM-KOH-MAIN'],
+  'ROUTE-NL-01_BYPASS': ['SEG-DIM-WOK', 'SEG-WOK-KOH'],
+  'ROUTE-NL-ALT': ['SEG-DIM-WOK', 'SEG-WOK-KOH'],
+  'ROUTE-AS-01': ['SEG-GHY-NAG', 'SEG-NAG-HAF'],
+  'ROUTE-AS-03': ['SEG-HAF-SIL'],
+  'ROUTE-AS-03_BYPASS': ['SEG-NAG-HAF'],
+  'ROUTE-AS-ALT': ['SEG-NAG-HAF'],
+  'ROUTE-ML-01': ['SEG-GHY-SHL', 'SEG-SHL-JOW', 'SEG-JOW-SIL'],
+  'ROUTE-SUG-03': ['SEG-GHY-SHL', 'SEG-SHL-JOW'],
+  'ROUTE-ML-SHL-01': ['SEG-GHY-SHL'],
+  'ROUTE-ML-SHL-02': ['SEG-ML-SHL-BYPASS'],
+  'ROUTE-ML-SHL-01_BYPASS': ['SEG-ML-SHL-BYPASS'],
+  'ROUTE-ML-SHL-ALT': ['SEG-ML-SHL-BYPASS'],
+  'ROUTE-ML-02': ['SEG-SHL-JOW', 'SEG-JOW-SIL'],
+  'ROUTE-MN-01': ['SEG-DIM-KOH-MAIN', 'SEG-KOH-IMP'],
+  'ROUTE-SK-02': ['SEG-SK-TEESTA'],
+  'ROUTE-SK-02_BYPASS': ['SEG-SK-EAST'],
+  'ROUTE-SK-ALT': ['SEG-SK-EAST'],
+  'ROUTE-AR-01': ['SEG-AR-TAW-SELA'],
+  'ROUTE-AR-01_BYPASS': ['SEG-AR-TAW-KAL'],
+  'ROUTE-AR-ALT': ['SEG-AR-TAW-KAL'],
+  'ROUTE-TR-01': ['SEG-SIL-DHR', 'SEG-DHR-AGT'],
+};
