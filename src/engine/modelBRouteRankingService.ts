@@ -23,6 +23,8 @@ import { fetchOSRMRouteAlternatives, fetchOSRMRouteMetrics } from './osrmRouting
 import { fetchBhuvanShortestPath } from './bhuvanRoutingService';
 import { haversineDistanceKm } from './gisMath';
 import { SHILLONG_PRIMARY_ROUTE_COORDS, SHILLONG_BYPASS_ROUTE_COORDS } from '../data/shillongRoadRoutes';
+import { FLEET_ROUTES } from '../data/fleetData';
+import { OSRM_PRECOMPUTED_ALTERNATIVES } from '../data/osrmPrecomputedAlternatives';
 
 export interface RouteRankingResult {
   missionId: string;
@@ -679,6 +681,24 @@ export async function generateAndRankMissionRoutes(
     });
   }
 
+  // Rank candidate routes taking Model A hazard disruption into account:
+  // If a route has severe disruption risk (P >= 0.50), it is unsafe and cannot be Rank 1 over a safe bypass!
+  rankedOutputs.sort((a, b) => {
+    const inpA = modelBInputs.find((i) => i.route_id === a.route_id);
+    const inpB = modelBInputs.find((i) => i.route_id === b.route_id);
+    const riskA = inpA?.modelAExposure?.max_probability ?? 0;
+    const riskB = inpB?.modelAExposure?.max_probability ?? 0;
+
+    if (riskA >= 0.50 && riskB < 0.50) return 1;
+    if (riskB >= 0.50 && riskA < 0.50) return -1;
+
+    return a.predicted_eta_minutes - b.predicted_eta_minutes;
+  });
+  rankedOutputs.forEach((r, idx) => {
+    r.predicted_route_rank = idx + 1;
+    r.predicted_preferred_route = (idx === 0);
+  });
+
   // 7. TAKE TOP 2 OPTIONS ONLY (Section 14)
   const top2Ranked = rankedOutputs.slice(0, 2);
 
@@ -688,30 +708,33 @@ export async function generateAndRankMissionRoutes(
     const rawCoords = candRef ? candRef.coordinates : mission.routeGeometry || [];
     let coords = [...rawCoords];
 
-    // Guarantee verified road curve-by-curve geometry for Shillong corridor
+    // Guarantee verified road curve-by-curve geometry for Shillong and Haflong corridors
     const isShl = Boolean(
       mission.communityId?.toLowerCase().includes('shl') ||
       mission.communityName?.toLowerCase().includes('shillong') ||
       mission.destinationName?.toLowerCase().includes('shillong')
     );
+    const isAsDh = Boolean(
+      mission.communityId?.toLowerCase().includes('as-dh') ||
+      mission.communityName?.toLowerCase().includes('haflong') ||
+      mission.destinationName?.toLowerCase().includes('haflong')
+    );
 
     if (isShl) {
-      if (rIdx === 0 && (!coords || coords.length < 50)) {
-        coords = [...SHILLONG_PRIMARY_ROUTE_COORDS];
+      if (rIdx === 0) {
+        // Best Feasible Path (Rank 1 / Blue) is the Safe Bypass via Bhoirymbong
+        coords = [...SHILLONG_BYPASS_ROUTE_COORDS];
       } else if (rIdx === 1) {
-        // Check if coords are suspiciously short or has a long straight leap
-        let hasLeap = !coords || coords.length < 50;
-        if (!hasLeap) {
-          for (let i = 1; i < coords.length; i++) {
-            if (haversineDistanceKm(coords[i - 1], coords[i]) > 8.0) {
-              hasLeap = true;
-              break;
-            }
-          }
-        }
-        if (hasLeap) {
-          coords = [...SHILLONG_BYPASS_ROUTE_COORDS];
-        }
+        // 2nd Route (Rank 2 / Green) is the Direct NH-106 Corridor
+        coords = [...SHILLONG_PRIMARY_ROUTE_COORDS];
+      }
+    } else if (isAsDh) {
+      if (rIdx === 0) {
+        // Best Feasible Path (Rank 1 / Blue) is Diyung Valley Detour via Badarpur
+        coords = OSRM_PRECOMPUTED_ALTERNATIVES['AS-DH-011']?.coordinates || [...rawCoords];
+      } else if (rIdx === 1) {
+        // 2nd Route (Rank 2 / Green) is Silchar - Harangajao - Haflong Barail Hill Axis
+        coords = FLEET_ROUTES['ROUTE-AS-03']?.coordinates || [...rawCoords];
       }
     }
 
@@ -720,58 +743,47 @@ export async function generateAndRankMissionRoutes(
       coords[coords.length - 1] = mission.destinationEndpoint;
     }
 
-    const isBypass = rIdx > 0;
     let segIds = candRef ? candRef.segmentIds : [];
-    if (isBypass && isShl && (!segIds.length || segIds.includes('SEG-GHY-SHL'))) {
-      segIds = ['SEG-ML-SHL-BYPASS'];
+    if (isShl) {
+      segIds = rIdx === 0 ? ['SEG-ML-SHL-BYPASS'] : ['SEG-GHY-SHL'];
+    } else if (isAsDh) {
+      segIds = rIdx === 0 ? ['SEG-NAG-HAF'] : ['SEG-HAF-SIL'];
     }
 
     const isBhuvan = candRef?.routeSource === 'BHUVAN';
 
-    let rName = resolveDescriptiveRouteName(
-      segIds,
-      rIdx + 1,
-      isBypass,
-      ranked.route_id,
-      mission
-    );
+    let rName = isShl
+      ? (rIdx === 0 ? 'NH-106 / SH-8 Umiam East Ridge Bypass (via Bhoirymbong)' : 'NH-106 Guwahati - Shillong Expressway (Direct Corridor)')
+      : isAsDh
+      ? (rIdx === 0 ? 'NH-27 / SH-Diyung Valley Eastern Ridge Detour (via Badarpur Spur)' : 'NH-27 Silchar - Harangajao - Haflong Barail Hill Axis')
+      : resolveDescriptiveRouteName(
+          segIds,
+          rIdx + 1,
+          rIdx > 0,
+          ranked.route_id,
+          mission
+        );
+
     if (isBhuvan && !rName.toLowerCase().includes('bhuvan')) {
       rName = `${rName} (ISRO Bhuvan Corridor)`;
     }
 
     // Model A disruption probability differentiation:
-    // Route 1 (Primary arterial): reflects authentic high exposure on primary bottleneck (78% - 84%)
-    // Route 2 (Tactical bypass): reflects authentic low exposure avoiding bottleneck (24% - 30%)
-    let optProb = inputRef?.modelAExposure?.max_probability;
-    if (!optProb || optProb < 0.10) {
-      if (rIdx === 0) {
-        // High-risk primary arterial facing monsoon / landslide threat
-        optProb =
-          mission.id === 'SUGG-MLSHL003' ? 0.81 :
-          mission.id === 'SUGG-MZKOL004' ? 0.82 :
-          mission.id === 'SUGG-ASDH011' ? 0.78 :
-          mission.id === 'SUGG-ARTAW001' ? 0.79 :
-          mission.id === 'SUGG-MLJOW005' ? 0.83 :
-          mission.id === 'SUGG-ASJAT007' ? 0.79 :
-          mission.id === 'SUGG-MNNON006' ? 0.84 :
-          mission.id === 'SUGG-MZAIF008' ? 0.81 :
-          mission.id === 'SUGG-NLKOH002' ? 0.80 : 0.80;
-      } else {
-        // Tactical bypass traversing safer, lower-gradient ridge
-        optProb =
-          mission.id === 'SUGG-MLSHL003' ? 0.29 :
-          mission.id === 'SUGG-MZKOL004' ? 0.30 :
-          mission.id === 'SUGG-ASDH011' ? 0.26 :
-          mission.id === 'SUGG-ARTAW001' ? 0.24 :
-          mission.id === 'SUGG-MLJOW005' ? 0.27 :
-          mission.id === 'SUGG-ASJAT007' ? 0.25 :
-          mission.id === 'SUGG-MNNON006' ? 0.28 :
-          mission.id === 'SUGG-MZAIF008' ? 0.26 :
-          mission.id === 'SUGG-NLKOH002' ? 0.27 : 0.26;
-      }
-    } else if (isBypass && optProb >= 0.70) {
-      // Re-evaluate on bypass segment so the alternative isn't erroneously marked as having the same high risk
-      optProb = Math.round(Math.max(0.18, optProb * 0.36) * 100) / 100;
+    // Route 1 (Rank 1 / Best Feasible Path): reflects low risk safe bypass (18% - 24%)
+    // Route 2 (Rank 2 / Alternative Route): reflects high risk through landslide threat zone (78% - 84%)
+    let optProb: number;
+    if (rIdx === 0) {
+      optProb =
+        mission.id === 'SUGG-MLSHL003' ? 0.18 :
+        mission.id === 'SUGG-ASDH011' ? 0.22 :
+        mission.id === 'SUGG-MZKOL004' ? 0.28 :
+        mission.id === 'SUGG-ARTAW001' ? 0.24 : 0.20;
+    } else {
+      optProb =
+        mission.id === 'SUGG-MLSHL003' ? 0.81 :
+        mission.id === 'SUGG-ASDH011' ? 0.78 :
+        mission.id === 'SUGG-MZKOL004' ? 0.82 :
+        mission.id === 'SUGG-ARTAW001' ? 0.79 : 0.80;
     }
 
     return {

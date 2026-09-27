@@ -1,11 +1,17 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission, MissionRouteOption, RealtimeHazardPolygon, DraftIncidentPlot, ResponseHub, HubInventory, InventoryTransaction, ModelAPrediction, ModelARiskBand } from '../types';
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const metaEnv = typeof import.meta !== 'undefined' && (import.meta as any).env ? (import.meta as any).env : {};
+const procEnv = typeof globalThis !== 'undefined' && (globalThis as any).process?.env ? (globalThis as any).process.env : {};
+
+const supabaseUrl = (metaEnv.VITE_SUPABASE_URL || procEnv.VITE_SUPABASE_URL || '').trim();
 const supabasePublishableKey = (
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.VITE_SUPABASE_KEY ||
+  metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  procEnv.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  metaEnv.VITE_SUPABASE_ANON_KEY ||
+  procEnv.VITE_SUPABASE_ANON_KEY ||
+  metaEnv.VITE_SUPABASE_KEY ||
+  procEnv.VITE_SUPABASE_KEY ||
   ''
 ).trim();
 
@@ -397,48 +403,89 @@ export async function upsertCloudCommunity(community: CommunityBase): Promise<bo
 export async function fetchCloudMissions(): Promise<ReliefMission[] | null> {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase.from('missions').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('missions')
+      .select('*')
+      .neq('status', 'ARCHIVED')
+      .order('created_at', { ascending: false });
     if (error) {
       console.warn('⚠️ [Supabase] Failed to fetch missions:', error.message);
       return null;
     }
     if (!data || data.length === 0) return null;
 
-    return data.map((row: any) => ({
-      id: row.id,
-      communityId: row.community_id || row.communityId,
-      communityName: row.community_name || row.communityName,
-      recommendedVehicleType: row.recommended_vehicle_type || row.recommendedVehicleType,
-      cargoAllocations: Array.isArray(row.cargo_allocations) ? row.cargo_allocations : (row.cargoAllocations || []),
-      assignedRouteId: row.assigned_route_id || row.assignedRouteId,
-      suggestedDetour: row.suggested_detour || row.suggestedDetour || '',
-      status: row.status,
-      urgency: row.urgency,
-      createdAt: row.created_at || row.createdAt || new Date().toISOString(),
-      dispatchedAt: row.dispatched_at || row.dispatchedAt,
-      deliveredAt: row.delivered_at || row.deliveredAt,
-      assignedDriver: row.assigned_driver || row.assignedDriver,
-      assignedOfficer: row.assigned_officer || row.assignedOfficer,
-      originWarehouseId: row.origin_warehouse_id || row.originWarehouseId || 'silchar',
-      originWarehouseName: row.origin_warehouse_name || row.originWarehouseName || 'Silchar Strategic Depot',
-      originCoords: Array.isArray(row.origin_coords) ? row.origin_coords : [24.8333, 92.7789],
-      disasterZoneId: row.disaster_zone_id || row.disasterZoneId || 'LHZ-MZ-01',
-      disasterZoneName: row.disaster_zone_name || row.disasterZoneName || 'Disaster Operational Target',
-      destinationEndpoint: Array.isArray(row.destination_endpoint) ? row.destination_endpoint : [24.257, 92.729],
-      destinationName: row.destination_name || row.destinationName || 'Relief Target',
-      assignedVehicleId: row.assigned_vehicle_id || row.assignedVehicleId,
-      routeDistanceKm: row.route_distance_km ? Number(row.route_distance_km) : undefined,
-      routeDurationMinutes: row.route_duration_minutes ? Number(row.route_duration_minutes) : undefined,
-      routeStatus: row.route_status || row.routeStatus,
-      routeGeometry: Array.isArray(row.route_geometry) ? row.route_geometry : undefined,
-      selectedRouteOptionId: row.selected_route_option_id || row.selectedRouteOptionId || undefined,
-      isRerouted: Boolean(row.is_rerouted),
-      rerouteReason: row.reroute_reason || undefined,
-      reroutedAt: row.rerouted_at || undefined,
-      reroutedFromCoords: Array.isArray(row.rerouted_from_coords) ? row.rerouted_from_coords : undefined,
-      corridorSegmentIds: Array.isArray(row.corridor_segment_ids) ? row.corridor_segment_ids : (row.corridorSegmentIds || undefined),
-      previousRouteGeometry: Array.isArray(row.previous_route_geometry) ? row.previous_route_geometry : undefined,
-    }));
+    // Fetch associated route options from mission_route_options table
+    const { data: routeOptionsData } = await supabase
+      .from('mission_route_options')
+      .select('*')
+      .order('route_rank', { ascending: true });
+
+    const routeOptionsByMissionId = new Map<string, MissionRouteOption[]>();
+    if (routeOptionsData && routeOptionsData.length > 0) {
+      routeOptionsData.forEach((r: any) => {
+        const opt: MissionRouteOption = {
+          id: r.id,
+          missionId: r.mission_id,
+          routeNumber: r.route_number,
+          routeRank: r.route_rank,
+          routeId: r.route_id,
+          routeName: r.route_name || undefined,
+          corridorSegmentIds: Array.isArray(r.corridor_segment_ids) ? r.corridor_segment_ids : undefined,
+          geometry: r.geometry,
+          distanceKm: Number(r.distance_km),
+          osrmDurationMinutes: Number(r.osrm_duration_minutes),
+          predictedDelayFactor: Number(r.predicted_delay_factor),
+          predictedEtaMinutes: Number(r.predicted_eta_minutes),
+          etaOverheadMinutes: Number(r.eta_overhead_minutes),
+          predictedPreferredRoute: Boolean(r.predicted_preferred_route),
+          modelVersion: r.model_version,
+          disruptionProbability: r.disruption_probability ? Number(r.disruption_probability) : (r.route_rank === 1 ? 0.18 : 0.78),
+        };
+        const list = routeOptionsByMissionId.get(r.mission_id) || [];
+        list.push(opt);
+        routeOptionsByMissionId.set(r.mission_id, list);
+      });
+    }
+
+    return data.map((row: any) => {
+      const opts = routeOptionsByMissionId.get(row.id) || undefined;
+      return {
+        id: row.id,
+        communityId: row.community_id || row.communityId,
+        communityName: row.community_name || row.communityName,
+        recommendedVehicleType: row.recommended_vehicle_type || row.recommendedVehicleType,
+        cargoAllocations: Array.isArray(row.cargo_allocations) ? row.cargo_allocations : (row.cargoAllocations || []),
+        assignedRouteId: row.assigned_route_id || row.assignedRouteId,
+        suggestedDetour: row.suggested_detour || row.suggestedDetour || '',
+        status: row.status,
+        urgency: row.urgency,
+        createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+        dispatchedAt: row.dispatched_at || row.dispatchedAt,
+        deliveredAt: row.delivered_at || row.deliveredAt,
+        assignedDriver: row.assigned_driver || row.assignedDriver,
+        assignedOfficer: row.assigned_officer || row.assignedOfficer,
+        originWarehouseId: row.origin_warehouse_id || row.originWarehouseId || 'silchar',
+        originWarehouseName: row.origin_warehouse_name || row.originWarehouseName || 'Silchar Strategic Depot',
+        originCoords: Array.isArray(row.origin_coords) ? row.origin_coords : [24.8333, 92.7789],
+        disasterZoneId: row.disaster_zone_id || row.disasterZoneId || 'LHZ-MZ-01',
+        disasterZoneName: row.disaster_zone_name || row.disasterZoneName || 'Disaster Operational Target',
+        destinationEndpoint: Array.isArray(row.destination_endpoint) ? row.destination_endpoint : [24.257, 92.729],
+        destinationName: row.destination_name || row.destinationName || 'Relief Target',
+        assignedVehicleId: row.assigned_vehicle_id || row.assignedVehicleId,
+        routeDistanceKm: row.route_distance_km ? Number(row.route_distance_km) : (opts?.[0]?.distanceKm || undefined),
+        routeDurationMinutes: row.route_duration_minutes ? Number(row.route_duration_minutes) : (opts?.[0]?.predictedEtaMinutes || undefined),
+        routeStatus: row.route_status || row.routeStatus,
+        routeGeometry: Array.isArray(row.route_geometry) ? row.route_geometry : (opts?.[0]?.geometry || undefined),
+        selectedRouteOptionId: opts?.[0]?.id || undefined,
+        routeOptions: opts,
+        isRerouted: Boolean(row.is_rerouted),
+        rerouteReason: row.reroute_reason || undefined,
+        reroutedAt: row.rerouted_at || undefined,
+        reroutedFromCoords: Array.isArray(row.rerouted_from_coords) ? row.rerouted_from_coords : undefined,
+        corridorSegmentIds: Array.isArray(row.corridor_segment_ids) ? row.corridor_segment_ids : (row.corridorSegmentIds || undefined),
+        previousRouteGeometry: Array.isArray(row.previous_route_geometry) ? row.previous_route_geometry : undefined,
+      };
+    });
   } catch (err) {
     console.warn('⚠️ [Supabase] Exception fetching missions:', err);
     return null;
@@ -475,7 +522,6 @@ export async function upsertCloudMission(mission: ReliefMission): Promise<boolea
       route_duration_minutes: mission.routeDurationMinutes || null,
       route_status: mission.routeStatus || null,
       route_geometry: mission.routeGeometry && mission.routeGeometry.length > 0 ? mission.routeGeometry : null,
-      selected_route_option_id: mission.selectedRouteOptionId || null,
       is_rerouted: Boolean(mission.isRerouted),
       reroute_reason: mission.rerouteReason || null,
       rerouted_at: mission.reroutedAt || null,
@@ -490,6 +536,11 @@ export async function upsertCloudMission(mission: ReliefMission): Promise<boolea
       console.warn('⚠️ [Supabase] Upsert mission error:', error.message);
       return false;
     }
+
+    if (mission.routeOptions && mission.routeOptions.length > 0) {
+      await upsertCloudMissionRouteOptions(mission.routeOptions);
+    }
+
     console.log('✅ [Supabase] Successfully upserted cloud mission:', mission.id, mission.status);
     return true;
   } catch (err) {

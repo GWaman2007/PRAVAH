@@ -241,7 +241,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                   : 0;
                 const optProb = typeof opt.disruptionProbability === 'number' && opt.disruptionProbability > 0
                   ? opt.disruptionProbability
-                  : (cachedExposure > 0 ? cachedExposure : (isRank1 ? 0.81 : 0.29));
+                  : (cachedExposure > 0 ? cachedExposure : (isRank1 ? 0.18 : 0.78));
 
                 const isOptHigh = optProb >= 0.80;
                 const isOptElevated = optProb >= 0.50 && !isOptHigh;
