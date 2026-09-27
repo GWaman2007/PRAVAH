@@ -62,25 +62,25 @@ export const Header: React.FC = () => {
       <div className="w-full max-w-[1850px] mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16 gap-2">
           {/* Left: Branding */}
-          <div className="flex items-center gap-2.5 sm:gap-3 select-none min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 select-none shrink-0 min-w-0">
             {/* Emblem Icon */}
             <img 
               src={theme === 'dark' ? '/assets/pravah-logo-white.png' : '/assets/pravah-logo.png'} 
               alt="PRAVAH Emblem" 
-              className="h-8 w-8 sm:h-10 sm:w-10 object-contain dark:brightness-0 dark:invert drop-shadow-sm flex-shrink-0"
+              className="h-8 w-8 sm:h-10 sm:w-10 object-contain dark:brightness-0 dark:invert drop-shadow-sm shrink-0"
             />
 
             {/* Text Hierarchy */}
             <div className="flex flex-col justify-center min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2 leading-none">
-                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-white font-sans">
+                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-white font-sans shrink-0">
                   PRAVAH
                 </span>
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-wide bg-blue-50 text-blue-700 border border-blue-200 dark:bg-slate-800 dark:text-sky-400 dark:border-slate-700/80 shrink-0">
                   MDoNER
                 </span>
               </div>
-              <span className="hidden xl:block text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 whitespace-nowrap">
+              <span className="hidden 2xl:block text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 truncate max-w-[360px]">
                 {t('appSubtitle')}
               </span>
             </div>
@@ -89,7 +89,7 @@ export const Header: React.FC = () => {
           {/* Right Controls */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 ml-auto">
             {/* Real-Time Data Staleness Indicator */}
-            <DataStalenessChip className="hidden xl:flex shrink-0" />
+            <DataStalenessChip className="hidden 2xl:flex shrink-0" />
 
             {/* Sync Status: Compact badge on small screens */}
             <button
@@ -169,7 +169,7 @@ export const Header: React.FC = () => {
                   }
                 }}
                 style={{ colorScheme: theme === 'dark' ? 'dark' : 'light' }}
-                className="bg-transparent text-[10px] sm:text-xs font-semibold text-text-primary border-none focus:ring-0 cursor-pointer pl-0.5 pr-2 sm:pr-6 py-0.5 sm:py-1 truncate max-w-[130px] sm:max-w-none"
+                className="bg-transparent text-[10px] sm:text-xs font-semibold text-text-primary border-none focus:ring-0 cursor-pointer pl-0.5 pr-2 sm:pr-6 py-0.5 sm:py-1 truncate max-w-[130px] sm:max-w-[170px] lg:max-w-[210px] 2xl:max-w-none"
               >
                 <option value="SUPER_ADMIN" className="bg-white text-slate-900 dark:bg-[#1B1F23] dark:text-[#F1F2F3]">
                   Admin (Shri A. Sarma, IAS)
