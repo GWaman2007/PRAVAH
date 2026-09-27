@@ -39,8 +39,8 @@ export const Header: React.FC = () => {
     offlineQueueCount,
     toggleSimulatedOffline,
     isSupabaseConfigured,
-    isDemoToolbarOpen,
-    setIsDemoToolbarOpen,
+    isDemoMode,
+    toggleDemoMode,
     incidents,
     communities,
     vehicles,
@@ -136,20 +136,28 @@ export const Header: React.FC = () => {
                <span className="hidden sm:inline">AI Copilot</span>
              </button>
 
-             {/* Interactive Demo & Scenario Reset Controls Trigger */}
+             {/* Demo Mode Toggle: Injects scenario data directly; toggles off to purge; always off on reload */}
              <button
-               id="header-demo-reset-btn"
-               onClick={() => setIsDemoToolbarOpen((prev) => !prev)}
-               title="Open 1-Click Interactive Resilience Demo & Reset Scenario Controls"
+               id="header-demo-mode-btn"
+               onClick={toggleDemoMode}
+               title={
+                 isDemoMode
+                   ? "Demo Mode Active (Demo scenario data injected). Click to turn OFF and purge demo data."
+                   : "Click to toggle Demo Mode (injects Kolasib NH-306 crisis scenario). Reloading always starts with demo mode OFF."
+               }
                className={`shrink-0 flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-semibold border transition-all btn-press cursor-pointer shadow-xs ${
-                 isDemoToolbarOpen
-                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-400/40'
+                 isDemoMode
+                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-400/40 shadow-amber-500/20'
                    : 'bg-gradient-to-r from-blue-600/20 to-cyan-600/20 text-cyan-300 border-cyan-500/40 hover:from-blue-600/30 hover:to-cyan-600/30'
                }`}
              >
-               <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-               <span className="font-semibold text-[11px] sm:text-xs">Demo / Reset</span>
-               <RotateCcw className="w-3 h-3 text-cyan-400 opacity-90 hidden xs:inline" />
+               <Sparkles className={`w-3.5 h-3.5 ${isDemoMode ? 'text-amber-400 animate-spin' : 'text-cyan-400 animate-pulse'}`} />
+               <span className="font-semibold text-[11px] sm:text-xs">
+                 {isDemoMode ? 'Demo Mode: ON' : 'Demo Mode'}
+               </span>
+               {isDemoMode && (
+                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+               )}
              </button>
 
             {/* Admin Profile Pill / Role Switcher: Collapse label on mobile */}

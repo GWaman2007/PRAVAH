@@ -13,7 +13,6 @@ import { MultilingualBroadcastCenter } from './components/broadcast/Multilingual
 import { MobileMissionCockpit } from './components/cockpit/MobileMissionCockpit';
 import { ModelATestingDeck } from './components/modelA/ModelATestingDeck';
 import { GlobalSOSInterceptModal } from './components/admin/GlobalSOSInterceptModal';
-import { InteractiveWalkthroughToolbar } from './components/layout/InteractiveWalkthroughToolbar';
 import { FieldOfficerCommunityView } from './components/fieldOfficer/FieldOfficerCommunityView';
 import { FieldOfficerMissionsView } from './components/fieldOfficer/FieldOfficerMissionsView';
 import { FieldOfficerRequirementsView } from './components/fieldOfficer/FieldOfficerRequirementsView';
@@ -170,8 +169,6 @@ const AppContent: React.FC = () => {
         />
       )}
 
-      {/* Persistent 1-Click Interactive Resilience Walkthrough Bar */}
-      <InteractiveWalkthroughToolbar />
     </div>
   );
 };
