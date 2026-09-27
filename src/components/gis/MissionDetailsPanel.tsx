@@ -24,6 +24,7 @@ import {
   Compass,
   Check,
   RefreshCw,
+  ClipboardList,
 } from 'lucide-react';
 
 function formatMinutes(mins: number): string {
@@ -115,6 +116,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
     exposure.max_probability,
   ]);
 
+  const isFieldReq = mission.source === 'FIELD_REQUISITION' || Boolean(mission.isFieldRequisition) || Boolean(mission.resourceRequestId);
   const isSuggested = mission.status === 'SUGGESTED';
   const isApproved = mission.status === 'APPROVED';
   const isInTransit = mission.status === 'IN_TRANSIT';
@@ -130,22 +132,31 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
       <div className="p-4 border-b border-border bg-surface-subtle shrink-0">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-[11px] px-2 py-0.5 rounded-xs bg-primary-tint text-primary font-bold border border-primary/20">
+            <span className={`font-mono text-[11px] px-2 py-0.5 rounded-xs font-bold border ${
+              isFieldReq ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-primary-tint text-primary border-primary/20'
+            }`}>
               {mission.id}
             </span>
-            <span
-              className={`px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] border ${
-                isInTransit
-                  ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
-                  : isApproved
-                  ? 'bg-sky-500/20 text-sky-400 border-sky-500/50'
-                  : isSuggested
-                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
-                  : 'bg-surface text-text-secondary border-border'
-              }`}
-            >
-              {mission.status}
-            </span>
+            {isFieldReq && !isInTransit && !isApproved && !isDelivered ? (
+              <span className="px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] border bg-emerald-500/20 text-emerald-400 border-emerald-500/50 flex items-center gap-1">
+                <ClipboardList className="w-3 h-3 text-emerald-400" />
+                FIELD REQUISITION
+              </span>
+            ) : (
+              <span
+                className={`px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] border ${
+                  isInTransit
+                    ? 'bg-status-open-tint text-status-open-text border-status-open-solid'
+                    : isApproved
+                    ? 'bg-sky-500/20 text-sky-400 border-sky-500/50'
+                    : isSuggested
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
+                    : 'bg-surface text-text-secondary border-border'
+                }`}
+              >
+                {mission.status}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1">
@@ -162,7 +173,15 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
         <h2 className="text-sm font-bold text-text-primary leading-snug">
           {mission.communityName}
         </h2>
-        <p className="text-[11px] text-text-secondary mt-0.5">
+        {isFieldReq && (
+          <div className="mt-1 px-2 py-1 rounded-xs bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[10px] font-semibold flex items-center gap-1.5">
+            <span>★ Genuine Ground Need Indent</span>
+            {mission.requestedByOfficer && (
+              <span className="text-emerald-300/80 font-normal">| Requested by {mission.requestedByOfficer}</span>
+            )}
+          </div>
+        )}
+        <p className="text-[11px] text-text-secondary mt-1">
           Priority Tier: <strong className="text-status-blocked-text">{mission.urgency.replace(/_/g, ' ')}</strong>
         </p>
 

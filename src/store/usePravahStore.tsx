@@ -34,6 +34,7 @@ import type {
   ResourceRequirementItem,
   ResourceRequest,
   FieldOfficerProfile,
+  CommodityType,
 } from '../types';
 import {
   generateAndRankMissionRoutes,
@@ -147,6 +148,8 @@ import {
   upsertCloudModelAPrediction,
   upsertCloudMissionRouteOptions,
   fetchCloudMissionRouteOptions,
+  fetchCloudResourceRequests,
+  upsertCloudResourceRequest,
 } from '../engine/supabaseClient';
 import { predictSegmentRisk, batchPredictSegmentRisks, clearModelCache, getAuthoritativeMissionExposure, calculateRouteModelAExposureFromCache } from '../engine/modelAService';
 import { buildModelAFeatures } from '../engine/modelAFeatureBuilder';
@@ -3400,6 +3403,20 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
+    fetchCloudResourceRequests().then((cloudRequests) => {
+      if (cloudRequests && cloudRequests.length > 0) {
+        setResourceRequests((prev) => {
+          const ids = new Set(prev.map((r) => r.id));
+          const newItems = cloudRequests.filter((r) => !ids.has(r.id));
+          const merged = [...newItems, ...prev];
+          try {
+            localStorage.setItem('pravah_resource_requests', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
+    });
+
     // 2. Realtime Broadcast Channel Listener on shared global bus
     let channel: ReturnType<typeof supabase.channel> | null = null;
     try {
@@ -3529,6 +3546,18 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
             setRawCommunities((prev) => {
               const next = prev.map((c) => (c.id === payload.community.id ? payload.community : c));
               persistCommunities(next);
+              return next;
+            });
+          }
+        })
+        .on('broadcast', { event: 'RESOURCE_REQUEST_ADDED' }, ({ payload }: any) => {
+          if (payload?.request) {
+            setResourceRequests((prev) => {
+              if (prev.some((r) => r.id === payload.request.id)) return prev;
+              const next = [payload.request, ...prev];
+              try {
+                localStorage.setItem('pravah_resource_requests', JSON.stringify(next));
+              } catch {}
               return next;
             });
           }
@@ -4605,9 +4634,13 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
           createdAt: new Date().toISOString(),
         };
 
+        // 1. Sync resource request to Cloud Database & LocalStorage
         setResourceRequests((prev) => [newRequest, ...prev]);
+        if (isOnline && isSupabaseConfigured) {
+          upsertCloudResourceRequest(newRequest);
+        }
 
-        // Update community resource requirements
+        // 2. Update community resource requirements state & LocalStorage
         setResourceRequirements((prev) => {
           const commReqs = prev[reqData.communityId] ? [...prev[reqData.communityId]] : [];
           const idx = commReqs.findIndex(
@@ -4635,7 +4668,57 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
           return { ...prev, [reqData.communityId]: commReqs };
         });
 
-        // PRAVAH ENGINE: Generate a mission recommendation
+        // 3. Mark community with active indent & persist to Cloud Database so calculations recalculate
+        let updatedCommObj: CommunityBase | undefined;
+        setRawCommunities((prev) => {
+          const next = prev.map((c) => {
+            if (c.id === reqData.communityId) {
+              const updatedInventories = { ...c.inventories };
+              const reqLower = reqData.resourceType.toLowerCase();
+
+              let matchedCommodity: CommodityType | undefined;
+              if (reqLower.includes('fluid') || reqLower.includes('iv') || reqLower.includes('ringer')) {
+                matchedCommodity = 'IV_FLUIDS';
+              } else if (reqLower.includes('antivenom') || reqLower.includes('snake')) {
+                matchedCommodity = 'ANTIVENOM';
+              } else if (reqLower.includes('rice') || reqLower.includes('ration') || reqLower.includes('food') || reqLower.includes('grain')) {
+                matchedCommodity = 'GRAIN_RICE';
+              } else if (reqLower.includes('diesel') || reqLower.includes('fuel') || reqLower.includes('generator')) {
+                matchedCommodity = 'DIESEL';
+              }
+
+              if (matchedCommodity && updatedInventories[matchedCommodity]) {
+                const cur = updatedInventories[matchedCommodity]!;
+                updatedInventories[matchedCommodity] = {
+                  ...cur,
+                  lastStock: Math.max(0, cur.lastStock - reqData.quantity),
+                };
+              }
+
+              const updated: CommunityBase = {
+                ...c,
+                hasActiveIndent: true,
+                inventories: updatedInventories,
+                elapsedTimeHours: Math.max(c.elapsedTimeHours, 6.0),
+              };
+              updatedCommObj = updated;
+              return updated;
+            }
+            return c;
+          });
+          persistCommunities(next);
+          return next;
+        });
+
+        if (updatedCommObj) {
+          if (isOnline && isSupabaseConfigured) {
+            upsertCloudCommunity(updatedCommObj);
+          } else {
+            queueOfflineMutation({ type: 'UPSERT_COMMUNITY', entityId: updatedCommObj.id, payload: updatedCommObj });
+          }
+        }
+
+        // 4. PRAVAH ENGINE: Generate a mission recommendation tagged with FIELD_REQUISITION
         const recommendedMission = generateMissionFromResourceRequest(newRequest, rawCommunities);
         if (recommendedMission) {
           setActiveMissions((prev) => {
@@ -4646,9 +4729,14 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
             return [recommendedMission, ...prev];
           });
           persistMissions([recommendedMission, ...activeMissions]);
+          if (isOnline && isSupabaseConfigured) {
+            upsertCloudMission(recommendedMission);
+          } else {
+            queueOfflineMutation({ type: 'UPSERT_MISSION', entityId: recommendedMission.id, payload: recommendedMission });
+          }
         }
 
-        // Add to incident / field intel feed
+        // 5. Add to incident / field intel feed
         addIncident({
           title: `Resource Requisition: ${reqData.resourceType} (${reqData.urgency})`,
           corridorFlair: 'NH-306',
@@ -4668,7 +4756,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
           hasOfficerVerified: true,
         });
       },
-      [rawCommunities, activeMissions, addIncident, userContext.badgeId]
+      [rawCommunities, activeMissions, addIncident, userContext.name, userContext.badgeId, isOnline, isSupabaseConfigured]
     );
 
     const createManualMission = useCallback(
@@ -4776,18 +4864,24 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
           clearModelCache();
         }
 
-        // Reset community metrics
-        setRawCommunities((prev) =>
-          prev.map((c) => {
+        // Reset community metrics & persist to Cloud Database
+        setRawCommunities((prev) => {
+          const next = prev.map((c) => {
             if (c.id === commId) {
               const orig = INITIAL_COMMUNITIES.find((ic) => ic.id === commId);
-              return orig ? { ...orig } : c;
+              const resetItem = orig ? { ...orig } : c;
+              if (isOnline && isSupabaseConfigured) {
+                upsertCloudCommunity(resetItem);
+              }
+              return resetItem;
             }
             return c;
-          })
-        );
+          });
+          persistCommunities(next);
+          return next;
+        });
       },
-      [activeOfficerId, activeRole]
+      [activeOfficerId, activeRole, isOnline, isSupabaseConfigured]
     );
 
     const value = {

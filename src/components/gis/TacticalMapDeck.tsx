@@ -64,6 +64,7 @@ import {
   Sparkles,
   RefreshCw,
   Cpu,
+  ClipboardList,
 } from 'lucide-react';
 
 export interface TacticalMapDeckProps {
@@ -2553,6 +2554,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
                   suggestedMissions.map((m) => {
                     const isSelected = m.id === selectedMissionId;
                     const isApproved = m.status === 'APPROVED';
+                    const isFieldReq = m.source === 'FIELD_REQUISITION' || Boolean(m.isFieldRequisition) || Boolean(m.resourceRequestId);
 
                     return (
                       <div
@@ -2563,18 +2565,32 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
                         }}
                         className={`p-3 rounded-sm border transition-all space-y-2.5 text-xs shadow-xs cursor-pointer ${
                           isSelected
-                            ? 'bg-amber-500/10 border-amber-500 ring-1 ring-amber-500'
+                            ? isFieldReq
+                              ? 'bg-emerald-500/10 border-emerald-500 ring-1 ring-emerald-500'
+                              : 'bg-amber-500/10 border-amber-500 ring-1 ring-amber-500'
+                            : isFieldReq
+                            ? 'bg-surface border-border hover:border-emerald-500/50'
                             : 'bg-surface border-border hover:border-amber-500/50'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-1">
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs bg-amber-500/15 text-amber-500">
+                              <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs ${
+                                isFieldReq ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-500'
+                              }`}>
                                 {m.id}
                               </span>
                               <span className="font-bold text-text-primary">{m.destinationName}</span>
                             </div>
+                            {isFieldReq ? (
+                              <div className="mt-1 px-1.5 py-0.5 rounded-xs bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[10px] font-semibold flex items-center gap-1">
+                                <span>★ Genuine Ground Need</span>
+                                {m.requestedByOfficer && (
+                                  <span className="text-emerald-300/80 font-normal">| Indented by {m.requestedByOfficer}</span>
+                                )}
+                              </div>
+                            ) : null}
                             <span className="text-[10px] text-text-secondary block mt-0.5">
                               {t('origin')}: <strong>{m.originWarehouseName}</strong> ➔ {t('target')}:{' '}
                               <strong>{m.disasterZoneName}</strong>
@@ -2582,15 +2598,22 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
                           </div>
 
                         <div className="flex items-center gap-1 shrink-0">
-                          <span
-                            className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 ${
-                              isApproved
-                                ? 'bg-sky-500/20 text-sky-400 border-sky-500/40'
-                                : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                            }`}
-                          >
-                            {m.status}
-                          </span>
+                          {isFieldReq ? (
+                            <span className="px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 bg-emerald-500/20 text-emerald-400 border-emerald-500/40 flex items-center gap-1">
+                              <ClipboardList className="w-2.5 h-2.5" />
+                              FIELD REQUISITION
+                            </span>
+                          ) : (
+                            <span
+                              className={`px-1.5 py-0.5 rounded-xs font-mono font-bold text-[9px] border shrink-0 ${
+                                isApproved
+                                  ? 'bg-sky-500/20 text-sky-400 border-sky-500/40'
+                                  : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                              }`}
+                            >
+                              {m.status}
+                            </span>
+                          )}
                         </div>
                         </div>
 

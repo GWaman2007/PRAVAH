@@ -56,7 +56,7 @@ export const Header: React.FC = () => {
   return (
     <div className="bg-surface">
       {/* Top Banner: Brand, Network Pill, Role Selector, Language Switcher, Theme */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+      <div className="w-full max-w-[1850px] mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16 gap-2">
           {/* Left: Branding */}
           <div className="flex items-center gap-2.5 sm:gap-3 select-none min-w-0">
@@ -77,7 +77,7 @@ export const Header: React.FC = () => {
                   MDoNER
                 </span>
               </div>
-              <span className="hidden lg:block text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 truncate max-w-[420px]">
+              <span className="hidden xl:block text-[11px] font-medium text-slate-600 dark:text-slate-400 tracking-normal mt-0.5 whitespace-nowrap">
                 {t('appSubtitle')}
               </span>
             </div>
@@ -193,7 +193,7 @@ export const Header: React.FC = () => {
 
       {/* KPI Bar: Macro Network Telemetry / Field Officer Sector Status */}
       <div className="bg-surface-subtle border-t border-border py-1.5 sm:py-2 px-3 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 text-xs">
+        <div className="w-full max-w-[1850px] mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 text-xs">
           {/* User Badge Info */}
           <div className="flex flex-wrap items-center gap-1.5 text-text-secondary text-[10px] sm:text-xs">
             <span className="font-semibold text-text-primary">{userContext.name}</span>

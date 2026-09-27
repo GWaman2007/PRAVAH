@@ -1,5 +1,5 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission, MissionRouteOption, RealtimeHazardPolygon, DraftIncidentPlot, ResponseHub, HubInventory, InventoryTransaction, ModelAPrediction, ModelARiskBand } from '../types';
+import type { Incident, SegmentIncident, AlertEvent, CommunityBase, ReliefMission, MissionRouteOption, RealtimeHazardPolygon, DraftIncidentPlot, ResponseHub, HubInventory, InventoryTransaction, ModelAPrediction, ModelARiskBand, ResourceRequest } from '../types';
 
 const metaEnv = typeof import.meta !== 'undefined' && (import.meta as any).env ? (import.meta as any).env : {};
 const procEnv = typeof globalThis !== 'undefined' && (globalThis as any).process?.env ? (globalThis as any).process.env : {};
@@ -484,6 +484,11 @@ export async function fetchCloudMissions(): Promise<ReliefMission[] | null> {
         reroutedFromCoords: Array.isArray(row.rerouted_from_coords) ? row.rerouted_from_coords : undefined,
         corridorSegmentIds: Array.isArray(row.corridor_segment_ids) ? row.corridor_segment_ids : (row.corridorSegmentIds || undefined),
         previousRouteGeometry: Array.isArray(row.previous_route_geometry) ? row.previous_route_geometry : undefined,
+        source: row.source || (row.is_field_requisition ? 'FIELD_REQUISITION' : (row.resource_request_id ? 'FIELD_REQUISITION' : undefined)),
+        isFieldRequisition: Boolean(row.is_field_requisition ?? row.isFieldRequisition ?? (row.source === 'FIELD_REQUISITION')),
+        requestedByOfficer: row.requested_by_officer || row.requestedByOfficer,
+        resourceRequestId: row.resource_request_id || row.resourceRequestId,
+        notes: row.notes,
       };
     });
   } catch (err) {
@@ -528,6 +533,11 @@ export async function upsertCloudMission(mission: ReliefMission): Promise<boolea
       rerouted_from_coords: mission.reroutedFromCoords || null,
       corridor_segment_ids: mission.corridorSegmentIds && mission.corridorSegmentIds.length > 0 ? mission.corridorSegmentIds : null,
       previous_route_geometry: mission.previousRouteGeometry || null,
+      source: mission.source || null,
+      is_field_requisition: Boolean(mission.isFieldRequisition),
+      requested_by_officer: mission.requestedByOfficer || null,
+      resource_request_id: mission.resourceRequestId || null,
+      notes: mission.notes || null,
       updated_at: new Date().toISOString(),
     };
 
@@ -545,6 +555,92 @@ export async function upsertCloudMission(mission: ReliefMission): Promise<boolea
     return true;
   } catch (err) {
     console.warn('⚠️ [Supabase] Exception upserting mission:', err);
+    return false;
+  }
+}
+
+/**
+ * Cloud Resource Requests API
+ */
+export async function fetchCloudResourceRequests(): Promise<ResourceRequest[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('resource_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('⚠️ [Supabase] Failed to fetch resource requests:', error.message);
+      return null;
+    }
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      communityId: row.community_id || row.communityId,
+      communityName: row.community_name || row.communityName,
+      officerId: row.officer_id || row.officerId,
+      officerName: row.officer_name || row.officerName,
+      officerRole: row.officer_role || row.officerRole,
+      resourceType: row.resource_type || row.resourceType,
+      quantity: Number(row.quantity),
+      unit: row.unit || 'units',
+      urgency: row.urgency,
+      reason: row.reason || '',
+      notes: row.notes || '',
+      evidencePhoto: row.evidence_photo || row.evidencePhoto,
+      status: row.status,
+      suggestedMissionId: row.suggested_mission_id || row.suggestedMissionId,
+      createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception fetching resource requests:', err);
+    return null;
+  }
+}
+
+export async function upsertCloudResourceRequest(req: ResourceRequest): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const row = {
+      id: req.id,
+      community_id: req.communityId,
+      community_name: req.communityName,
+      officer_id: req.officerId,
+      officer_name: req.officerName,
+      officer_role: req.officerRole,
+      resource_type: req.resourceType,
+      quantity: req.quantity,
+      unit: req.unit,
+      urgency: req.urgency,
+      reason: req.reason,
+      notes: req.notes,
+      evidence_photo: req.evidencePhoto,
+      status: req.status,
+      suggested_mission_id: req.suggestedMissionId,
+      created_at: req.createdAt,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('resource_requests').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('⚠️ [Supabase] Upsert resource request error:', error.message);
+      return false;
+    }
+
+    const channel = getRealtimeChannel();
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'RESOURCE_REQUEST_ADDED',
+        payload: { request: req },
+      });
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Exception upserting resource request:', err);
     return false;
   }
 }

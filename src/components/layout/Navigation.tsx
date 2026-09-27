@@ -164,7 +164,7 @@ export const Navigation: React.FC = () => {
 
   return (
     <nav className="bg-surface border-b border-border relative z-30">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+      <div className="w-full max-w-[1850px] mx-auto px-3 sm:px-6 lg:px-8">
         {/* Mobile Header Bar (< md) */}
         <div className="flex md:hidden items-center justify-between py-2">
           <button

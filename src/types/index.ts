@@ -623,7 +623,9 @@ export interface ReliefMission {
   reroutedAt?: string;
   reroutedFromCoords?: [number, number];
   previousRouteGeometry?: [number, number][];
-  source?: 'ENGINE_GENERATED' | 'MANUAL';
+  source?: 'ENGINE_GENERATED' | 'MANUAL' | 'FIELD_REQUISITION';
+  isFieldRequisition?: boolean;
+  requestedByOfficer?: string;
   notes?: string;
   deadline?: string;
   resourceRequestId?: string;

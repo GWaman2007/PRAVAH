@@ -20,6 +20,8 @@ import {
   RefreshCw,
   ShieldAlert,
   Plus,
+  ClipboardList,
+  CheckCircle,
 } from 'lucide-react';
 import { CreateMissionModal } from './CreateMissionModal';
 
@@ -194,11 +196,15 @@ export const MissionsDeck: React.FC = () => {
               const highRiskSeg = [...mappedSegments].sort((a, b) => (modelAPredictions[b.id]?.probability ?? 0) - (modelAPredictions[a.id]?.probability ?? 0))[0];
               const hasHighRiskRoad = maxRiskProb >= 0.30 || hasActiveIncident;
 
+              const isFieldReq = mission.source === 'FIELD_REQUISITION' || Boolean(mission.isFieldRequisition) || Boolean(mission.resourceRequestId);
+
               return (
                 <div
                   key={mission.id}
                   className={`bg-surface border rounded-md p-4 sm:p-5 shadow-xs space-y-4 text-xs ${
                     mission.isRerouted
+                      ? 'border-emerald-500/60 ring-1 ring-emerald-500/20'
+                      : isFieldReq
                       ? 'border-emerald-500/60 ring-1 ring-emerald-500/20'
                       : hasHighRiskRoad
                       ? 'border-orange-500/60 ring-1 ring-orange-500/20'
@@ -208,8 +214,10 @@ export const MissionsDeck: React.FC = () => {
                   {/* Card Header */}
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-xs bg-primary-tint text-primary font-bold">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded-xs font-bold ${
+                          isFieldReq ? 'bg-emerald-500/15 text-emerald-400' : 'bg-primary-tint text-primary'
+                        }`}>
                           {mission.id}
                         </span>
                         <h3 className="font-bold text-sm text-text-primary">
@@ -218,24 +226,40 @@ export const MissionsDeck: React.FC = () => {
                         {mission.source && (
                           <span
                             className={`px-1.5 py-0.2 rounded font-mono font-bold text-[9px] uppercase tracking-wider ${
-                              mission.source === 'ENGINE_GENERATED'
+                              mission.source === 'FIELD_REQUISITION'
+                                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                                : mission.source === 'ENGINE_GENERATED'
                                 ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
                                 : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
                             }`}
                           >
-                            {mission.source === 'ENGINE_GENERATED' ? 'Engine Generated' : 'Manual'}
+                            {mission.source === 'FIELD_REQUISITION' ? 'Ground Indent' : mission.source === 'ENGINE_GENERATED' ? 'Engine Generated' : 'Manual'}
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-text-secondary mt-0.5 flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5 text-status-blocked-text shrink-0" />
-                        <span>Closing road failure window. Preemptive transit authorization advised.</span>
-                      </p>
+                      {isFieldReq ? (
+                        <p className="text-[11px] text-emerald-500 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                          <span>★ Genuine Ground Need{mission.requestedByOfficer ? ` • Requested by ${mission.requestedByOfficer}` : ''}</span>
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-text-secondary mt-0.5 flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5 text-status-blocked-text shrink-0" />
+                          <span>Closing road failure window. Preemptive transit authorization advised.</span>
+                        </p>
+                      )}
                     </div>
 
-                    <span className="px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid">
-                      {t('suggested')}
-                    </span>
+                    {isFieldReq ? (
+                      <span className="px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 flex items-center gap-1 shrink-0">
+                        <ClipboardList className="w-3 h-3 text-emerald-400" />
+                        FIELD REQUISITION
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-xs font-mono font-bold text-[10px] bg-status-blocked-tint text-status-blocked-text border border-status-blocked-solid shrink-0">
+                        {t('suggested')}
+                      </span>
+                    )}
                   </div>
 
                   {/* Convoy & Logistics Breakdown */}
