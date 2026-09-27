@@ -460,6 +460,28 @@ export interface AlertEvent {
   extraDetails?: Record<string, any>;
 }
 
+export interface DriverEmergencyRouteAlert {
+  id: string;
+  missionId: string;
+  vehicleId: string;
+  driverName: string;
+  incidentTitle: string;
+  incidentLocation: string;
+  incidentType: string;
+  affectedRoute: string;
+  newRouteName: string;
+  disruptionRiskPct: number;
+  updatedEtaMinutes: number;
+  routeDistanceKm: number;
+  currentGps: [number, number];
+  isRerouted: boolean;
+  audioBroadcastText: string;
+  language: LanguageId;
+  multilingualTexts: Record<LanguageId, string>;
+  timestamp: string;
+  acknowledged: boolean;
+}
+
 // ==========================================
 // 6. Multilingual Emergency Broadcasts (Module 5)
 // ==========================================

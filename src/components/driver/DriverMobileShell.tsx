@@ -23,7 +23,6 @@ import { DriverUpdatesScreen } from './DriverUpdatesScreen';
 import { DriverReportModal } from './DriverReportModal';
 import { FLEET_ROUTES } from '../../data/fleetData';
 import { FIELD_OFFICERS } from '../../engine/missionEngine';
-import type { UserRole, ReliefMission, VehicleTelemetry } from '../../types';
 import {
   Home,
   Navigation,
@@ -43,8 +42,23 @@ import {
   AlertOctagon,
   X,
   Truck,
+  Volume2,
+  VolumeX,
+  Route,
+  MapPin,
+  Clock,
+  ArrowRight,
+  ShieldAlert,
+  Sparkles,
+  Languages,
 } from 'lucide-react';
-import { playEmergencyAlertSound } from '../../utils/audioAlert';
+import {
+  playEmergencyAlertSound,
+  playAckChime,
+  playTextToSpeech,
+  stopTextToSpeech,
+} from '../../utils/audioAlert';
+import type { UserRole, ReliefMission, VehicleTelemetry, LanguageId } from '../../types';
 
 type DriverTab = 'HOME' | 'NAVIGATE' | 'MISSION' | 'UPDATES';
 
@@ -67,12 +81,75 @@ export const DriverMobileShell: React.FC = () => {
     cancelVehicleSOS,
     selectedMissionId,
     setSelectedMissionId,
+    activeDriverEmergencyAlert,
+    acknowledgeDriverEmergencyAlert,
   } = usePravahStore();
 
   const [activeTab, setActiveTab] = useState<DriverTab>('HOME');
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [sosModalOpen, setSosModalOpen] = useState(false);
+  const [dismissedAlertModalId, setDismissedAlertModalId] = useState<string | null>(null);
+  const [isPlayingAlertAudio, setIsPlayingAlertAudio] = useState(false);
+  const [selectedAlertLang, setSelectedAlertLang] = useState<LanguageId>('hi');
+
+  // Sync alert language when alert arrives
+  useEffect(() => {
+    if (activeDriverEmergencyAlert) {
+      setSelectedAlertLang(activeDriverEmergencyAlert.language || 'hi');
+    }
+  }, [activeDriverEmergencyAlert?.id, activeDriverEmergencyAlert?.language]);
+
+  // Clean up audio on unmount
+  useEffect(() => {
+    return () => {
+      stopTextToSpeech();
+    };
+  }, []);
+
+  const handleToggleAlertAudio = (text: string, lang: LanguageId) => {
+    if (isPlayingAlertAudio) {
+      stopTextToSpeech();
+      setIsPlayingAlertAudio(false);
+      return;
+    }
+
+    setIsPlayingAlertAudio(true);
+    playTextToSpeech(
+      text,
+      lang,
+      {
+        id: activeDriverEmergencyAlert?.missionId,
+        highway: activeDriverEmergencyAlert?.affectedRoute,
+        location: activeDriverEmergencyAlert?.incidentLocation,
+        disruptionType: activeDriverEmergencyAlert?.incidentTitle,
+        detourRoute: activeDriverEmergencyAlert?.newRouteName,
+        estimatedDelay: `${activeDriverEmergencyAlert?.updatedEtaMinutes} min`,
+      },
+      {
+        speed: 0.82,
+        onStart: () => setIsPlayingAlertAudio(true),
+        onEnd: () => setIsPlayingAlertAudio(false),
+        onError: () => setIsPlayingAlertAudio(false),
+      }
+    );
+  };
+
+  const handleAcknowledgeEmergencyAlert = () => {
+    if (!activeDriverEmergencyAlert) return;
+    stopTextToSpeech();
+    setIsPlayingAlertAudio(false);
+    playAckChime();
+    acknowledgeDriverEmergencyAlert(activeDriverEmergencyAlert.id);
+  };
+
+  const handleViewRouteOnMap = () => {
+    if (activeDriverEmergencyAlert) {
+      setDismissedAlertModalId(activeDriverEmergencyAlert.id);
+      setSelectedMissionId(activeDriverEmergencyAlert.missionId);
+    }
+    setActiveTab('NAVIGATE');
+  };
 
   // Sync state lifecycle: 🟠 Offline -> Saved locally -> 🟢 Online -> Syncing -> ✓ Synced
   const effectiveOnline = isOnline && !isSimulatedOffline;
@@ -436,6 +513,60 @@ export const DriverMobileShell: React.FC = () => {
             </div>
           </header>
 
+          {/* ─── ACTIVE EMERGENCY ROUTE ALERT BANNER (If alert is active & unacknowledged) ─── */}
+          {activeDriverEmergencyAlert && !activeDriverEmergencyAlert.acknowledged && (
+            <div className="bg-gradient-to-r from-red-600 via-red-500 to-amber-600 border-b border-red-400/40 p-2.5 px-3 flex items-center justify-between gap-2 text-white shadow-xl shrink-0 z-30 animate-in slide-in-from-top duration-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base animate-pulse">🚨</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-black uppercase tracking-wider bg-black/40 px-1.5 py-0.5 rounded text-amber-300">
+                      EMERGENCY ROUTE ALERT
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-white">
+                      ETA: {activeDriverEmergencyAlert.updatedEtaMinutes}m
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-bold truncate text-white">
+                    {activeDriverEmergencyAlert.newRouteName}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() =>
+                    handleToggleAlertAudio(
+                      activeDriverEmergencyAlert.multilingualTexts?.[selectedAlertLang] ||
+                        activeDriverEmergencyAlert.audioBroadcastText,
+                      selectedAlertLang
+                    )
+                  }
+                  className={`p-1.5 rounded-lg border font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all ${
+                    isPlayingAlertAudio
+                      ? 'bg-amber-400 text-slate-950 border-amber-300 animate-pulse'
+                      : 'bg-black/30 hover:bg-black/50 text-white border-white/20'
+                  }`}
+                  title="Listen to Voice Alert"
+                >
+                  {isPlayingAlertAudio ? <VolumeX className="w-3.5 h-3.5 text-amber-300" /> : <Volume2 className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={() => setDismissedAlertModalId(null)}
+                  className="px-2 py-1 rounded-lg bg-black/40 hover:bg-black/60 text-white font-bold text-[10px] border border-white/20 cursor-pointer"
+                >
+                  Details
+                </button>
+                <button
+                  onClick={handleAcknowledgeEmergencyAlert}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] shadow-sm flex items-center gap-1 cursor-pointer"
+                >
+                  <Check className="w-3 h-3" />
+                  <span>Ack</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ─── MAIN CONTENT VIEWPORT ─── */}
           <main className="fo-app-content">
             {activeTab === 'HOME' && (
@@ -511,6 +642,192 @@ export const DriverMobileShell: React.FC = () => {
               );
             })}
           </nav>
+
+          {/* ─── FULL-SCREEN EMERGENCY ROUTE ALERT MODAL (Driver Cockpit) ─── */}
+          {activeDriverEmergencyAlert &&
+            !activeDriverEmergencyAlert.acknowledged &&
+            dismissedAlertModalId !== activeDriverEmergencyAlert.id && (
+              <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col justify-end sm:justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+                <div className="bg-[#0f172a] border-2 border-red-500 rounded-3xl p-4 sm:p-5 max-w-sm mx-auto w-full space-y-3.5 shadow-2xl shadow-red-950/80 ring-2 ring-red-500/30 relative">
+                  {/* Close / Minimize button in top corner */}
+                  <button
+                    onClick={() => setDismissedAlertModalId(activeDriverEmergencyAlert.id)}
+                    className="absolute top-3.5 right-3.5 w-7 h-7 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                    title="Minimize alert to top banner"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+
+                  {/* Header Badge & Title */}
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-red-500/20 border border-red-500/50 flex items-center justify-center text-red-400 shrink-0 shadow-lg shadow-red-950 animate-pulse">
+                      <ShieldAlert className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0 pr-6">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/40">
+                          EMERGENCY ROUTE ALERT
+                        </span>
+                        <span className="text-[10px] font-mono text-amber-400 font-bold">
+                          BASE COMMAND
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-black text-white mt-0.5 tracking-tight truncate">
+                        {activeDriverEmergencyAlert.vehicleId} ({activeDriverEmergencyAlert.driverName})
+                      </h3>
+                    </div>
+                  </div>
+
+                  {/* Status & Incident Briefing Card */}
+                  <div className="p-3 rounded-2xl bg-black/40 border border-red-500/30 space-y-2.5 text-xs">
+                    {/* 1. What Incident Occurred */}
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-red-400" />
+                          Incident Detected
+                        </span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-red-500/20 text-red-300 border border-red-500/30">
+                          Risk {activeDriverEmergencyAlert.disruptionRiskPct}% (Model A)
+                        </span>
+                      </div>
+                      <p className="font-bold text-white text-[12px] mt-0.5">
+                        {activeDriverEmergencyAlert.incidentTitle}
+                      </p>
+                      <p className="text-[10px] text-slate-300">
+                        Location: {activeDriverEmergencyAlert.incidentLocation} &bull; Type: {activeDriverEmergencyAlert.incidentType}
+                      </p>
+                    </div>
+
+                    {/* 2. Route Affected / Blocked vs New Alternate Bypass */}
+                    <div className="space-y-1.5 pt-1.5 border-t border-slate-800">
+                      <div className="flex items-start gap-2">
+                        <span className="text-red-400 text-xs mt-0.5">🚫</span>
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-red-400 uppercase font-semibold block">
+                            Affected / Blocked Route
+                          </span>
+                          <p className="text-[11px] font-bold text-slate-300 line-through decoration-red-500">
+                            {activeDriverEmergencyAlert.affectedRoute}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2 bg-emerald-950/40 p-2 rounded-xl border border-emerald-500/30">
+                        <span className="text-emerald-400 text-xs mt-0.5">🟢</span>
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-emerald-400 uppercase font-bold block">
+                            New Alternate Bypass Route
+                          </span>
+                          <p className="text-[11px] font-extrabold text-white">
+                            {activeDriverEmergencyAlert.newRouteName}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. Live GPS Reroute & Updated ETA */}
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800 text-[10px]">
+                      <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400 block font-semibold">Live GPS Reroute</span>
+                        <span className="font-mono font-bold text-emerald-400 block mt-0.5">
+                          {activeDriverEmergencyAlert.isRerouted ? '✓ Anchored from Live GPS' : 'Detour Active'}
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-500">
+                          [{activeDriverEmergencyAlert.currentGps[0].toFixed(3)}, {activeDriverEmergencyAlert.currentGps[1].toFixed(3)}]
+                        </span>
+                      </div>
+                      <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400 block font-semibold">Updated ETA & Distance</span>
+                        <span className="font-mono font-extrabold text-white text-xs block mt-0.5">
+                          {activeDriverEmergencyAlert.updatedEtaMinutes} min
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400">
+                          {activeDriverEmergencyAlert.routeDistanceKm} km detour
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Regional Script & Voice Message */}
+                  <div className="p-3 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-slate-400 font-semibold flex items-center gap-1">
+                        <Languages className="w-3 h-3 text-blue-400" />
+                        Regional Voice Alert
+                      </span>
+                      {/* Language switch selector pills */}
+                      <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-slate-800">
+                        {(['hi', 'as', 'bn', 'mn', 'en'] as LanguageId[]).map((lang) => (
+                          <button
+                            key={lang}
+                            onClick={() => setSelectedAlertLang(lang)}
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                              selectedAlertLang === lang
+                                ? 'bg-blue-600 text-white'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {lang}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-200 leading-relaxed italic bg-black/30 p-2.5 rounded-xl border border-white/5">
+                      &ldquo;{activeDriverEmergencyAlert.multilingualTexts?.[selectedAlertLang] ||
+                        activeDriverEmergencyAlert.audioBroadcastText}&rdquo;
+                    </p>
+
+                    {/* Listen Voice Alert Button */}
+                    <button
+                      onClick={() =>
+                        handleToggleAlertAudio(
+                          activeDriverEmergencyAlert.multilingualTexts?.[selectedAlertLang] ||
+                            activeDriverEmergencyAlert.audioBroadcastText,
+                          selectedAlertLang
+                        )
+                      }
+                      className={`w-full py-2 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                        isPlayingAlertAudio
+                          ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg shadow-amber-950 animate-pulse'
+                          : 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border-blue-500/40'
+                      }`}
+                    >
+                      {isPlayingAlertAudio ? (
+                        <>
+                          <VolumeX className="w-4 h-4 text-slate-950" />
+                          <span>Stop Voice Alert</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-4 h-4 text-blue-400" />
+                          <span>Listen to Regional Voice Alert ({selectedAlertLang.toUpperCase()})</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Primary Action Buttons: View Route on Map & Acknowledge */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={handleViewRouteOnMap}
+                      className="flex-1 py-3 px-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-blue-950/50 cursor-pointer transition-all"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      <span>VIEW ROUTE ON MAP</span>
+                    </button>
+                    <button
+                      onClick={handleAcknowledgeEmergencyAlert}
+                      className="flex-1 py-3 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-950/50 cursor-pointer transition-all"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>ACKNOWLEDGE &amp; CONTINUE</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
         </div>
       </div>
 

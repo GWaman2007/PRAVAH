@@ -336,3 +336,119 @@ export function generateBroadcastForIncident(
     mn: `ꯈꯨꯗꯣꯡꯊꯤꯕ ꯆꯦꯀꯁꯤꯟꯋꯥ: ${highway} ꯒꯤ ${location} ꯃꯅꯥꯛꯇ ${severity} ꯊꯣꯛꯂꯦ। ꯒꯥꯔꯤꯁꯤꯡ ${detour} ꯂꯝꯕꯤꯗ ꯍꯣꯡꯗꯣꯛꯎ। ꯍꯦꯜꯞꯂꯥꯏꯟ: ১১২।`,
   };
 }
+
+export interface MissionDriverAlertBundle {
+  translations: Record<LanguageId, string>;
+  phonetics: Record<LanguageId, string>;
+  mn_mayek: string;
+  mn_bengali: string;
+}
+
+export const MISSION_DRIVER_ROUTE_ALERTS: Record<string, MissionDriverAlertBundle> = {
+  'MSN-ONGOING-SK01': {
+    translations: {
+      en: "CRITICAL ROUTE ALERT for Driver Karma Lepcha (Oxy-Tanker-04): NH-10 Teesta Canyon is SEVERED at 29th Mile due to severe landslide and rockfall. Model A disruption risk is 64%. Command has re-anchored route from your current GPS [27.3314, 88.6138]. Divert immediately via NH-717A Pakyong - Lava Ridge Bypass. Updated ETA is 108 min (+14m). Acknowledge to continue mission.",
+      hi: "आपातकालीन मार्ग चेतावनी: चालक कर्मा लेप्चा (वाहन Oxy-Tanker-04), 29वें मील तीस्ता घाटी में भारी भूस्खलन और चट्टान गिरने से NH-10 मार्ग अवरुद्ध है। मॉडल A विघ्न जोखिम 64% है। आपके वर्तमान GPS स्थान [27.3314, 88.6138] से नया मार्ग निर्धारित किया गया है। तुरंत NH-717A पाक्योंग-लावा बाईपास की ओर मुड़ें। नया ETA 108 मिनट है। कृपया अलर्ट स्वीकार कर मिशन जारी रखें।",
+      as: "জৰুৰী পথ সতৰ্কবাৰ্তা: চালক কৰ্মা লেপচা (বাহন Oxy-Tanker-04), ২৯ মাইল তিস্তা কেনিয়নত প্ৰবল ভূমিস্খলনৰ বাবে NH-10 পথ সম্পূর্ণ বন্ধ হৈ পৰিছে। মডেল A বিঘ্ন আশংকা ৬৪%। আপোনাৰ বৰ্তমানৰ GPS স্থানৰ পৰা পথ পুনৰ নিৰ্ধাৰণ কৰা হৈছে। তৎক্ষণাৎ NH-717A পাকিয়ং-লাভা বাইপাছলৈ ডাইভাৰ্ট কৰক। সংশোধিত ETA ১০৮ মিনিট। অনুগ্ৰহ কৰি নিশ্চিত কৰি যাত্ৰা অব্যাহত ৰাখক।",
+      bn: "জরুরি রুট সতর্কতা: চালক কর্মা লেপচা (গাড়ি Oxy-Tanker-04), ২৯ মাইল তিস্তা ক্যানিয়নে ব্যাপক ভূমিধসের কারণে NH-10 অবরুদ্ধ। মডেল A বিঘ্ন ঝুঁকি ৬৪%। বর্তমান GPS অবস্থান থেকে রুট রি-অ্যাঙ্কর করা হয়েছে। অবিলম্বে NH-717A পাকিয়ং-লাভা বাইপাস দিয়ে ডাইভার্ট করুন। নতুন ETA ১০৮ মিনিট। নিশ্চিত করে মিশন এগিয়ে নিন।",
+      mn: "ꯈꯨꯗꯣꯡꯊꯤꯕ ꯂꯝꯕꯤꯒꯤ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ꯀꯔꯃꯥ ꯂꯦꯄꯆꯥ (ꯒꯥꯔꯤ Oxy-Tanker-04), ꯲꯹ ꯃꯥꯏꯜ ꯇꯤꯁ꯭ꯇꯥ ꯀꯦꯅ꯭ꯌꯣꯟꯗ ꯂꯩꯃꯥꯏ ꯆꯨꯝꯊꯔꯛꯄꯅ NH-10 ꯊꯤꯡꯖꯤꯜꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ꯶꯴% ꯑꯣꯏ꯫ ꯍꯧꯖꯤꯛ ꯂꯩꯔꯤꯕ GPS ꯑꯁꯤꯗꯒꯤ NH-717A ꯄꯥꯀ꯭ꯌꯣꯡ-ꯂꯥꯚꯥ ꯕꯥꯏꯄꯥꯁꯇ ꯍꯣꯡꯗꯣꯛꯎ꯫ ꯑꯅꯕ ETA ꯃꯤꯅꯤꯠ ꯱꯰꯸ ꯅꯤ꯫",
+    },
+    phonetics: {
+      en: "Critical Route Alert: Driver Karma Lepcha Oxy-Tanker-04. NH-10 Teesta Canyon is severed at 29th Mile. Model A risk 64 percent. Divert immediately via NH-717A Pakyong Lava Ridge Bypass. Updated ETA is 108 minutes.",
+      hi: "Aapatkaaleen Maarg Chetaavanee: Chaalak Karma Lepcha vaahan Oxy-Tanker-04. 29vein meel Teesta ghaatee par NH-10 maarg poornatah band hai. Model A jokhim 64 pratishat. Turant NH-717A Pakyong Lava bypass maarg par mudein. Nayaa ETA 108 minute.",
+      as: "Zoruree poth sotorkobaarta: Chaalok Karma Lepcha baahon Oxy-Tanker-04. 29 mile Teesta canyon-ot NH-10 bondho. Model A aashongkaa 64 shotangsho. Pakyong Lava bypass-oloi divert korok. ETA 108 minute.",
+      bn: "Zoruree route sotorkota: Chaalok Karma Lepcha gaadi Oxy-Tanker-04. 29 mile Teesta canyon-e NH-10 oboruddho. Pakyong Lava bypass diye divert korun. Notun ETA 108 minute.",
+      mn: "Khudongtheebagee lambee paau: Driver Karma Lepcha. 29 mile Teesta canyon-da NH-10 thingzille. Pakyong Lava bypass-ta hongdok-u. Anouba ETA 108 minute.",
+    },
+    mn_mayek: "ꯈꯨꯗꯣꯡꯊꯤꯕ ꯂꯝꯕꯤꯒꯤ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ꯀꯔꯃꯥ ꯂꯦꯄꯆꯥ (ꯒꯥꯔꯤ Oxy-Tanker-04), ꯲꯹ ꯃꯥꯏꯜ ꯇꯤꯁ꯭ꯇꯥ ꯀꯦꯅ꯭ꯌꯣꯟꯗ ꯂꯩꯃꯥꯏ ꯆꯨꯝꯊꯔꯛꯄꯅ NH-10 ꯊꯤꯡꯖꯤꯜꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ꯶꯴% ꯑꯣꯏ꯫ ꯍꯧꯖꯤꯛ ꯂꯩꯔꯤꯕ GPS ꯑꯁꯤꯗꯒꯤ NH-717A ꯄꯥꯀ꯭ꯌꯣꯡ-ꯂꯥꯚꯥ ꯕꯥꯏꯄꯥꯁꯇ ꯍꯣꯡꯗꯣꯛꯎ꯫ ꯑꯅꯕ ETA ꯃꯤꯅꯤꯠ ꯱꯰꯸ ꯅꯤ꯫",
+    mn_bengali: "জরুরি লম্বিগী পাউ: ড্রাইভার কর্মা লেপচা (গাড়ি Oxy-Tanker-04), ২৯ মাইল তিস্তা ক্যানিয়োন্দা লৈমাই চুখৎলকপদগী NH-10 থিংজিল্লে। মডেল A রিস্ক ৬৪% ওই। হৌজিক লৈরিবা GPS অসীদগী NH-717A পাক্যোং-লাভা বাইপাসতা হোংদোকউ। অনৌবা ETA মিনিট ১০৮ নি।",
+  },
+  'MSN-ONGOING-NL01': {
+    translations: {
+      en: "CRITICAL ROUTE ALERT for Driver Havildar T. Angami (Ration-Convoy-07): NH-29 Pagla Pahar is COMPLETELY BLOCKED due to massive mudflow at Km 144. Model A disruption risk is 86%. Divert convoy immediately via Peducha - Tsiesema Bypass. Current GPS [25.7596, 93.9473]. Updated ETA is 165 min (+25m). Proceed with caution.",
+      hi: "आपातकालीन मार्ग चेतावनी: चालक हवलदार टी. अंगाली (वाहन Ration-Convoy-07), किमी 144 पगला पहाड़ सेक्टर में भारी मलबे के कारण NH-29 पूरी तरह बंद है। मॉडल A विघ्न जोखिम 86% है। अपने वर्तमान GPS स्थान से तुरंत पेदुचा-त्सीसेमा बाईपास लें। नया ETA 165 मिनट है। कृपया अलर्ट स्वीकार कर मिशन जारी रखें।",
+      as: "জৰুৰী পথ সতৰ্কবাৰ্তা: চালক হাবিলদাৰ টি. আংগামি (Ration-Convoy-07), ১৪৪ কিলোমিটাৰত পাগলা পাহাৰত প্ৰবল ভূমিস্খলনৰ বাবে NH-29 সম্পূর্ণ বন্ধ। মডেল A বিঘ্ন আশংকা ৮৬%। পেদুচা-চিচেমা বাইপাছৰে কনভয় ডাইভাৰ্ট কৰক। সংশোধিত ETA ১৬৫ মিনিট।",
+      bn: "জরুরি রুট সতর্কতা: চালক হাবিলদার টি. আংগামী (Ration-Convoy-07), ১৪৪ কিমিতে পাগলা পাহাড়ে ভূমিধসের কারণে NH-29 সম্পূর্ণ অবরুদ্ধ। মডেল A বিঘ্ন ঝুঁকি ৮৬%। অবিলম্বে পেদুচা-ৎসিসেমা বাইপাস দিয়ে ডাইভার্ট করুন। নতুন ETA ১৬৫ মিনিট।",
+      mn: "ꯈꯨꯗꯣꯡꯊꯤꯕ ꯂꯝꯕꯤꯒꯤ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ꯍꯕꯤꯜꯗꯥꯔ ꯇꯤ. ꯑꯪꯒꯥꯃꯤ (Ration-Convoy-07), ꯀꯤꯃꯤ ꯱꯴꯴ ꯄꯥꯒ꯭ꯂꯥ ꯄꯥꯍꯥꯔꯗ ꯂꯩꯃꯥꯏ ꯆꯨꯝꯊꯔꯛꯄꯅ NH-29 ꯊꯤꯡꯖꯤꯜꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ꯸꯶% ꯑꯣꯏ꯫ ꯄꯦꯗꯨꯆꯥ-ꯇ꯭ꯁꯤꯁꯦꯃꯥ ꯕꯥꯏꯄꯥꯁꯇ ꯍꯣꯡꯗꯣꯛꯎ꯫ ꯑꯅꯕ ETA ꯃꯤꯅꯤꯠ ꯱꯶꯵ ꯅꯤ꯫",
+    },
+    phonetics: {
+      en: "Critical Route Alert: Driver Havildar Angami Ration-Convoy-07. NH-29 Pagla Pahar is completely blocked at Km 144. Divert via Peducha Tsiesema bypass. Updated ETA 165 minutes.",
+      hi: "Aapatkaaleen Maarg Chetaavanee: Chaalak Havildar Angami. NH-29 Pagla Pahar poorn roop se band hai. Peducha Tsiesema bypass se jaayein. Nayaa ETA 165 minute.",
+      as: "Zoruree poth sotorkobaarta: Chaalok Havildar Angami. NH-29 Pagla Pahar bondho. Peducha Tsiesema bypass lwoloi divert korok. ETA 165 minute.",
+      bn: "Zoruree route sotorkota: Chaalok Havildar Angami. NH-29 Pagla Pahar oboruddho. Peducha Tsiesema bypass diye jaan. Notun ETA 165 minute.",
+      mn: "Khudongtheebagee lambee paau: Driver Havildar Angami. NH-29 Pagla Pahar thingzille. Peducha Tsiesema bypass-ta hongdok-u. ETA 165 minute.",
+    },
+    mn_mayek: "ꯈꯨꯗꯣꯡꯊꯤꯕ ꯂꯝꯕꯤꯒꯤ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ꯍꯕꯤꯜꯗꯥꯔ ꯇꯤ. ꯑꯪꯒꯥꯃꯤ (Ration-Convoy-07), ꯀꯤꯃꯤ ꯱꯴꯴ ꯄꯥꯒ꯭ꯂꯥ ꯄꯥꯍꯥꯔꯗ ꯂꯩꯃꯥꯏ ꯆꯨꯝꯊꯔꯛꯄꯅ NH-29 ꯊꯤꯡꯖꯤꯜꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ꯸꯶% ꯑꯣꯏ꯫ ꯄꯦꯗꯨꯆꯥ-ꯇ꯭ꯁꯤꯁꯦꯃꯥ ꯕꯥꯏꯄꯥꯁꯇ ꯍꯣꯡꯗꯣꯛꯎ꯫ ꯑꯅꯕ ETA ꯃꯤꯅꯤꯠ ꯱꯶꯵ ꯅꯤ꯫",
+    mn_bengali: "জরুরি লম্বিগী পাউ: ড্রাইভার হবিলদার টি. অংগামী (Ration-Convoy-07), কিমি ১৪৪ পাগলা পাহাড়দা লৈমাই চুখৎলকপদগী NH-29 থিংজিল্লে। মডেল A রিস্ক ৮৬% ওই। পেদুচা-ৎসিসেমা বাইপাসতা হোংদোকউ। অনৌবা ETA মিনিট ১৬৫ নি।",
+  },
+  'MSN-ONGOING-AS01': {
+    translations: {
+      en: "TACTICAL ROUTE BULLETIN for Driver Subedar R. Bordoloi (Cargo-01): Flash flood waterlogging reported on NH-27 Haflong Ghat section (Km 87). Model A disruption risk is 42%. Monitor water levels; Umrangso - Dehangi Mountain Ridge designated as standby bypass. Current GPS [24.9800, 92.9000]. ETA: 155 min.",
+      hi: "मार्ग बुलेटिन: चालक सूबेदार आर. बोरदोलोई (वाहन Cargo-01), किमी 87 हाफलोंग घाट पर NH-27 में जलभराव की सूचना है। मॉडल A विघ्न जोखिम 42% है। उमरांग्सो-देहांगी पहाड़ी मार्ग स्टैंडबाय बाईपास के रूप में तैयार है। वर्तमान GPS [24.9800, 92.9000], ETA: 155 मिनट।",
+      as: "পথ নিৰ্দেশনা: চালক চুবেদাৰ আৰ. বৰদলৈ (বাহন Cargo-01), ৮৭ কিমি হাফলং ঘাটত NH-27 ত বানপানীৰ সৃষ্টি হৈছে। মডেল A বিঘ্ন আশংকা ৪২%। উমৰাংচ'-দেহাংগী পাহাৰীয়া পথ সাজু ৰখা হৈছে। বৰ্তমান GPS [২৪.৯৮০০, ৯২.৯০০০], ETA: ১৫৫ মিনিট।",
+      bn: "রুট বুলেটিন: চালক সুবেদার আর. বরদলৈ (গাড়ি Cargo-01), ৮৭ কিমিতে হাফলং ঘাটে NH-27 প্লাবিত। মডেল A ঝুঁকি ৪২%। উমরাংসো-দেহাগী পার্বত্য বাইপাস প্রস্তুত রাখা হয়েছে। বর্তমান GPS [২৪.৯৮০০, ৯২.৯০০০], ETA: ১৫৫ মিনিট।",
+      mn: "ꯂꯝꯕꯤꯒꯤ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ꯁꯨꯕꯦꯗꯥꯔ ꯑꯥꯔ. ꯕꯣꯔꯗꯣꯂꯣꯏ (Cargo-01), ꯀꯤꯃꯤ ꯸꯷ ꯍꯥꯐꯂꯣꯡ ꯘꯥꯠꯇ NH-27 ꯏꯁꯤꯡ ꯏꯆꯥꯑꯣ ꯊꯣꯛꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ꯴꯲% ꯑꯣꯏ꯫ ꯎꯃꯔꯥꯡꯁꯣ-ꯗꯦꯍꯥꯡꯒꯤ ꯂꯝꯕꯤ ꯁꯦꯝ-ꯁꯥꯅ ꯂꯩꯔꯦ꯫",
+    },
+    phonetics: {
+      en: "Tactical Route Bulletin: Driver Subedar Bordoloi Cargo-01. Flash flood on NH-27 Haflong Ghat. Umrangso Dehangi standby. ETA 155 minutes.",
+      hi: "Maarg Bulletin: Chaalak Subedar Bordoloi. NH-27 Haflong Ghat par jalbharaav. Umrangso Dehangi bypass taiyaar hai. ETA 155 minute.",
+      as: "Poth nirdeshonaa: Chaalok Subedar Bordoloi. NH-27 Haflong Ghat-ot banpani. Umrangso Dehangi poth saazu. ETA 155 minute.",
+      bn: "Route bulletin: Chaalok Subedar Bordoloi. NH-27 Haflong Ghat plavito. Umrangso Dehangi bypass prostut. ETA 155 minute.",
+      mn: "Lambee paau: Driver Subedar Bordoloi. NH-27 Haflong Ghat-ta eeshing eechao. ETA 155 minute.",
+    },
+    mn_mayek: "ꯂꯝꯕꯤꯒꯤ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ꯁꯨꯕꯦꯗꯥꯔ ꯑꯥꯔ. ꯕꯣꯔꯗꯣꯂꯣꯏ (Cargo-01), ꯀꯤꯃꯤ ꯸꯷ ꯍꯥꯐꯂꯣꯡ ꯘꯥꯠꯇ NH-27 ꯏꯁꯤꯡ ꯏꯆꯥꯑꯣ ꯊꯣꯛꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ꯴꯲% ꯑꯣꯏ꯫ ꯎꯃꯔꯥꯡꯁꯣ-ꯗꯦꯍꯥꯡꯒꯤ ꯂꯝꯕꯤ ꯁꯦꯝ-ꯁꯥꯅ ꯂꯩꯔꯦ꯫",
+    mn_bengali: "লম্বিগী পাউ: ড্রাইভার সুবেদার আর. বরদোলোই (Cargo-01), কিমি ৮৭ হাফলং ঘাটতা NH-27 ঈশিং ঈচাও থোক্লে। মডেল A রিস্ক ৪২% ওই। উমরাংসো-দেহাঙ্গী লম্বী শেম-শানা লৈরে।",
+  },
+  'MSN-ONGOING-MZ01': {
+    translations: {
+      en: "OPERATIONAL CONVOY ADVISORY for Driver Rajesh Mech (Medic-01): Silt subsidence reported at Bilkhawthlir on NH-306. Model A risk is 14%. Single lane escort active for emergency medical van. Maintain speed below 35 km/h. Current GPS [24.5000, 92.7200]. ETA: 110 min.",
+      hi: "काफिला सूचना: चालक राजेश मेच (वाहन Medic-01), NH-306 बिलखॉथ्लिर में भू-धंसाव की सूचना है। मॉडल A जोखिम 14% है। आपातकालीन चिकित्सा वैन के लिए एकल लेन एस्कॉर्ट उपलब्ध है। गति 35 किमी/घंटा से कम रखें। ETA: 110 मिनट।",
+      as: "কনভয় নিৰ্দেশনা: চালক ৰাজেশ মেচ (Medic-01), NH-306 বিলখাওথলিৰত ভূমিস্খলন। মডেল A বিঘ্ন আশংকা ১৪%। জৰুৰীকালীন ঔষধবাহী বাহনৰ বাবে এটা লেন মুকলি আছে। গতিবেগ ৩৫ কিমি/ঘণ্টাতকৈ কম ৰাখক। ETA: ১১০ মিনিট।",
+      bn: "কনভয় বিজ্ঞপ্তি: চালক রাজেশ মেচ (Medic-01), NH-306 বিলখওথলিরে ধস নেমেছে। মডেল A ঝুঁকি ১৪%। জরুরি ওষুধবাহী ভ্যানের জন্য সিঙ্গেল লেন এসকর্ট সক্রিয়। গতি ৩৫ কিমি/ঘণ্টার নিচে রাখুন। ETA: ১১০ মিনিট।",
+      mn: "ꯀꯟꯚꯣꯏ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ꯔꯥꯖꯦꯁ ꯃꯦꯆ (Medic-01), NH-306 ꯕꯤꯜꯈꯥꯎꯊ꯭ꯂꯤꯔꯗ ꯂꯩꯃꯥꯏ ꯆꯨꯝꯊꯔꯛꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ꯱꯴% ꯑꯣꯏ꯫ Medic-01 ꯒꯥꯔꯤ ꯂꯝꯕꯤ ꯑꯃꯗ ꯍꯥꯟꯅ ꯆꯠꯍꯜꯂꯤ꯫ ETA: ꯃꯤꯅꯤꯠ ꯱꯱꯰꯫",
+    },
+    phonetics: {
+      en: "Convoy Advisory: Driver Rajesh Mech Medic-01. NH-306 Bilkhawthlir subsidence. Single lane open. Speed under 35 km/h. ETA 110 minutes.",
+      hi: "Convoy Advisory: Chaalak Rajesh Mech. NH-306 Bilkhawthlir mein dhansan. Ek lane khula hai. Gati 35 km/h se kam rakhein. ETA 110 minute.",
+      as: "Convoy nirdeshonaa: Chaalok Rajesh Mech. NH-306 Bilkhawthlirot dhoh. Goti 35 km/h tkoi kom raakhok. ETA 110 minute.",
+      bn: "Convoy bigyapti: Chaalok Rajesh Mech. NH-306 Bilkhawthlire dhos. Goti 35 km/h niche raakhun. ETA 110 minute.",
+      mn: "Convoy paau: Driver Rajesh Mech Medic-01. NH-306 Bilkhawthlirda leichil. ETA 110 minute.",
+    },
+    mn_mayek: "ꯀꯟꯚꯣꯏ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ꯔꯥꯖꯦꯁ ꯃꯦꯆ (Medic-01), NH-306 ꯕꯤꯜꯈꯥꯎꯊ꯭ꯂꯤꯔꯗ ꯂꯩꯃꯥꯏ ꯆꯨꯝꯊꯔꯛꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ꯱꯴% ꯑꯣꯏ꯫ Medic-01 ꯒꯥꯔꯤ ꯂꯝꯕꯤ ꯑꯃꯗ ꯍꯥꯟꯅ ꯆꯠꯍꯜꯂꯤ꯫ ETA: ꯃꯤꯅꯤꯠ ꯱꯱꯰꯫",
+    mn_bengali: "কনভোই পাউ: ড্রাইভার রাজেশ মেচ (Medic-01), NH-306 বিলখাওথলিরদা লৈমাই চুখৎলকলে। মডেল A রিস্ক ১৪% ওই। Medic-01 গারী লম্বী অমদা হান্না চৎহল্লি। ETA: মিনিট ১১০।",
+  },
+};
+
+export function getMissionDriverAlertTranslations(
+  missionId: string,
+  driverName: string = 'Driver',
+  vehicleId: string = 'Convoy Unit',
+  incidentTitle: string = 'Severe Road Obstruction',
+  affectedRoute: string = 'Primary Highway',
+  newRouteName: string = 'Designated Bypass Corridor',
+  updatedEtaMinutes: number = 90,
+  disruptionRiskPct: number = 50
+): MissionDriverAlertBundle {
+  if (MISSION_DRIVER_ROUTE_ALERTS[missionId]) {
+    return MISSION_DRIVER_ROUTE_ALERTS[missionId];
+  }
+
+  return {
+    translations: {
+      en: `EMERGENCY ROUTE ALERT for Driver ${driverName} (${vehicleId}): Hazard reported on ${affectedRoute} due to ${incidentTitle}. Model A disruption risk is ${disruptionRiskPct}%. Divert via ${newRouteName}. Updated ETA: ${updatedEtaMinutes} min. Acknowledge to continue mission.`,
+      hi: `आपातकालीन मार्ग चेतावनी: चालक ${driverName} (वाहन ${vehicleId}), ${affectedRoute} पर ${incidentTitle} के कारण मार्ग बाधित है। मॉडल A जोखिम ${disruptionRiskPct}% है। ${newRouteName} होकर जाएं। नया ETA: ${updatedEtaMinutes} मिनट।`,
+      as: `জৰুৰী পথ সতৰ্কবাৰ্তা: চালক ${driverName} (${vehicleId}), ${affectedRoute}ত ${incidentTitle}ৰ বাবে পথ বন্ধ। মডেল A আশংকা ${disruptionRiskPct}%। ${newRouteName} হৈ বিকল্প পথ লওক। সংশোধিত ETA: ${updatedEtaMinutes} মিনিট।`,
+      bn: `জরুরি রুট সতর্কতা: চালক ${driverName} (${vehicleId}), ${affectedRoute}-এ ${incidentTitle}-এর কারণে রাস্তা বন্ধ। মডেল A ঝুঁকি ${disruptionRiskPct}%। ${newRouteName} হয়ে যান। নতুন ETA: ${updatedEtaMinutes} মিনিট।`,
+      mn: `ꯈꯨꯗꯣꯡꯊꯤꯕ ꯂꯝꯕꯤꯒꯤ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ${driverName} (${vehicleId}), ${affectedRoute} ꯂꯝꯕꯤꯗ ${incidentTitle} ꯊꯣꯛꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ${disruptionRiskPct}% ꯑꯣꯏ꯫ ${newRouteName} ꯗ ꯍꯣꯡꯗꯣꯛꯎ꯫ ETA: ${updatedEtaMinutes} ꯃꯤꯅꯤꯠ꯫`,
+    },
+    phonetics: {
+      en: `Emergency Route Alert for Driver ${driverName} ${vehicleId}. ${affectedRoute} is affected due to ${incidentTitle}. Divert via ${newRouteName}. Updated ETA ${updatedEtaMinutes} minutes.`,
+      hi: `Aapatkaaleen Maarg Chetaavanee: Chaalak ${driverName} vaahan ${vehicleId}. ${affectedRoute} par ${incidentTitle} ke kaaran maarg baadhith hai. ${newRouteName} hokar jaayein. Nayaa ETA ${updatedEtaMinutes} minute.`,
+      as: `Zoruree poth sotorkobaarta: Chaalok ${driverName} baahon ${vehicleId}. ${affectedRoute}-ot ${incidentTitle}-or baabe poth bondho. ${newRouteName} hoi zaaok. ETA ${updatedEtaMinutes} minute.`,
+      bn: `Zoruree route sotorkota: Chaalok ${driverName} gaadi ${vehicleId}. ${affectedRoute}-e ${incidentTitle}-er kaarone raasta bondho. ${newRouteName} hoye jaan. Notun ETA ${updatedEtaMinutes} minute.`,
+      mn: `Khudongtheebagee lambee paau: Driver ${driverName} ${vehicleId}. ${affectedRoute} lambeeda ${incidentTitle} thokle. ${newRouteName}-ta hongdok-u. ETA ${updatedEtaMinutes} minute.`,
+    },
+    mn_mayek: `ꯈꯨꯗꯣꯡꯊꯤꯕ ꯂꯝꯕꯤꯒꯤ ꯄꯥꯎ: ꯗ꯭ꯔꯥꯏꯚꯔ ${driverName} (${vehicleId}), ${affectedRoute} ꯂꯝꯕꯤꯗ ${incidentTitle} ꯊꯣꯛꯂꯦ꯫ ꯃꯣꯗꯦꯜ A ꯔꯤꯁ꯭ꯛ ${disruptionRiskPct}% ꯑꯣꯏ꯫ ${newRouteName} ꯗ ꯍꯣꯡꯗꯣꯛꯎ꯫ ETA: ${updatedEtaMinutes} ꯃꯤꯅꯤꯠ꯫`,
+    mn_bengali: `জরুরি লম্বিগী পাউ: ড্রাইভার ${driverName} (${vehicleId}), ${affectedRoute} লম্বীদা ${incidentTitle} থোক্লে। মডেল A রিস্ক ${disruptionRiskPct}% ওই। ${newRouteName}দা হোংদোকউ। অনৌবা ETA ${updatedEtaMinutes} মিনিট।`,
+  };
+}

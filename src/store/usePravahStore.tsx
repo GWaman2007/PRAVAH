@@ -21,6 +21,7 @@ import type {
   SegmentIncident,
   ReliefMission,
   RealtimeHazardPolygon,
+  DriverEmergencyRouteAlert,
   DraftIncidentPlot,
   RejectedReport,
   RerouteProposal,
@@ -256,6 +257,9 @@ interface PravahStoreContextType {
   activeBroadcastLanguage: LanguageId;
   setActiveBroadcastLanguage: (lang: LanguageId) => void;
   sendBroadcast: (draftId: string) => void;
+  activeDriverEmergencyAlert: DriverEmergencyRouteAlert | null;
+  dispatchDriverEmergencyAlert: (alert: DriverEmergencyRouteAlert) => void;
+  acknowledgeDriverEmergencyAlert: (alertId: string) => void;
 
   // Closed-Loop Actions
   markMissionDelivered: (communityId: string, vehicleId?: string) => void;
@@ -1779,6 +1783,67 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
         return d;
       })
+    );
+  }, []);
+
+  // 10B. Dedicated Driver Emergency Route Alert Dispatch & Acknowledgment
+  const [activeDriverEmergencyAlert, setActiveDriverEmergencyAlert] = useState<DriverEmergencyRouteAlert | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('pravah_driver_emergency_alert');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (!parsed.acknowledged) return parsed;
+        }
+      } catch (e) {
+        console.warn('Failed to parse pravah_driver_emergency_alert', e);
+      }
+    }
+    return null;
+  });
+
+  const dispatchDriverEmergencyAlert = useCallback((alert: DriverEmergencyRouteAlert) => {
+    setActiveDriverEmergencyAlert(alert);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pravah_driver_emergency_alert', JSON.stringify(alert));
+    }
+
+    const alertEvent: AlertEvent = {
+      id: alert.id,
+      vehicle_id: alert.vehicleId,
+      vehicle_name: `${alert.vehicleId} (${alert.driverName})`,
+      cargo_type: 'Emergency Rerouted Consignment',
+      timestamp: alert.timestamp,
+      severity: 'CRITICAL',
+      type: 'ROUTE_DEVIATION',
+      title: `EMERGENCY ROUTE ALERT: ${alert.incidentTitle}`,
+      message: `${alert.affectedRoute} affected. Rerouted via ${alert.newRouteName}. Updated ETA: ${alert.updatedEtaMinutes} min.`,
+      coords: alert.currentGps,
+      acknowledged: false,
+      extraDetails: alert,
+    };
+
+    setAlerts((prev) => [alertEvent, ...prev.filter((a) => a.id !== alert.id)]);
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('EMERGENCY_ROUTE_ALERT_DISPATCHED', alert);
+    }
+  }, []);
+
+  const acknowledgeDriverEmergencyAlert = useCallback((alertId: string) => {
+    setActiveDriverEmergencyAlert((prev) => {
+      if (prev && prev.id === alertId) {
+        const updated = { ...prev, acknowledged: true };
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('pravah_driver_emergency_alert', JSON.stringify(updated));
+        }
+        return updated;
+      }
+      return prev;
+    });
+
+    setAlerts((prev) =>
+      prev.map((a) => (a.id === alertId ? { ...a, acknowledged: true } : a))
     );
   }, []);
 
@@ -5075,6 +5140,9 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
       activeBroadcastLanguage,
       setActiveBroadcastLanguage,
       sendBroadcast,
+      activeDriverEmergencyAlert,
+      dispatchDriverEmergencyAlert,
+      acknowledgeDriverEmergencyAlert,
       markMissionDelivered,
       activeMissions,
       selectedMissionId,
