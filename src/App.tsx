@@ -212,7 +212,12 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               A UI component encountered an unexpected error:
             </p>
             <div className="p-3 rounded-sm bg-surface-subtle font-mono text-xs text-status-blocked-text text-left break-all border border-border">
-              {this.state.error?.message || 'Unknown render error'}
+              <div className="font-bold">{this.state.error?.message || 'Unknown render error'}</div>
+              {this.state.error?.stack && (
+                <pre className="text-[10px] text-text-secondary mt-2 whitespace-pre-wrap max-h-48 overflow-y-auto font-mono">
+                  {this.state.error.stack}
+                </pre>
+              )}
             </div>
             <button
               onClick={() => {

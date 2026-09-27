@@ -69,7 +69,7 @@ export const FOCommunityScreen: React.FC<FOCommunityScreenProps> = ({ onNavigate
   const depletions = community?.metrics?.commodityDepletions;
 
   const communityIncidents = incidents.filter(
-    i => i.location.placeName.toLowerCase().includes(community?.name?.toLowerCase().split(' ')[0] || '')
+    i => Boolean(i.location?.placeName && community?.name && i.location.placeName.toLowerCase().includes(community.name.toLowerCase().split(' ')[0]))
   ).slice(0, 3);
 
   return (

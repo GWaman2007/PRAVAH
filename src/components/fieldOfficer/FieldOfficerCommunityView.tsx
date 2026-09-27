@@ -54,8 +54,8 @@ export const FieldOfficerCommunityView: React.FC = () => {
   const communityMissions = useMemo(() => {
     return activeMissions.filter(
       (m) =>
-        m.communityId === community.id ||
-        m.communityName.toLowerCase().includes(community.name.toLowerCase().split(' ')[0])
+        m.communityId === community?.id ||
+        Boolean(m.communityName && community?.name && m.communityName.toLowerCase().includes(community.name.toLowerCase().split(' ')[0]))
     );
   }, [activeMissions, community]);
 
@@ -67,8 +67,8 @@ export const FieldOfficerCommunityView: React.FC = () => {
   const communityIncidents = useMemo(() => {
     return incidents.filter(
       (i) =>
-        i.location.placeName.toLowerCase().includes(community.name.toLowerCase().split(' ')[0]) ||
-        i.title.toLowerCase().includes(community.name.toLowerCase().split(' ')[0])
+        Boolean(i.location?.placeName && community?.name && i.location.placeName.toLowerCase().includes(community.name.toLowerCase().split(' ')[0])) ||
+        Boolean(i.title && community?.name && i.title.toLowerCase().includes(community.name.toLowerCase().split(' ')[0]))
     );
   }, [incidents, community]);
 

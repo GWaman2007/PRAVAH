@@ -54,7 +54,7 @@ export const FOMapScreen: React.FC<FOMapScreenProps> = ({ onNavigateToMission })
     (m) =>
       m.communityId === userContext.communityId ||
       m.id === userContext.activeMissionId ||
-      (userContext.communityName && m.communityName.toLowerCase().includes(userContext.communityName.toLowerCase().split(' ')[0]))
+      Boolean(userContext.communityName && m.communityName && m.communityName.toLowerCase().includes(userContext.communityName.toLowerCase().split(' ')[0]))
   ) || activeMissions[0];
 
   // Auto-focus on community and officer mission when FOMapScreen mounts

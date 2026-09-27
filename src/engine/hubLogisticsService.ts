@@ -51,20 +51,23 @@ export function checkHubInventoryFeasibility(
   const missingResources: string[] = [];
 
   hubItems.forEach((item) => {
-    availableMap[item.resourceName.toLowerCase()] = calculateAvailableQuantity(item);
+    const rName = (item.resourceName || (item as any).resourceType || '').toLowerCase();
+    if (rName) {
+      availableMap[rName] = calculateAvailableQuantity(item);
+    }
   });
 
   for (const req of requiredItems) {
-    const reqName = req.resourceName.toLowerCase();
+    const reqName = (req.resourceName || (req as any).item || (req as any).resourceType || '').toLowerCase();
     // Fuzzy matching on commodity names (e.g. 'rice', 'iv fluids', 'antivenom', 'diesel')
     const matchKey = Object.keys(availableMap).find(
-      (k) => k.includes(reqName) || reqName.includes(k)
+      (k) => (reqName && k.includes(reqName)) || (reqName && reqName.includes(k))
     );
 
     const available = matchKey ? (availableMap[matchKey] ?? 0) : 0;
     if (available < req.quantity) {
       missingResources.push(
-        `${req.resourceName} (Needed: ${req.quantity}, Available: ${available})`
+        `${req.resourceName || (req as any).item || 'Resource'} (Needed: ${req.quantity}, Available: ${available})`
       );
     }
   }
@@ -97,19 +100,21 @@ export function checkHubVehicleFeasibility(
       (v.hub_id === hubId || (!hasDedicatedVehicles && (!v.hub_id || v.status === 'AVAILABLE')))
   );
 
+  const reqCat = (requiredCargoCategory || '').toLowerCase();
+
   const capableVehicles = hubVehicles.filter((v) => {
     const capacity = v.capacity_kg ?? 3500;
     const isPayloadFeasible = capacity >= totalPayloadKg;
 
-    if (!requiredCargoCategory) return isPayloadFeasible;
+    if (!reqCat) return isPayloadFeasible;
 
     const cargoMatch =
       !v.compatible_cargo_types ||
       v.compatible_cargo_types.length === 0 ||
       v.compatible_cargo_types.some((cat) =>
-        cat.toLowerCase().includes(requiredCargoCategory.toLowerCase())
+        Boolean(cat && cat.toLowerCase().includes(reqCat))
       ) ||
-      v.cargo_type.toLowerCase().includes(requiredCargoCategory.toLowerCase());
+      Boolean(v.cargo_type && v.cargo_type.toLowerCase().includes(reqCat));
 
     return isPayloadFeasible && cargoMatch;
   });

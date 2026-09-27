@@ -32,7 +32,7 @@ export const FieldOfficerMissionsView: React.FC<FieldOfficerMissionsViewProps> =
     (m) =>
       (m.communityId === userContext.communityId ||
         m.id === userContext.activeMissionId ||
-        (userContext.communityName && m.communityName.toLowerCase().includes(userContext.communityName.toLowerCase().split(' ')[0]))) &&
+        Boolean(userContext.communityName && m.communityName && m.communityName.toLowerCase().includes(userContext.communityName.toLowerCase().split(' ')[0]))) &&
       m.status !== 'SUGGESTED' &&
       (m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT' || m.status === 'DELIVERED')
   );

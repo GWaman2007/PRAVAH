@@ -561,8 +561,8 @@ export function getMissionCorridorSegments(
     const originNode = mission.originWarehouseId.toLowerCase();
     const destName = (mission.destinationName || mission.communityName || '').toLowerCase();
     allSegments.forEach((seg) => {
-      const from = seg.fromNode.toLowerCase();
-      const to = seg.toNode.toLowerCase();
+      const from = (seg.fromNode || '').toLowerCase();
+      const to = (seg.toNode || '').toLowerCase();
       if ((from === originNode && destName.includes(to)) || (to === originNode && destName.includes(from))) {
         matchedIds.add(seg.id);
       }

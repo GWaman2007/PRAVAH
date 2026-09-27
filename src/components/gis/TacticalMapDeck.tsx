@@ -391,7 +391,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
         (m) =>
           m.communityId === userContext.communityId ||
           m.id === userContext.activeMissionId ||
-          (userContext.communityName && m.communityName.toLowerCase().includes(userContext.communityName.toLowerCase().split(' ')[0]))
+          Boolean(userContext.communityName && m.communityName && m.communityName.toLowerCase().includes(userContext.communityName.toLowerCase().split(' ')[0]))
       );
       if (officerMission) return officerMission;
     }
@@ -1499,9 +1499,8 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
           if (seg && dis) {
             const affected = currentMissions.filter(
               (m) =>
-                m.assignedRouteId?.includes(seg.highway) ||
-                m.suggestedDetour?.includes(seg.highway) ||
-                seg.name.toLowerCase().includes(m.destinationName.toLowerCase())
+                (seg.highway && (m.assignedRouteId?.includes(seg.highway) || m.suggestedDetour?.includes(seg.highway))) ||
+                Boolean(seg.name && m.destinationName && seg.name.toLowerCase().includes(m.destinationName.toLowerCase()))
             );
 
             setDetailedIncident({
@@ -1599,9 +1598,8 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
             };
             const affected = currentMissions.filter(
               (m) =>
-                m.assignedRouteId?.includes(seg.highway) ||
-                m.suggestedDetour?.includes(seg.highway) ||
-                seg.name.toLowerCase().includes(m.destinationName.toLowerCase())
+                (seg.highway && (m.assignedRouteId?.includes(seg.highway) || m.suggestedDetour?.includes(seg.highway))) ||
+                Boolean(seg.name && m.destinationName && seg.name.toLowerCase().includes(m.destinationName.toLowerCase()))
             );
             setDetailedIncident({
               segment: seg,
@@ -3872,8 +3870,10 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
             ? activeMissions.find(
                 (m) =>
                   m.communityId === inspectedCommunity.id ||
-                  m.communityName.toLowerCase().includes(inspectedCommunity.name.toLowerCase()) ||
-                  inspectedCommunity.name.toLowerCase().includes(m.communityName.toLowerCase())
+                  Boolean(m.communityName && inspectedCommunity.name && (
+                    m.communityName.toLowerCase().includes(inspectedCommunity.name.toLowerCase()) ||
+                    inspectedCommunity.name.toLowerCase().includes(m.communityName.toLowerCase())
+                  ))
               ) || null
             : null
         }

@@ -394,8 +394,8 @@ export function generateDynamicMissionSuggestions(
 
       recommendedVehicle = vehiclePool.find((v) =>
         isPrimarilyMedical
-          ? v.vehicle_id.toLowerCase().includes('medic') || v.cargo_type.toLowerCase().includes('medic')
-          : v.vehicle_id.toLowerCase().includes('cargo') || v.cargo_type.toLowerCase().includes('cargo')
+          ? (v.vehicle_id || '').toLowerCase().includes('medic') || (v.cargo_type || '').toLowerCase().includes('medic')
+          : (v.vehicle_id || '').toLowerCase().includes('cargo') || (v.cargo_type || '').toLowerCase().includes('cargo')
       );
 
       if (!recommendedVehicle && vehiclePool.length > 0) {
@@ -411,8 +411,8 @@ export function generateDynamicMissionSuggestions(
 
     const missionId = `SUGG-${community.id.replace(/[^a-zA-Z0-9]/g, '')}`;
 
-    const isShl = community.id.includes('ML-SHL') || community.name.toLowerCase().includes('shillong');
-    const isAs = community.id.includes('AS-DH') || community.name.toLowerCase().includes('haflong');
+    const isShl = community.id.includes('ML-SHL') || (community.name || '').toLowerCase().includes('shillong');
+    const isAs = community.id.includes('AS-DH') || (community.name || '').toLowerCase().includes('haflong');
     const matchedRouteOptions = isShl
       ? SHILLONG_MODEL_B_ROUTE_OPTIONS
       : isAs
@@ -904,7 +904,7 @@ export function generateMissionFromResourceRequest(
   };
 
   const fleetRoute = FLEET_ROUTES[routeConfig.routeId] || Object.values(FLEET_ROUTES)[0];
-  const reqLower = request.resourceType.toLowerCase();
+  const reqLower = (request.resourceType || '').toLowerCase();
   const isMedical = reqLower.includes('medic') || reqLower.includes('anti') || reqLower.includes('iv') || reqLower.includes('first aid');
   const isLiquid = reqLower.includes('water') || reqLower.includes('fuel') || reqLower.includes('diesel');
 

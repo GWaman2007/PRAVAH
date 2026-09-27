@@ -191,7 +191,7 @@ export function createVehiclesGeoJSON(
             selectedMission.id === v.mission_id ||
             (selectedMission.recommendedVehicleType &&
               (selectedMission.recommendedVehicleType.includes(v.vehicle_id) ||
-                selectedMission.recommendedVehicleType.toLowerCase().includes(v.vehicle_name.toLowerCase()))))
+                (v.vehicle_name && selectedMission.recommendedVehicleType.toLowerCase().includes(v.vehicle_name.toLowerCase())))))
         ) {
           return true;
         }
@@ -1261,8 +1261,8 @@ export function createRoadBreakdownsGeoJSON(
 
     // Identify affected active missions passing through or targeted near this segment
     const affectedMissions = missions.filter((m) => {
-      if (m.assignedRouteId?.includes(seg.highway) || m.suggestedDetour?.includes(seg.highway)) return true;
-      if (seg.name.toLowerCase().includes(m.destinationName.toLowerCase())) return true;
+      if (seg.highway && (m.assignedRouteId?.includes(seg.highway) || m.suggestedDetour?.includes(seg.highway))) return true;
+      if (seg.name && m.destinationName && seg.name.toLowerCase().includes(m.destinationName.toLowerCase())) return true;
       return false;
     });
 

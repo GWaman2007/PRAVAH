@@ -29,14 +29,14 @@ export const FieldOfficerMyReportsView: React.FC = () => {
   // Filter incidents reported by this officer
   const myIncidents = incidents.filter(
     (i) =>
-      i.author?.name?.toLowerCase().includes(userContext.name.toLowerCase().split(' ')[1] || 'hmar')
+      Boolean(i.author?.name && userContext.name && i.author.name.toLowerCase().includes((userContext.name.toLowerCase().split(' ')[1] || 'hmar')))
   );
 
   // Filter resource requests by this officer
   const myRequests = resourceRequests.filter(
     (r) =>
       r.officerId === userContext.officerId ||
-      r.officerName.toLowerCase().includes(userContext.name.toLowerCase().split(' ')[1] || 'hmar')
+      Boolean(r.officerName && userContext.name && r.officerName.toLowerCase().includes((userContext.name.toLowerCase().split(' ')[1] || 'hmar')))
   );
 
   return (

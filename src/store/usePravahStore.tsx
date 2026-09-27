@@ -4566,7 +4566,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
       async (hubId: string, itemData: Omit<HubInventory, 'id' | 'hubId' | 'lastUpdated'>): Promise<boolean> => {
         const newItem: HubInventory = {
           ...itemData,
-          id: `inv-${hubId}-${itemData.resourceType.toLowerCase()}-${Date.now().toString().slice(-4)}`,
+          id: `inv-${hubId}-${(itemData.resourceType || itemData.resourceName || 'res').toLowerCase()}-${Date.now().toString().slice(-4)}`,
           hubId,
           reservedQuantity: 0,
           lastUpdated: new Date().toISOString(),
@@ -4615,10 +4615,11 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
         const updatedItems: HubInventory[] = [];
 
         for (const alloc of allocations) {
-          const item = hubItems.find(
-            (i) => i.resourceName.toLowerCase().includes(alloc.resourceName.toLowerCase()) ||
-                   alloc.resourceName.toLowerCase().includes(i.resourceName.toLowerCase())
-          );
+          const item = hubItems.find((i) => {
+            const rA = (i.resourceName || '').toLowerCase();
+            const rB = (alloc.resourceName || '').toLowerCase();
+            return Boolean(rA && rB && (rA.includes(rB) || rB.includes(rA)));
+          });
           if (item) {
             const available = calculateAvailableQuantity(item);
             const reserveAmt = Math.min(available, alloc.quantity);
@@ -4887,7 +4888,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
         setResourceRequirements((prev) => {
           const commReqs = prev[reqData.communityId] ? [...prev[reqData.communityId]] : [];
           const idx = commReqs.findIndex(
-            (r) => r.resourceType.toLowerCase() === reqData.resourceType.toLowerCase()
+            (r) => (r.resourceType || '').toLowerCase() === (reqData.resourceType || '').toLowerCase()
           );
           if (idx >= 0) {
             commReqs[idx] = {
@@ -4917,7 +4918,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
           const next = prev.map((c) => {
             if (c.id === reqData.communityId) {
               const updatedInventories = { ...c.inventories };
-              const reqLower = reqData.resourceType.toLowerCase();
+              const reqLower = (reqData.resourceType || '').toLowerCase();
 
               let matchedCommodity: CommodityType | undefined;
               if (reqLower.includes('fluid') || reqLower.includes('iv') || reqLower.includes('ringer')) {

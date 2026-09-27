@@ -107,15 +107,15 @@ export const CommunitiesDeck: React.FC = () => {
   // Trace community primaryCorridor -> existing disruption/road status
   const matchedRoadStatus = useMemo(() => {
     if (!selectedCommunity) return null;
-    const corridor = selectedCommunity.primaryCorridor.toLowerCase();
+    const corridor = (selectedCommunity.primaryCorridor || '').toLowerCase();
 
     // Check all active disruptions to match segment name, road number, or corridor flair
     for (const [segId, disruption] of Object.entries(activeDisruptions)) {
       const segment = NER_SEGMENTS.find((s) => s.id === segId);
       if (
-        corridor.includes(segId.toLowerCase()) ||
-        (segment && corridor.includes(segment.highway.toLowerCase())) ||
-        (segment && corridor.includes(segment.name.toLowerCase()))
+        (corridor && corridor.includes(segId.toLowerCase())) ||
+        (segment?.highway && corridor && corridor.includes(segment.highway.toLowerCase())) ||
+        (segment?.name && corridor && corridor.includes(segment.name.toLowerCase()))
       ) {
         return {
           segmentId: segId,
