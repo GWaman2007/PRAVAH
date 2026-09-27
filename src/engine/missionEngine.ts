@@ -701,11 +701,11 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     routeGeometry: nlRoute?.coordinates || [],
     routeDistanceKm: nlRoute?.distanceKm || 74.0,
     routeDurationMinutes: nlRoute?.expectedDurationMinutes || 95,
-    routeStatus: 'UNAVAILABLE',
+    routeStatus: 'OPTIMAL',
     corridorSegmentIds: ['SEG-DIM-KOH-MAIN'],
     isRerouted: false,
-    disruptionProbability: 0.86,
-    initialDisruptionProbability: 0.86,
+    disruptionProbability: 0.15,
+    initialDisruptionProbability: 0.15,
   };
 
   const mzRoute = FLEET_ROUTES['ROUTE-SUG-01'] || FLEET_ROUTES['ROUTE-MZ-04'];
@@ -740,8 +740,8 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     routeStatus: 'OPTIMAL',
     corridorSegmentIds: ['SEG-SIL-KOL'],
     isRerouted: false,
-    disruptionProbability: 0.14,
-    initialDisruptionProbability: 0.14,
+    disruptionProbability: 0.28,
+    initialDisruptionProbability: 0.28,
   };
 
   const skRoute = FLEET_ROUTES['ROUTE-SK-02'];
@@ -777,8 +777,8 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     routeStatus: 'UNAVAILABLE',
     corridorSegmentIds: ['SEG-SK-TEESTA'],
     isRerouted: false,
-    disruptionProbability: 0.64,
-    initialDisruptionProbability: 0.64,
+    disruptionProbability: 0.86,
+    initialDisruptionProbability: 0.86,
     routeOptions: [
       {
         id: 'ROUTE-SK-02',
@@ -796,7 +796,7 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
         etaOverheadMinutes: 90,
         predictedPreferredRoute: false,
         corridorSegmentIds: ['SEG-SK-TEESTA'],
-        disruptionProbability: 0.64,
+        disruptionProbability: 0.86,
         modelVersion: 'model_b_v2.1_calibrated',
       },
       {
@@ -853,8 +853,8 @@ export function generateDeterministicDemoMissions(): ReliefMission[] {
     routeStatus: 'OPTIMAL',
     corridorSegmentIds: ['SEG-HAF-SIL'],
     isRerouted: false,
-    disruptionProbability: 0.42,
-    initialDisruptionProbability: 0.42,
+    disruptionProbability: 0.64,
+    initialDisruptionProbability: 0.64,
   };
 
   // 2. Suggested Missions to Vulnerable Hazard Polygon Areas from Strategic Hubs (Model B Top 2 Paths)

@@ -1195,11 +1195,45 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         // Preserve explicit route geometry & rerouted status - NEVER sanitize user-approved rerouted missions, but ensure demo mission starts nominal
         const preserved = deduplicated.map((pm: ReliefMission) => {
+          if (pm.id === 'MSN-ONGOING-NL01') {
+            const nlRoute = FLEET_ROUTES['ROUTE-SUG-02'] || FLEET_ROUTES['ROUTE-NL-01'];
+            return {
+              ...pm,
+              destinationName: 'Kohima South Ridge Depot',
+              isRerouted: false,
+              assignedRouteId: nlRoute?.id || 'ROUTE-SUG-02',
+              suggestedDetour: 'NH-29 Pagla Pahar High Ridge Corridor',
+              routeGeometry: nlRoute?.coordinates || pm.routeGeometry,
+              routeStatus: 'OPTIMAL' as const,
+              disruptionProbability: 0.15,
+              initialDisruptionProbability: 0.15,
+            };
+          }
+          if (pm.id === 'MSN-ONGOING-SK01') {
+            return {
+              ...pm,
+              destinationName: '29th Mile Teesta Canyon Emergency Post',
+              routeStatus: 'UNAVAILABLE' as const,
+              disruptionProbability: 0.86,
+              initialDisruptionProbability: 0.86,
+            };
+          }
+          if (pm.id === 'MSN-ONGOING-AS01') {
+            return {
+              ...pm,
+              destinationName: 'Haflong Sub-Divisional Depot',
+              disruptionProbability: 0.64,
+              initialDisruptionProbability: 0.64,
+            };
+          }
           if (pm.id === 'MSN-ONGOING-MZ01') {
             const mzRoute = FLEET_ROUTES['ROUTE-SUG-01'] || FLEET_ROUTES['ROUTE-MZ-04'];
             return {
               ...pm,
+              destinationName: 'Kolasib East Community Depot',
               isRerouted: false,
+              disruptionProbability: 0.28,
+              initialDisruptionProbability: 0.28,
               assignedRouteId: mzRoute?.id || 'ROUTE-SUG-01',
               suggestedDetour: 'NH-306 Lifeline Arterial via Bilkhawthlir',
               routeGeometry: mzRoute?.coordinates || [],
