@@ -324,3 +324,227 @@
 .animate-fadeIn {
   animation: fadeIn 0.2s ease-out forwards;
 }
+
+/* ========================================================================= */
+/* FIELD OFFICER MOBILE-FIRST SHELL & APP CONTAINER                          */
+/* ========================================================================= */
+
+.fo-mobile-shell-outer {
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  background: radial-gradient(circle at 50% 15%, #182236 0%, #0B0F17 70%, #05070B 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+  position: relative;
+}
+
+@media (max-width: 640px) {
+  .fo-mobile-shell-outer {
+    padding: 0;
+    background: #0B111C;
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+}
+
+.fo-desktop-top-bar {
+  width: 100%;
+  max-width: 900px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: rgba(18, 26, 41, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 640px) {
+  .fo-desktop-top-bar {
+    display: none;
+  }
+}
+
+.fo-mobile-shell {
+  width: 100%;
+  max-width: 420px;
+  height: 860px;
+  max-height: calc(100dvh - 76px);
+  background: #0B111C;
+  border-radius: 40px;
+  border: 6px solid #1E293B;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8),
+              0 0 0 1px rgba(255, 255, 255, 0.08),
+              inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+@media (max-width: 640px) {
+  .fo-mobile-shell {
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+}
+
+.fo-phone-notch {
+  width: 80px;
+  height: 4px;
+  background: #334155;
+  border-radius: 9999px;
+  margin: 6px auto 2px auto;
+  opacity: 0.7;
+}
+
+@media (max-width: 640px) {
+  .fo-phone-notch {
+    display: none;
+  }
+}
+
+.fo-app-header {
+  background: #0F172A;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.fo-app-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  background: #0B111C;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fo-card {
+  background: #111A29;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.fo-stat-chip {
+  background: #162032;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.fo-bottom-nav {
+  height: 62px;
+  background: #0F172A;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  flex-shrink: 0;
+  z-index: 25;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.fo-bottom-nav-item {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  position: relative;
+  transition: color 0.15s ease;
+}
+
+.fo-nav-indicator {
+  position: absolute;
+  bottom: 4px;
+  width: 16px;
+  height: 2.5px;
+  background: #3B82F6;
+  border-radius: 9999px;
+  box-shadow: 0 0 8px #3B82F6;
+}
+
+.fo-fab {
+  position: absolute;
+  bottom: 74px;
+  right: 16px;
+  z-index: 30;
+  width: 52px;
+  height: 52px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fo-fab:hover {
+  transform: scale(1.05);
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.6);
+}
+
+.fo-fab:active {
+  transform: scale(0.95);
+}
+
+.fo-sheet-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: fadeIn 0.15s ease-out forwards;
+}
+
+.fo-sheet-content {
+  background: #111A29;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px 24px 0 0;
+  padding: 16px 16px 24px 16px;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.fo-map-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.fo-map-container {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+

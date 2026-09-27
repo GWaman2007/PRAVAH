@@ -19,6 +19,7 @@ import { FieldOfficerMissionsView } from './components/fieldOfficer/FieldOfficer
 import { FieldOfficerRequirementsView } from './components/fieldOfficer/FieldOfficerRequirementsView';
 import { FieldOfficerMyReportsView } from './components/fieldOfficer/FieldOfficerMyReportsView';
 import { FieldOfficerFloatingActionMenu } from './components/fieldOfficer/FieldOfficerFloatingActionMenu';
+import { FieldOfficerMobileShell } from './components/fieldOfficer/FieldOfficerMobileShell';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Analytics } from '@vercel/analytics/react';
 import { AlertOctagon, X } from 'lucide-react';
@@ -53,6 +54,11 @@ const AppContent: React.FC = () => {
   const sosVehicle = vehicles.find(
     (v) => v.vehicle_id === (pendingSOSAlert?.vehicle_id || 'Medic-01')
   ) || null;
+
+  // Dedicated Mobile-First Field Officer Interface (contained inside mobile frame)
+  if (activeRole === 'FIELD_OFFICER') {
+    return <FieldOfficerMobileShell />;
+  }
 
   return (
     <div className={`${activeView === 'GIS_COMMAND' ? 'h-screen h-[100dvh] overflow-hidden' : 'min-h-screen pb-28 sm:pb-24'} bg-page-bg flex flex-col`}>
@@ -160,9 +166,6 @@ const AppContent: React.FC = () => {
 
       {/* Persistent 1-Click Interactive Resilience Walkthrough Bar */}
       <InteractiveWalkthroughToolbar />
-
-      {/* Floating Action Menu for Field Officer */}
-      {activeRole === 'FIELD_OFFICER' && <FieldOfficerFloatingActionMenu />}
     </div>
   );
 };

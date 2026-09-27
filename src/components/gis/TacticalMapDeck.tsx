@@ -66,7 +66,12 @@ import {
   Cpu,
 } from 'lucide-react';
 
-export const TacticalMapDeck: React.FC = () => {
+export interface TacticalMapDeckProps {
+  compactMobileOnly?: boolean;
+  onNavigateToMission?: (missionId: string) => void;
+}
+
+export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileOnly = false, onNavigateToMission }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<maplibregl.Map | null>(null);
   const isMapLoadedRef = useRef<boolean>(false);
@@ -138,6 +143,7 @@ export const TacticalMapDeck: React.FC = () => {
     missionRouteOptionsByMissionId,
     selectedRouteOptionByMissionId,
     selectMissionRoute,
+    userContext,
   } = usePravahStore();
 
   const { t } = useTranslation();
@@ -377,11 +383,20 @@ export const TacticalMapDeck: React.FC = () => {
     return activeMissions.filter((m) => m.status === 'SUGGESTED');
   }, [activeMissions]);
 
-  // Selected mission object
+  // Selected mission object - scoped to this particular field officer's assigned area when in field officer / mobile mode
   const activeMission = useMemo(() => {
+    if (compactMobileOnly || activeRole === 'FIELD_OFFICER') {
+      const officerMission = activeMissions.find(
+        (m) =>
+          m.communityId === userContext.communityId ||
+          m.id === userContext.activeMissionId ||
+          (userContext.communityName && m.communityName.toLowerCase().includes(userContext.communityName.toLowerCase().split(' ')[0]))
+      );
+      if (officerMission) return officerMission;
+    }
     if (!selectedMissionId) return null;
     return activeMissions.find((m) => m.id === selectedMissionId) || null;
-  }, [activeMissions, selectedMissionId]);
+  }, [activeMissions, selectedMissionId, compactMobileOnly, activeRole, userContext]);
 
   const activeSelectedRouteOptId = activeMission
     ? selectedRouteOptionByMissionId[activeMission.id] || activeMission.selectedRouteOptionId
@@ -409,11 +424,15 @@ export const TacticalMapDeck: React.FC = () => {
     return vehicles.find((v) => v.vehicle_id === selectedVehicleId) || null;
   }, [vehicles, selectedVehicleId]);
 
-  // Selected community object
+  // Selected community object - scoped to this particular field officer's assigned area
   const selectedCommunity = useMemo(() => {
+    if (compactMobileOnly || activeRole === 'FIELD_OFFICER') {
+      const comm = communities.find((c) => c.id === userContext.communityId);
+      if (comm) return comm;
+    }
     if (!selectedCommunityId) return null;
     return communities.find((c) => c.id === selectedCommunityId) || null;
-  }, [communities, selectedCommunityId]);
+  }, [communities, selectedCommunityId, compactMobileOnly, activeRole, userContext]);
 
   // Unacknowledged alerts count
   const unackAlertsCount = useMemo(() => {
@@ -1330,6 +1349,30 @@ export const TacticalMapDeck: React.FC = () => {
         setHoveredVehicle(null);
       });
 
+      // Click on mission route line -> if Field Officer / compact mobile, redirect to that particular mission in missions section!
+      const handleMissionRouteClick = (e: any) => {
+        const feat = e.features?.[0];
+        const mId = feat?.properties?.mission_id || feat?.properties?.missionId;
+        if (mId) {
+          if (onNavigateToMission) {
+            onNavigateToMission(mId);
+          } else if (compactMobileOnly || activeRole === 'FIELD_OFFICER') {
+            setSelectedMissionId(mId);
+            window.dispatchEvent(new CustomEvent('pravah-navigate-mission', { detail: { missionId: mId } }));
+          } else {
+            setSelectedMissionId(mId);
+            setIsMissionDetailsOpen(true);
+          }
+        }
+      };
+
+      map.on('click', 'mission-routes-line', handleMissionRouteClick);
+      map.on('click', 'mission-selected-route-line', handleMissionRouteClick);
+      map.on('mouseenter', 'mission-routes-line', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'mission-routes-line', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseenter', 'mission-selected-route-line', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'mission-selected-route-line', () => { map.getCanvas().style.cursor = ''; });
+
       // Click road segment
       map.on('click', 'road-status-line', (e: any) => {
         const feat = e.features?.[0];
@@ -2218,7 +2261,7 @@ export const TacticalMapDeck: React.FC = () => {
       {/* ========================================================================= */}
       {/* LEFT SIDEBAR: MISSION OPERATIONS & PREDICTIVE ROUTING                     */}
       {/* ========================================================================= */}
-      <aside aria-label="Tactical Mission Control Sidebar" className={`w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-hidden z-10 shadow-xs pb-16 lg:pb-0 shrink-0 ${mobileViewTab === 'CONTROLS' ? 'flex' : 'hidden lg:flex'}`}>
+      <aside aria-label="Tactical Mission Control Sidebar" className={`w-full lg:w-96 bg-surface border-r border-border flex flex-col h-full overflow-hidden z-10 shadow-xs pb-16 lg:pb-0 shrink-0 ${compactMobileOnly ? 'hidden' : mobileViewTab === 'CONTROLS' ? 'flex' : 'hidden lg:flex'}`}>
         {/* Navigation Tabs Header: Mission Operations, K-Shortest Paths, Reports for Review */}
         <div className="flex border-b border-border bg-surface-subtle p-1 shrink-0 gap-1">
           <button
@@ -3252,9 +3295,10 @@ export const TacticalMapDeck: React.FC = () => {
       {/* ========================================================================= */}
       {/* CENTER: MAPLIBRE GL JS TACTICAL MAP CONTAINER                            */}
       {/* ========================================================================= */}
-      <div className={`flex-1 relative flex flex-col h-full overflow-hidden isolate ${mobileViewTab === 'MAP' ? 'flex' : 'hidden lg:flex'}`}>
-        {/* Top Floating Controls Bar */}
-        <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+      <div className={`flex-1 relative flex flex-col h-full overflow-hidden isolate ${compactMobileOnly ? 'flex' : mobileViewTab === 'MAP' ? 'flex' : 'hidden lg:flex'}`}>
+        {/* Top Floating Controls Bar - Hide in compact mobile mode since mobile shell provides search and filter chips */}
+        {!compactMobileOnly && (
+          <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
           {/* Active Mission or Community Focus Pill */}
           {activeMission ? (
             <div className="pointer-events-auto bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary shadow-md flex items-center gap-2">
@@ -3375,6 +3419,7 @@ export const TacticalMapDeck: React.FC = () => {
             </button>
           </div>
         </div>
+      )}
 
         {/* Map Container */}
         <div ref={mapContainerRef} className="w-full h-full relative z-0 isolate">
@@ -3738,8 +3783,8 @@ export const TacticalMapDeck: React.FC = () => {
       {/* ========================================================================= */}
       {/* RIGHT SIDE: MISSION DETAILS PANEL OR VEHICLE INSPECTOR                    */}
       {/* ========================================================================= */}
-      {/* 1. Right-side Mission Details Panel */}
-      {isMissionDetailsOpen && activeMission && (
+      {/* 1. Right-side Mission Details Panel - Suppressed in compact mobile mode / Field Officer mode */}
+      {isMissionDetailsOpen && activeMission && !compactMobileOnly && activeRole !== 'FIELD_OFFICER' && (
         <div className="w-full lg:w-80 h-auto lg:h-full z-20 shrink-0">
           <MissionDetailsPanel
             mission={activeMission}
