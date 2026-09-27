@@ -436,6 +436,24 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     activeRoleRef.current = activeRole;
   }, [activeRole]);
 
+  // Demo Mode State (Always OFF on initial reload/mount)
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+
+  // Guarantee demo mode and any leftover demo keys are completely purged on mount/reload
+  useEffect(() => {
+    try {
+      localStorage.removeItem('pravah_demo_mode');
+      const storedMissions = localStorage.getItem(STORAGE_KEYS.MISSIONS);
+      if (storedMissions && (storedMissions.includes('ROUTE-SUG-01-DETOUR') || storedMissions.includes('MSN-REQ-MZKOL-DEMO'))) {
+        localStorage.removeItem(STORAGE_KEYS.MISSIONS);
+      }
+      const storedDisruptions = localStorage.getItem(STORAGE_KEYS.DISRUPTIONS);
+      if (storedDisruptions && storedDisruptions.includes('65mm/hr')) {
+        localStorage.removeItem(STORAGE_KEYS.DISRUPTIONS);
+      }
+    } catch {}
+  }, []);
+
   // Field Officer multi-selection state
   const [activeOfficerId, setActiveOfficerId] = useState<string>('hmar');
 
@@ -478,12 +496,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem('pravah_resource_requests', JSON.stringify(resourceRequests));
-    } catch (e) {
-      // ignore
+    if (!isDemoMode) {
+      try {
+        localStorage.setItem('pravah_resource_requests', JSON.stringify(resourceRequests));
+      } catch (e) {
+        // ignore
+      }
     }
-  }, [resourceRequests]);
+  }, [resourceRequests, isDemoMode]);
 
   const userContext: UserContext = useMemo(() => {
     switch (activeRole) {
@@ -582,9 +602,6 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
   }, [activeView]);
-
-  // Demo Mode State (Always OFF on initial reload/mount)
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
 
   // Map Camera Focus Queue (for automatic zoom & centering when plots/incidents are approved)
   const [pendingMapFocus, setPendingMapFocus] = useState<{
@@ -946,13 +963,18 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const merged = persisted ? { ...baseDisruptions, ...persisted } : baseDisruptions;
     if (merged['SEG-SIL-KOL']?.cause?.includes('65mm/hr') || merged['SEG-SIL-KOL']?.status === 'TOTAL_BLOCKAGE') {
       merged['SEG-SIL-KOL'] = baseDisruptions['SEG-SIL-KOL'];
+      try {
+        localStorage.setItem(STORAGE_KEYS.DISRUPTIONS, JSON.stringify(merged));
+      } catch {}
     }
     return merged;
   });
 
   useEffect(() => {
-    persistDisruptions(activeDisruptions);
-  }, [activeDisruptions]);
+    if (!isDemoMode) {
+      persistDisruptions(activeDisruptions);
+    }
+  }, [activeDisruptions, isDemoMode]);
 
   const setSegmentDisruption = useCallback((segmentId: string, disruption: SegmentIncident | null) => {
     setActiveDisruptions((prev) => {
@@ -1166,8 +1188,19 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         );
         const deduplicated = cleaned.filter((m) => !(m.status === 'SUGGESTED' && activeCommIds.has(m.communityId)));
 
-        // Preserve explicit route geometry & rerouted status - NEVER sanitize rerouted missions
+        // Preserve explicit route geometry & rerouted status - NEVER sanitize user-approved rerouted missions, but ensure demo mission starts nominal
         const preserved = deduplicated.map((pm: ReliefMission) => {
+          if (pm.id === 'MSN-ONGOING-MZ01') {
+            const mzRoute = FLEET_ROUTES['ROUTE-SUG-01'] || FLEET_ROUTES['ROUTE-MZ-04'];
+            return {
+              ...pm,
+              isRerouted: false,
+              assignedRouteId: mzRoute?.id || 'ROUTE-SUG-01',
+              suggestedDetour: 'NH-306 Lifeline Arterial via Bilkhawthlir',
+              routeGeometry: mzRoute?.coordinates || [],
+              routeStatus: 'OPTIMAL' as const,
+            };
+          }
           if (pm.isRerouted || (pm.routeGeometry && pm.routeGeometry.length > 0)) {
             return pm;
           }
@@ -1281,8 +1314,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   useEffect(() => {
     activeMissionsRef.current = activeMissions;
-    persistMissions(activeMissions);
-  }, [activeMissions]);
+    if (!isDemoMode) {
+      persistMissions(activeMissions);
+    }
+  }, [activeMissions, isDemoMode]);
 
   // Ensure all suggested relief missions are populated in the queue on mount with latest calibrated parameters
   useEffect(() => {
@@ -1490,7 +1525,14 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (typeof window !== 'undefined') {
       const persisted = getPersistedCommunities();
       if (persisted && Array.isArray(persisted) && persisted.length > 0) {
-        return persisted;
+        // Scrub demo Kolasib override on initial reload so reload is always pristine nominal
+        return persisted.map((c) => {
+          if (c.id === 'MZ-KOL-004' && (c.cutoffTimeHours < 5 || c.disruptionProbMax > 0.9)) {
+            const baseKolasib = INITIAL_COMMUNITIES.find((b) => b.id === 'MZ-KOL-004');
+            return baseKolasib || c;
+          }
+          return c;
+        });
       }
     }
     return INITIAL_COMMUNITIES;
@@ -1499,8 +1541,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const rawCommunitiesRef = useRef<CommunityBase[]>(rawCommunities);
   useEffect(() => {
     rawCommunitiesRef.current = rawCommunities;
-    persistCommunities(rawCommunities);
-  }, [rawCommunities]);
+    if (!isDemoMode) {
+      persistCommunities(rawCommunities);
+    }
+  }, [rawCommunities, isDemoMode]);
 
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -1567,8 +1611,10 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   });
 
   useEffect(() => {
-    persistIncidents(incidents);
-  }, [incidents]);
+    if (!isDemoMode) {
+      persistIncidents(incidents);
+    }
+  }, [incidents, isDemoMode]);
 
   // 9. Executive Macro Analytics & BRO Priority
   const [districtsHealth, setDistrictsHealth] = useState<DistrictHealth[]>(INITIAL_DISTRICTS_HEALTH);
@@ -2917,7 +2963,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           prev.map((d) => (d.id === 'kolasib' ? { ...d, accessibilityScore: 18, connectivityCategory: 'CRITICAL', openCorridorsCount: 0 } : d))
         );
 
-        // 4. Vehicle Telemetry: Medic-01 stopped before debris obstruction
+        // 4. Vehicle Telemetry: Medic-01 stopped before debris obstruction on NH-306 (NOT rerouted)
         const vehicleCoords: [number, number] = [24.5015, 92.76491];
         setSelectedVehicleId('Medic-01');
         setVehicles((prev) =>
@@ -2935,78 +2981,21 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           )
         );
 
-        // 5. In-Transit Mission: MSN-ONGOING-MZ01 rerouted via Bhairabi SH-42 detour
-        const fullBhairabiRoute =
-          OSRM_PRECOMPUTED_ALTERNATIVES['MZ-KOL-004']?.coordinates || FLEET_ROUTES['ROUTE-SUG-01'].coordinates;
-        const splicedDetourGeometry = spliceRouteFromVehicleCoords(fullBhairabiRoute, vehicleCoords);
-        const detourDistanceKm = computePolylineDistanceKm(splicedDetourGeometry);
-        const originalNH306 = FLEET_ROUTES['ROUTE-SUG-01'].coordinates;
-
-        setActiveMissions((prev) => {
-          const updated = prev.map((m) => {
-            if (m.id === 'MSN-ONGOING-MZ01' || m.communityId === 'MZ-KOL-004') {
-              return {
-                ...m,
-                status: 'IN_TRANSIT' as const,
-                isRerouted: true,
-                urgency: 'P1_CRITICAL' as const,
-                initialDisruptionProbability: 0.98,
-                disruptionProbability: 0.12,
-                reroutedDisruptionProbability: 0.12,
-                rerouteReason: 'NH-306 Mudflow at Bilkhawthlir — Model B Alternate Detour via Bhairabi (SH-42)',
-                reroutedAt: new Date().toISOString(),
-                reroutedFromCoords: vehicleCoords,
-                previousRouteGeometry: originalNH306,
-                routeGeometry: splicedDetourGeometry,
-                routeDistanceKm: detourDistanceKm || 158.6,
-                routeDurationMinutes: 147,
-                assignedRouteId: 'ROUTE-SUG-01-DETOUR',
-                suggestedDetour: 'Bhairabi Mountain Valley Bypass (SH-42)',
-                routeStatus: 'OPTIMAL' as const,
-              };
-            }
-            return m;
-          });
-
-          const reqId = 'REQ-MZ-KOL-DEMO';
-          const reqMissionId = 'MSN-REQ-MZKOL-DEMO';
-          const filtered = updated.filter((m) => m.id !== reqMissionId);
-          const requisitionMission: ReliefMission = {
-            id: reqMissionId,
-            communityId: 'MZ-KOL-004',
-            communityName: 'Kolasib East Community Depot',
-            recommendedVehicleType: '4x4 Tata Xenon High-Clearance Medic Carrier',
-            cargoAllocations: [
-              { item: 'Emergency Trauma Kits (Level 3)', quantity: 17, unit: 'kits' },
-              { item: 'IV Fluids (Ringer Lactate / Normal Saline)', quantity: 40, unit: 'bags' },
-              { item: 'Polyvalent Snake Antivenom', quantity: 25, unit: 'vials' },
-            ],
-            assignedRouteId: 'ROUTE-SUG-01-DETOUR',
-            suggestedDetour: 'Bhairabi Mountain Valley Bypass (SH-42)',
-            status: 'SUGGESTED',
-            isFieldRequisition: true,
-            source: 'FIELD_REQUISITION',
-            resourceRequestId: reqId,
-            requestedByOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
-            urgency: 'P1_CRITICAL',
-            createdAt: new Date().toISOString(),
-            assignedDriver: 'Malsawma Ralte (+91 94361-99201)',
-            assignedOfficer: 'Insp. L. Hmar (MZ-QRT-019)',
-            originWarehouseId: 'silchar',
-            originWarehouseName: 'Silchar Strategic Depot',
-            originCoords: [24.8333, 92.7789],
-            disasterZoneId: 'LHZ-MZ-01',
-            disasterZoneName: 'NH-306 Bilkhawthlir Escarpment Corridor',
-            destinationEndpoint: [24.2246, 92.6784],
-            destinationName: 'Kolasib East Community Depot',
-            assignedVehicleId: 'Medic-02',
-            routeDistanceKm: 158.6,
-            routeDurationMinutes: 147,
-            routeStatus: 'OPTIMAL',
-            routeGeometry: splicedDetourGeometry,
-          };
-          return [requisitionMission, ...filtered];
-        });
+        // 5. In-Transit Mission: Keep original route on NH-306, flag route as obstructed (DO NOT AUTOMATICALLY REROUTE)
+        setActiveMissions((prev) =>
+          prev.map((m) =>
+            m.id === 'MSN-ONGOING-MZ01' || m.communityId === 'MZ-KOL-004'
+              ? {
+                  ...m,
+                  urgency: 'P1_CRITICAL' as const,
+                  routeStatus: 'UNAVAILABLE' as const,
+                  disruptionProbability: 0.98,
+                  initialDisruptionProbability: 0.98,
+                  isRerouted: false,
+                }
+              : m
+          )
+        );
 
         // 6. Ground Intel Incident Report
         setIncidents((prev) => [
