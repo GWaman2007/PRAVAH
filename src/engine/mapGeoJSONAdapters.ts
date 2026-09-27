@@ -20,7 +20,7 @@ import { FLEET_ROUTES } from '../data/fleetData';
 import { OSRM_PRECOMPUTED_ROUTES } from '../data/osrmPrecomputedRoutes';
 import { OSRM_PRECOMPUTED_ALTERNATIVES } from '../data/osrmPrecomputedAlternatives';
 import tawangSelaRoute from '../data/tawangSelaPrecomputedRoute.json';
-import { haversineDistanceKm, ensureLngLat } from './gisMath';
+import { haversineDistanceKm, ensureLngLat, ensureLatLng } from './gisMath';
 import { COMMUNITY_ROUTING_PROFILES } from './missionEngine';
 import { calculateRouteModelAExposureFromCache, getAuthoritativeMissionExposure } from './modelAService';
 import { SHILLONG_PRIMARY_ROUTE_COORDS, SHILLONG_BYPASS_ROUTE_COORDS } from '../data/shillongRoadRoutes';
@@ -37,6 +37,105 @@ export function toGeoJSONLineString(coords: [number, number][]): [number, number
   return coords
     .filter((c) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))
     .map((c) => ensureLngLat(c));
+}
+
+/**
+ * Ensures clean road tracing from origin/vehicle location to destination:
+ * 1. For active vehicle in transit: locates the vehicle on or near the route,
+ *    slices from the vehicle forward, and anchors directly to vehicleCoords.
+ * 2. For non-transit / suggested missions: anchors the start coordinate to originCoords.
+ * 3. Enforces that the route ends directly at destinationCoords (the destination marker),
+ *    snapping or appending so there is zero gap or floating disconnect.
+ * 4. Removes consecutive duplicates.
+ */
+export function ensureRouteGeometryEndpoints(
+  rawCoords: [number, number][],
+  originCoords?: [number, number] | null,
+  destinationCoords?: [number, number] | null,
+  vehicleCoords?: [number, number] | null
+): [number, number][] {
+  if (!rawCoords || !Array.isArray(rawCoords) || rawCoords.length === 0) {
+    if (originCoords && destinationCoords) {
+      return [ensureLatLng(originCoords), ensureLatLng(destinationCoords)];
+    }
+    return [];
+  }
+
+  // Normalize all coordinates to [lat, lng]
+  let coords: [number, number][] = rawCoords
+    .filter((c) => Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]))
+    .map((c) => ensureLatLng(c));
+
+  if (coords.length < 2) {
+    if (originCoords && destinationCoords) {
+      return [ensureLatLng(originCoords), ensureLatLng(destinationCoords)];
+    }
+    return coords;
+  }
+
+  // 1. Vehicle Live Position or Origin Snapping
+  if (vehicleCoords && Number.isFinite(vehicleCoords[0]) && Number.isFinite(vehicleCoords[1])) {
+    const vNorm = ensureLatLng(vehicleCoords);
+    // Find closest vertex along the path to the vehicle's live position
+    let bestDist = Infinity;
+    let bestIdx = 0;
+    for (let i = 0; i < coords.length; i++) {
+      const d = haversineDistanceKm(vNorm, coords[i]);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    // If vehicle is reasonably near the route (within 25 km), trace forward from vehicle
+    if (bestDist <= 25.0) {
+      coords = [vNorm, ...coords.slice(bestIdx)];
+    } else {
+      coords = [vNorm, ...coords];
+    }
+  } else if (originCoords && Number.isFinite(originCoords[0]) && Number.isFinite(originCoords[1])) {
+    const origNorm = ensureLatLng(originCoords);
+    const dStart = haversineDistanceKm(origNorm, coords[0]);
+    if (dStart > 0.05) {
+      // If start is more than 50m away from origin depot, anchor to origin
+      if (dStart <= 2.0) {
+        coords[0] = origNorm;
+      } else {
+        coords = [origNorm, ...coords];
+      }
+    }
+  }
+
+  // 2. Exact Destination Snapping
+  if (destinationCoords && Number.isFinite(destinationCoords[0]) && Number.isFinite(destinationCoords[1])) {
+    const destNorm = ensureLatLng(destinationCoords);
+    const lastIdx = coords.length - 1;
+    const dEnd = haversineDistanceKm(destNorm, coords[lastIdx]);
+    if (dEnd > 0.001) {
+      if (dEnd <= 3.5) {
+        // Within 3.5 km (local yard/hospital compound/approach road): snap final point
+        coords[lastIdx] = destNorm;
+      } else {
+        // Append exact destination endpoint to complete path
+        coords.push(destNorm);
+      }
+    }
+  }
+
+  // 3. Deduplicate consecutive identical points
+  const deduped: [number, number][] = [];
+  for (let i = 0; i < coords.length; i++) {
+    const curr = coords[i];
+    if (deduped.length === 0) {
+      deduped.push(curr);
+    } else {
+      const prev = deduped[deduped.length - 1];
+      if (Math.abs(curr[0] - prev[0]) > 1e-6 || Math.abs(curr[1] - prev[1]) > 1e-6) {
+        deduped.push(curr);
+      }
+    }
+  }
+
+  return deduped;
 }
 
 /**
@@ -378,7 +477,8 @@ export function createMissionRoutesGeoJSON(
   missions: ReliefMission[],
   fleetRoutes: Record<string, RouteDefinition> = FLEET_ROUTES,
   selectedMissionId: string | null = null,
-  modelAPredictions: Record<string, ModelAPrediction> = {}
+  modelAPredictions: Record<string, ModelAPrediction> = {},
+  vehicles: VehicleTelemetry[] = []
 ): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   // Only display routes for ONGOING missions that are actively in transit
   // Do NOT render unselected suggested missions across the basemap
@@ -391,6 +491,26 @@ export function createMissionRoutesGeoJSON(
   activeMissions.forEach((m) => {
     const rawCoords = validateAndResolveMissionRoute(m, fleetRoutes);
     if (!rawCoords || rawCoords.length < 2) return;
+
+    let vehicleCoords: [number, number] | null = null;
+    const assignedVeh = vehicles.find(
+      (v) => v.mission_id === m.id || (m.assignedVehicleId && v.vehicle_id === m.assignedVehicleId)
+    );
+    if (
+      assignedVeh &&
+      assignedVeh.current_coords &&
+      Number.isFinite(assignedVeh.current_coords[0]) &&
+      Number.isFinite(assignedVeh.current_coords[1])
+    ) {
+      vehicleCoords = assignedVeh.current_coords;
+    }
+
+    const alignedCoords = ensureRouteGeometryEndpoints(
+      rawCoords,
+      m.originCoords,
+      m.destinationEndpoint,
+      vehicleCoords
+    );
 
     let color = '#2563EB';
     let glowColor = '#3B82F6';
@@ -423,7 +543,7 @@ export function createMissionRoutesGeoJSON(
       type: 'Feature',
       geometry: {
         type: 'LineString',
-        coordinates: toGeoJSONLineString(rawCoords),
+        coordinates: toGeoJSONLineString(alignedCoords),
       },
       properties: {
         mission_id: m.id,
@@ -460,13 +580,14 @@ export function createModelBRouteOptionsGeoJSON(
   options: MissionRouteOption[] = [],
   selectedOptionId?: string | null,
   modelAPredictions: Record<string, ModelAPrediction> = {},
-  isMissionRerouted: boolean = false
+  isMissionRerouted: boolean = false,
+  originCoords?: [number, number] | null,
+  destinationCoords?: [number, number] | null
 ): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
   // Mutually exclusive route display:
-  // When green road is selected, blue road is hidden.
-  // When blue road is selected, green road is hidden.
+  // Render ONLY the 1 active selected route option
   const activeOption =
     options.find((opt) => opt.id === selectedOptionId) ||
     options.find((opt) => opt.predictedPreferredRoute) ||
@@ -499,11 +620,18 @@ export function createModelBRouteOptionsGeoJSON(
   }
   prob = prob ?? 0;
 
+  const alignedCoords = ensureRouteGeometryEndpoints(
+    activeOption.geometry,
+    originCoords,
+    destinationCoords,
+    null
+  );
+
   features.push({
     type: 'Feature',
     geometry: {
       type: 'LineString',
-      coordinates: toGeoJSONLineString(activeOption.geometry),
+      coordinates: toGeoJSONLineString(alignedCoords),
     },
     properties: {
       option_id: activeOption.id,
@@ -548,16 +676,17 @@ export function createModelBRouteOptionsGeoJSON(
 export function createSelectedMissionRouteGeoJSON(
   selectedMission: ReliefMission | null | undefined,
   fleetRoutes: Record<string, RouteDefinition> = FLEET_ROUTES,
-  modelAPredictions: Record<string, ModelAPrediction> = {}
+  modelAPredictions: Record<string, ModelAPrediction> = {},
+  vehicles: VehicleTelemetry[] = []
 ): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   if (!selectedMission) {
     return { type: 'FeatureCollection', features: [] };
   }
 
-  // When a mission is SUGGESTED with multiple route options and NOT rerouted, the Model B route options layer
-  // renders both candidate routes.
-  const hasRouteOptions = Boolean(selectedMission.routeOptions && selectedMission.routeOptions.length > 0);
-  if (selectedMission.status === 'SUGGESTED' && !selectedMission.isRerouted && hasRouteOptions) {
+  // CRITICAL: If mission is SUGGESTED, do NOT render here!
+  // Suggested missions are rendered exclusively by createModelBRouteOptionsGeoJSON.
+  // This guarantees exactly 1 single path on the map with zero forking or duplicate paths!
+  if (selectedMission.status === 'SUGGESTED') {
     return { type: 'FeatureCollection', features: [] };
   }
 
@@ -566,6 +695,31 @@ export function createSelectedMissionRouteGeoJSON(
   if (!rawCoords || rawCoords.length < 2) {
     return { type: 'FeatureCollection', features: [] };
   }
+
+  // Find live vehicle telemetry if in transit for proper vehicle-to-destination tracing
+  let vehicleCoords: [number, number] | null = null;
+  if (selectedMission.status === 'IN_TRANSIT') {
+    const assignedVeh = vehicles.find(
+      (v) =>
+        v.mission_id === selectedMission.id ||
+        (selectedMission.assignedVehicleId && v.vehicle_id === selectedMission.assignedVehicleId)
+    );
+    if (
+      assignedVeh &&
+      assignedVeh.current_coords &&
+      Number.isFinite(assignedVeh.current_coords[0]) &&
+      Number.isFinite(assignedVeh.current_coords[1])
+    ) {
+      vehicleCoords = assignedVeh.current_coords;
+    }
+  }
+
+  const alignedCoords = ensureRouteGeometryEndpoints(
+    rawCoords,
+    selectedMission.originCoords,
+    selectedMission.destinationEndpoint,
+    vehicleCoords
+  );
 
   const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
@@ -576,7 +730,7 @@ export function createSelectedMissionRouteGeoJSON(
       type: 'Feature',
       geometry: {
         type: 'LineString',
-        coordinates: toGeoJSONLineString(rawCoords),
+        coordinates: toGeoJSONLineString(alignedCoords),
       },
       properties: {
         mission_id: selectedMission.id,
@@ -598,7 +752,7 @@ export function createSelectedMissionRouteGeoJSON(
       type: 'Feature',
       geometry: {
         type: 'LineString',
-        coordinates: toGeoJSONLineString(rawCoords),
+        coordinates: toGeoJSONLineString(alignedCoords),
       },
       properties: {
         mission_id: selectedMission.id,

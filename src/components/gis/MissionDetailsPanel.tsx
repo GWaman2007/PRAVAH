@@ -316,8 +316,8 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
                           )}
                         </div>
                         {opt.routeName && (
-                          <span className="text-[9.5px] text-text-secondary pl-3.5 font-mono">
-                            Route {opt.routeNumber} &bull; {opt.corridorSegmentIds?.join(', ') || opt.routeId}
+                          <span className="text-[9.5px] text-text-secondary pl-3.5 font-medium truncate block">
+                            Route {opt.routeNumber} &bull; {opt.routeName}
                           </span>
                         )}
                       </div>
@@ -523,25 +523,12 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
             </span>
           </div>
 
-          {/* Mapping coverage stats */}
-          <div className="flex items-center justify-between text-[10px] text-text-secondary px-0.5">
-            <span>
-              Corridor Segments:{' '}
-              <strong className="text-text-primary">{exposure.mapped_segment_count} mapped</strong>
-            </span>
-            {exposure.unmapped_segment_count > 0 && (
-              <span className="text-amber-400/90 font-mono">
-                {exposure.unmapped_segment_count} unmapped
-              </span>
-            )}
-          </div>
-
           {/* Warning banner if elevated risks present */}
           {!mission.isRerouted && exposure.elevated_risk_segment_count > 0 && (
             <div className="p-2 rounded bg-orange-500/10 border border-orange-500/30 text-orange-300 text-[10.5px] leading-tight flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-orange-400 mt-0.5" />
               <span>
-                <strong>{exposure.elevated_risk_segment_count} segment{exposure.elevated_risk_segment_count > 1 ? 's' : ''}</strong> on this mission corridor {exposure.elevated_risk_segment_count > 1 ? 'show' : 'shows'} elevated predicted disruption risk (&ge;50%).
+                Elevated predicted disruption risk (&ge;50%) detected along this route.
               </span>
             </div>
           )}
@@ -618,66 +605,7 @@ export const MissionDetailsPanel: React.FC<MissionDetailsPanelProps> = ({
             </div>
           ) : null}
 
-          {/* Segment by segment breakdown */}
-          <div className="space-y-1 pt-1">
-            <span className="text-[9px] text-text-tertiary uppercase tracking-wider block font-semibold">
-              Corridor Segment Hazard Predictions (Click to inspect)
-            </span>
-            {exposure.segments.length > 0 ? (
-              exposure.segments.map((seg: any) => {
-                const isHigh = seg.probability >= 0.8;
-                const isElevated = seg.probability >= 0.5 && !isHigh;
-                const isModerate = seg.probability >= 0.3 && !isElevated && !isHigh;
 
-                return (
-                  <button
-                    key={seg.segment_id}
-                    onClick={() => onSelectSegment?.(seg.segment_id)}
-                    className={`w-full text-left p-2 rounded border transition cursor-pointer flex items-center justify-between ${
-                      isHigh
-                        ? 'bg-rose-500/10 border-rose-500/40 hover:bg-rose-500/20'
-                        : isElevated
-                        ? 'bg-orange-500/10 border-orange-500/40 hover:bg-orange-500/20'
-                        : isModerate
-                        ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20'
-                        : 'bg-surface border-border hover:bg-surface-subtle'
-                    }`}
-                  >
-                    <div className="min-w-0 pr-2">
-                      <div className="text-[11px] font-medium text-text-primary truncate">
-                        {seg.segment_name || seg.segment_id}
-                      </div>
-                      <div className="text-[9.5px] font-mono text-text-tertiary flex items-center gap-1.5">
-                        <span>{seg.highway || 'Corridor'}</span>
-                        <span>•</span>
-                        <span className="text-text-secondary">{seg.risk_band} RISK</span>
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <span
-                        className={`text-xs font-mono font-bold ${
-                          isHigh
-                            ? 'text-rose-400'
-                            : isElevated
-                            ? 'text-orange-400'
-                            : isModerate
-                            ? 'text-amber-400'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        {(seg.probability * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="text-[10px] text-text-tertiary p-2 rounded bg-surface border border-border text-center">
-                Mission corridor outside standard mapped segments (unmapped corridor geometry).
-              </div>
-            )}
-          </div>
 
           <p className="text-[9px] text-text-tertiary italic leading-tight pt-1 border-t border-border/40">
             Model A predicts environmental disruption probability. Operational routing continues unless confirmed blocked by ground dispatch.

@@ -252,10 +252,10 @@ export const REGIONAL_ALTERNATIVE_WAYPOINTS: Record<string, [number, number]> = 
   'silchar->kolasib': [24.50, 92.56],
   'mizoram': [24.50, 92.56],
 
-  // Dimapur -> Kohima (Nagaland): Mountain bypass via Niuland, Wokha & Tseminyu
-  'nl-koh-009': [26.1025, 94.2638],
-  'dimapur->kohima': [26.1025, 94.2638],
-  'nagaland': [26.1025, 94.2638],
+  // Dimapur -> Kohima (Nagaland): High Ridge bypass around Pagla Pahar
+  'nl-koh-009': [25.7950, 93.8550],
+  'dimapur->kohima': [25.7950, 93.8550],
+  'nagaland': [25.7950, 93.8550],
 
   // Silchar -> Haflong (Assam): Via Badarpur & Karimganj spur
   'as-dh-011': [24.90, 92.54],

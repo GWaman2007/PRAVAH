@@ -1188,7 +1188,7 @@ export const PravahStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         // Ensure baseline demo missions exist (3 Suggested, 3 In Transit, 2 Delivered)
         const demoMissions = generateDeterministicDemoMissions();
         const demoSuggestedIds = new Set(demoMissions.filter((d) => d.status === 'SUGGESTED').map((d) => d.id));
-        const legacyDemoIds = new Set(['DEMO-MSN-NL-KOH', 'DEMO-MSN-MZ-KOL', 'DEMO-MSN-SK-MAN', 'SUGG-NLKOH009', 'SUGG-SKMAN002', 'SUGG-NLKOH002', 'SUGG-MZAIF008', 'SUGG-ARTAW001', 'SUGG-MLJOW005', 'SUGG-ASJAT007', 'SUGG-MNNON006']);
+        const legacyDemoIds = new Set(['DEMO-MSN-NL-KOH', 'DEMO-MSN-MZ-KOL', 'DEMO-MSN-SK-MAN', 'SUGG-NLKOH009', 'SUGG-SKMAN002', 'SUGG-NLKOH002', 'SUGG-MZAIF008', 'SUGG-MLJOW005', 'SUGG-ASJAT007', 'SUGG-MNNON006']);
         const cleanedPreserved = preserved.filter((m) => {
           if (m.status === 'SUGGESTED') {
             return demoSuggestedIds.has(m.id);
@@ -4128,7 +4128,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
     rawText: 'Aliens spotted landing flying saucer near Kohima bypass road, traffic halted!',
     reporterName: 'Anonymous Troll',
     timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
-    rejectionReason: 'Gemini Safety Filter & Fact Verification: Hallucinatory or fictitious emergency claim devoid of regional geographic corroboration.',
+    rejectionReason: 'AI Safety Filter & Fact Verification: Hallucinatory or fictitious emergency claim devoid of regional geographic corroboration.',
     flaggedAs: 'SPAM_TROLL',
   },
 ];
@@ -4275,7 +4275,7 @@ const INITIAL_REJECTED_REPORTS: RejectedReport[] = [
           corridorId,
         },
         author: {
-          name: target.sourceReport?.reporterName || 'Gemini AI Copilot',
+          name: target.sourceReport?.reporterName || 'PRAVAH AI Copilot',
           role: 'Field Officer (BRO/Police)',
         },
         timestamp: target.sourceReport?.timestamp || new Date().toISOString(),

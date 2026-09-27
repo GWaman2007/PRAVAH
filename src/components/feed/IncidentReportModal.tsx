@@ -264,13 +264,13 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
     const finalLng = capturedCoords ? capturedCoords[1] : defaultCoords[1];
 
     setIsSubmitting(true);
-    setAiStatusMessage('Connecting to Google Gemini Multimodal AI...');
+    setAiStatusMessage('Connecting to Multimodal AI Engine...');
 
     const combinedText = `${formTitle.trim()}. Location details: ${formLocationName.trim()}. Corridor: ${formCorridor}. Hazard: ${formType} (${formSeverity}).`;
 
     try {
       if (userContext.role === 'FIELD_OFFICER' || userContext.role === 'SUPER_ADMIN') {
-        setAiStatusMessage('Structuring Officer Report with Gemini...');
+        setAiStatusMessage('Structuring Officer Report with AI...');
         await submitOfficerReport({
           rawText: combinedText,
           coords: [finalLat, finalLng],
@@ -279,7 +279,7 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
           photoUrl: photoPreview || undefined,
         });
       } else {
-        setAiStatusMessage('Validating & Structuring Ground Report with Gemini AI...');
+        setAiStatusMessage('Validating & Structuring Ground Report with AI...');
         await submitCitizenReport({
           rawText: combinedText,
           coords: [finalLat, finalLng],
@@ -774,12 +774,12 @@ export const IncidentReportModal: React.FC<IncidentReportModalProps> = ({
               {isSubmitting ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>{aiStatusMessage || 'Processing with Gemini AI...'}</span>
+                  <span>{aiStatusMessage || 'Processing with AI...'}</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Submit with Gemini AI</span>
+                  <span>Submit with AI Validation</span>
                 </>
               )}
             </button>

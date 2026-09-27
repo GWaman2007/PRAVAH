@@ -228,7 +228,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
     e.preventDefault();
     if (!intelInputText.trim() || isProcessingIntel) return;
     setIsProcessingIntel(true);
-    setIntelStatus('Connecting to Google Gemini Multimodal AI...');
+    setIntelStatus('Connecting to Multimodal AI Engine...');
     try {
       const res = await submitCitizenReport({
         rawText: intelInputText.trim(),
@@ -236,7 +236,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
         reporterName: 'Field Intel Ingest',
       });
       if (res.status === 'NEW_DRAFT') {
-        setIntelStatus('✨ Processed by Gemini & Added to Review Queue!');
+        setIntelStatus('✨ Processed by AI & Added to Review Queue!');
         setIntelInputText('');
         if (res.draftPlot) {
           setSelectedDraftPlotId(res.draftPlot.id);
@@ -249,13 +249,13 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
           }
         }
       } else if (res.status === 'DUPLICATE') {
-        setIntelStatus(`✨ Gemini detected duplicate: Citation merged into ${res.duplicateOfId}`);
+        setIntelStatus(`✨ AI detected duplicate: Citation merged into ${res.duplicateOfId}`);
         setIntelInputText('');
       } else {
         setIntelStatus(`Flagged by AI: ${res.rejectionReason || 'Spam / Geographic Mismatch'}`);
       }
     } catch (err: any) {
-      setIntelStatus(`Error: ${err?.message || 'Gemini processing failed'}`);
+      setIntelStatus(`Error: ${err?.message || 'AI processing failed'}`);
     } finally {
       setIsProcessingIntel(false);
       setTimeout(() => setIntelStatus(null), 5000);
@@ -643,7 +643,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       // -------------------------------------------------------------
       map.addSource('mission-routes', {
         type: 'geojson',
-        data: createMissionRoutesGeoJSON(activeMissions, FLEET_ROUTES, selectedMissionId),
+        data: createMissionRoutesGeoJSON(activeMissions, FLEET_ROUTES, selectedMissionId, modelAPredictions, vehicles),
       });
 
       map.addLayer({
@@ -673,15 +673,21 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       // Displays Model B route options with dynamic disruption risk colors:
       // High (>= 80%): Red, Elevated (>= 50%): Orange, Low (< 50%): Blue
       // -------------------------------------------------------------
+      const isSuggestedInit = activeMission?.status === 'SUGGESTED';
+      const optsInit = (isSuggestedInit && !activeMission?.isRerouted)
+        ? (activeMission.routeOptions || missionRouteOptionsByMissionId[activeMission.id] || [])
+        : [];
+      const selOptIdInit = selectedRouteOptionByMissionId[activeMission?.id || ''] || activeMission?.selectedRouteOptionId;
+
       map.addSource('model-b-route-options', {
         type: 'geojson',
         data: createModelBRouteOptionsGeoJSON(
-          activeMission
-            ? (activeMission.isRerouted ? [] : (activeMission.routeOptions || missionRouteOptionsByMissionId[activeMission.id] || []))
-            : [],
-          selectedRouteOptionByMissionId[activeMission?.id || ''] || activeMission?.selectedRouteOptionId,
+          optsInit,
+          selOptIdInit,
           modelAPredictions,
-          Boolean(activeMission?.isRerouted)
+          Boolean(activeMission?.isRerouted),
+          activeMission?.originCoords,
+          activeMission?.destinationEndpoint
         ),
       });
 
@@ -741,7 +747,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
       // -------------------------------------------------------------
       map.addSource('selected-mission-route', {
         type: 'geojson',
-        data: createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES, modelAPredictions),
+        data: createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES, modelAPredictions, vehicles),
       });
 
       map.addLayer({
@@ -1550,7 +1556,7 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
             cause: feat.properties.hazardType,
             severity: feat.properties.severity,
             reportedBy: `${feat.properties.reporterName} (+${feat.properties.citationsCount} Citations)`,
-            lastUpdated: `Model: ${feat.properties.geminiModel}`,
+            lastUpdated: 'Verified by Multimodal AI',
           });
         }
       });
@@ -1931,11 +1937,11 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
     // Update mission routes
     const routesSource = map.getSource('mission-routes') as maplibregl.GeoJSONSource;
     if (routesSource) {
-      routesSource.setData(createMissionRoutesGeoJSON(activeMissions, FLEET_ROUTES, selectedMissionId, modelAPredictions));
+      routesSource.setData(createMissionRoutesGeoJSON(activeMissions, FLEET_ROUTES, selectedMissionId, modelAPredictions, vehicles));
     }
     const selRouteSource = map.getSource('selected-mission-route') as maplibregl.GeoJSONSource;
     if (selRouteSource) {
-      selRouteSource.setData(createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES, modelAPredictions));
+      selRouteSource.setData(createSelectedMissionRouteGeoJSON(activeMission, FLEET_ROUTES, modelAPredictions, vehicles));
     }
 
     // Update Model B route options for mission (STRICTLY for SUGGESTED missions awaiting initial dispatch)
@@ -1946,7 +1952,14 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
         ? (activeMission.routeOptions || missionRouteOptionsByMissionId[activeMission.id] || [])
         : [];
       const selOptId = selectedRouteOptionByMissionId[activeMission?.id || ''] || activeMission?.selectedRouteOptionId;
-      modelBSource.setData(createModelBRouteOptionsGeoJSON(opts, selOptId, modelAPredictions, false));
+      modelBSource.setData(createModelBRouteOptionsGeoJSON(
+        opts,
+        selOptId,
+        modelAPredictions,
+        false,
+        activeMission?.originCoords,
+        activeMission?.destinationEndpoint
+      ));
     }
 
     // Update mission endpoints
@@ -2970,14 +2983,14 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
                   <span>Click any report to inspect its expected pin location & affected road corridor on the map before approving.</span>
                 </div>
 
-                {/* Direct Gemini Field Intel Ingest Box */}
+                {/* Direct AI Field Intel Ingest Box */}
                 <form onSubmit={handleProcessIntel} className="p-2.5 rounded-sm bg-surface-subtle border border-border space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-[11px] text-text-primary flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                       <span>Direct Field Intel Ingest</span>
                     </span>
-                    <span className="text-[10px] text-indigo-400 font-mono">Gemini AI Engine</span>
+                    <span className="text-[10px] text-indigo-400 font-mono">Neural AI Engine</span>
                   </div>
                   <div className="flex gap-1.5">
                     <input
@@ -3083,14 +3096,14 @@ export const TacticalMapDeck: React.FC<TacticalMapDeckProps> = ({ compactMobileO
                           </div>
                         )}
 
-                        {/* Gemini AI Verification Snippet */}
+                        {/* AI Verification Snippet */}
                         <div className="p-2 rounded-xs bg-surface-subtle border border-border/70 text-[10px] space-y-1">
                           <div className="flex items-center justify-between text-text-secondary">
                             <span className="text-emerald-400 font-semibold flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" /> Geo Check: Passed
                             </span>
                             <span className="font-mono text-indigo-300">
-                              AI: {draft.aiValidation.geminiModelUsed}
+                              AI Verified
                             </span>
                             <span className="font-bold text-text-primary">
                               Score: {draft.aiValidation.confidenceScore}/10

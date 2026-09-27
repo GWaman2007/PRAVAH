@@ -190,11 +190,8 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-text-primary">
-                  Gemini AI Multimodal Intel Copilot
+                  PRAVAH AI Multimodal Intel Copilot
                 </h2>
-                <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-xs">
-                  {GEMINI_CONFIG.PRIMARY_MODEL}
-                </span>
               </div>
               <p className="text-[11px] text-text-secondary mt-0.5">
                 Direct native multimodal ingestion for Voice Notes, Field Photos, PDF Circulars & Radio Dispatch
@@ -205,7 +202,7 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
             <button
               onClick={(e) => { e.stopPropagation(); setShowKeyModal(true); }}
               className="p-1.5 text-text-tertiary hover:text-primary hover:bg-surface-subtle rounded-xs transition cursor-pointer"
-              title="Configure Gemini API Key"
+              title="Configure AI API Key"
             >
               <Key className="w-4 h-4" />
             </button>
@@ -224,7 +221,7 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               <span>
-                Running in <strong>Local Heuristic Fallback</strong> mode. Add a Gemini API key for live deep multimodal reasoning.
+                Running in <strong>Local Heuristic Fallback</strong> mode. Add an AI API key for live deep multimodal reasoning.
               </span>
             </div>
             <button
@@ -374,23 +371,23 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
             {isProcessing ? (
               <>
                 <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Gemini Multimodal Reasoning in Progress...</span>
+                <span>Multimodal Reasoning in Progress...</span>
               </>
             ) : (
               <>
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Extract Plottable Ground Truth with Gemini</span>
+                <span>Extract Plottable Ground Truth with AI</span>
               </>
             )}
           </button>
 
-          {/* 3. Clarification Dialog (If Gemini returns ambiguity) */}
+          {/* 3. Clarification Dialog (If AI returns ambiguity) */}
           {intelResult?.needsClarification && (
             <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-sm space-y-2.5">
               <div className="flex items-start gap-2 text-amber-400 text-xs">
                 <HelpCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-bold text-amber-300">Gemini Clarification Required:</h4>
+                  <h4 className="font-bold text-amber-300">AI Clarification Required:</h4>
                   <p className="mt-0.5 text-text-secondary">{intelResult.clarifyingQuestion}</p>
                 </div>
               </div>
@@ -462,7 +459,7 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
 
               <div className="p-2.5 bg-surface rounded-xs border border-border text-[11px] text-text-secondary">
                 <span className="text-text-tertiary font-bold block text-[10px] mb-0.5">
-                  Gemini Operational Summary:
+                  Operational Summary:
                 </span>
                 {intelResult.draftPlot.summary}
               </div>
@@ -498,7 +495,7 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-text-primary text-sm flex items-center gap-2">
                 <Key className="w-4 h-4 text-indigo-400" />
-                Configure Gemini API Key
+                Configure AI API Key
               </h3>
               <button
                 onClick={() => setShowKeyModal(false)}
@@ -508,7 +505,7 @@ export const AdminIntelCopilotModal: React.FC<AdminIntelCopilotModalProps> = ({ 
               </button>
             </div>
             <p className="text-[11px] text-text-secondary leading-relaxed">
-              Enter your Google AI Studio Gemini API key to activate direct native multimodal processing (<code className="font-mono text-indigo-400">gemini-3.5-flash-lite</code> / <code className="font-mono text-indigo-400">gemini-3.1-flash-lite</code>).
+              Enter your Neural AI API key to activate direct native multimodal processing.
             </p>
             <input
               type="password"

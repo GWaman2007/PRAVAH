@@ -125,11 +125,11 @@ export const Header: React.FC = () => {
               )}
             </button>
  
-             {/* Gemini AI Multimodal Intel Copilot Trigger */}
+             {/* Multimodal AI Copilot Trigger */}
              <button
                id="ai-copilot-trigger-btn"
                onClick={() => setIsCopilotOpen(true)}
-               title="Open Gemini AI Multimodal Intel Copilot"
+               title="Open Multimodal AI Copilot"
                className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600/20 to-emerald-600/20 text-indigo-300 border border-indigo-500/40 hover:from-indigo-600/30 hover:to-emerald-600/30 transition-all btn-press cursor-pointer shadow-xs"
              >
                <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
