@@ -12,7 +12,6 @@ import {
   MessageSquare,
   Radio,
   Smartphone,
-  Cpu,
   Menu,
   X,
   ChevronDown,
@@ -142,13 +141,6 @@ export const Navigation: React.FC = () => {
       label: t('navBroadcast'),
       shortLabel: t('navBroadcastShort'),
       icon: Radio,
-    },
-    {
-      id: 'MODEL_A_LAB',
-      label: 'Model A Lab',
-      shortLabel: 'AI Test',
-      icon: Cpu,
-      badge: 'v3.4.1',
     },
   ];
 

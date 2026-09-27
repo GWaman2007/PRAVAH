@@ -104,7 +104,6 @@ export type ActiveView =
   | 'BROADCAST_CENTER'
   | 'MOBILE_COCKPIT'
   | 'HUBS_RESOURCES'
-  | 'MODEL_A_LAB'
   | 'FO_COMMUNITY'
   | 'FO_MISSIONS'
   | 'FO_REQUIREMENTS'

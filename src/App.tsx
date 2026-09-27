@@ -11,7 +11,6 @@ import { ExecutiveInfrastructureDeck } from './components/executive/ExecutiveInf
 import { GroundIntelligenceFeed } from './components/feed/GroundIntelligenceFeed';
 import { MultilingualBroadcastCenter } from './components/broadcast/MultilingualBroadcastCenter';
 import { MobileMissionCockpit } from './components/cockpit/MobileMissionCockpit';
-import { ModelATestingDeck } from './components/modelA/ModelATestingDeck';
 import { GlobalSOSInterceptModal } from './components/admin/GlobalSOSInterceptModal';
 import { FieldOfficerCommunityView } from './components/fieldOfficer/FieldOfficerCommunityView';
 import { FieldOfficerMissionsView } from './components/fieldOfficer/FieldOfficerMissionsView';
@@ -39,7 +38,7 @@ const AppContent: React.FC = () => {
 
   // Strict Role-Based Access Control (RBAC Guard)
   React.useEffect(() => {
-    const adminOnlyViews = ['HUBS_RESOURCES', 'EXECUTIVE_INFRA', 'BROADCAST_CENTER', 'MODEL_A_LAB'];
+    const adminOnlyViews = ['HUBS_RESOURCES', 'EXECUTIVE_INFRA', 'BROADCAST_CENTER'];
     if (activeRole === 'FIELD_OFFICER' && adminOnlyViews.includes(activeView)) {
       setActiveView('FO_COMMUNITY');
     } else if (activeRole === 'DRIVER' && activeView !== 'MOBILE_COCKPIT') {
@@ -130,11 +129,6 @@ const AppContent: React.FC = () => {
         {activeView === 'MOBILE_COCKPIT' && (
           <div className="h-full overflow-y-auto pb-24">
             <MobileMissionCockpit />
-          </div>
-        )}
-        {activeView === 'MODEL_A_LAB' && (
-          <div className="h-full overflow-y-auto pb-20">
-            <ModelATestingDeck />
           </div>
         )}
         {activeView === 'FO_COMMUNITY' && (
