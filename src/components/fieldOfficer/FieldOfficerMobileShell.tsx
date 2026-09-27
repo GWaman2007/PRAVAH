@@ -447,7 +447,7 @@ export const FieldOfficerMobileShell: React.FC = () => {
             {activeTab === 'MAP' && <FOMapScreen onNavigateToMission={navigateToMission} />}
             {activeTab === 'MISSIONS' && (
               <div className="p-2 sm:p-3 overflow-y-auto h-full">
-                <FieldOfficerMissionsView />
+                <FieldOfficerMissionsView onNavigateToMap={navigateToMap} />
               </div>
             )}
             {activeTab === 'REPORTS' && <FOReportsScreen onOpenAction={openAction} />}

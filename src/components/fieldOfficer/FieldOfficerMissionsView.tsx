@@ -4,40 +4,37 @@ import {
   Truck,
   CheckCircle2,
   PackageCheck,
-  AlertTriangle,
   Clock,
   MapPin,
-  ShieldCheck,
-  Package,
-  Layers,
-  ArrowRight,
-  ExternalLink,
   ChevronRight,
   Check,
+  Radio,
 } from 'lucide-react';
 import type { ReliefMission } from '../../types';
 
-export const FieldOfficerMissionsView: React.FC = () => {
+export interface FieldOfficerMissionsViewProps {
+  onNavigateToMap?: () => void;
+}
+
+export const FieldOfficerMissionsView: React.FC<FieldOfficerMissionsViewProps> = ({ onNavigateToMap }) => {
   const {
     userContext,
     activeMissions,
     reportMissionDeliveryByField,
     markMissionDelivered,
     setSelectedMissionId,
-    setActiveView,
   } = usePravahStore();
 
   const [confirmedMissions, setConfirmedMissions] = useState<Record<string, boolean>>({});
 
-  // Target missions for this officer / community
+  // Strictly ONGOING missions (IN_TRANSIT, PENDING_ADMIN_CLOSEOUT, DELIVERED) - NEVER SUGGESTED
   const relevantMissions = activeMissions.filter(
     (m) =>
-      m.communityId === userContext.communityId ||
-      m.communityName.toLowerCase().includes((userContext.communityName || '').toLowerCase().split(' ')[0]) ||
-      m.id === userContext.activeMissionId ||
-      m.status === 'IN_TRANSIT' ||
-      m.status === 'PENDING_ADMIN_CLOSEOUT' ||
-      m.status === 'SUGGESTED'
+      (m.communityId === userContext.communityId ||
+        m.id === userContext.activeMissionId ||
+        (userContext.communityName && m.communityName.toLowerCase().includes(userContext.communityName.toLowerCase().split(' ')[0]))) &&
+      m.status !== 'SUGGESTED' &&
+      (m.status === 'IN_TRANSIT' || m.status === 'PENDING_ADMIN_CLOSEOUT' || m.status === 'DELIVERED')
   );
 
   const handleConfirmDelivery = (mission: ReliefMission) => {
@@ -46,39 +43,43 @@ export const FieldOfficerMissionsView: React.FC = () => {
     setConfirmedMissions((prev) => ({ ...prev, [mission.id]: true }));
   };
 
-  return (
-    <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6 text-xs text-text-primary">
-      {/* Header Banner */}
-      <div className="bg-surface border border-border p-4 sm:p-5 rounded-lg shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Truck className="w-5 h-5 text-primary" />
-            <h1 className="text-base sm:text-lg font-bold text-text-primary">
-              My Active Relief Missions &amp; Delivery Verification
-            </h1>
-          </div>
-          <p className="text-xs text-text-secondary mt-1">
-            Real-time convoy tracking and delivery receipt verification for {userContext.communityName || 'Assigned Community'}.
-          </p>
-        </div>
+  const handleViewConvoy = (missionId: string) => {
+    setSelectedMissionId(missionId);
+    if (onNavigateToMap) {
+      onNavigateToMap();
+    } else {
+      window.dispatchEvent(new CustomEvent('pravah-navigate-map', { detail: { missionId } }));
+    }
+  };
 
+  return (
+    <div className="space-y-3 text-xs text-white">
+      {/* Header Banner - Compact */}
+      <div className="fo-card p-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="px-2.5 py-1 rounded bg-blue-500/10 text-blue-500 font-mono font-bold text-xs">
-            Sector: {userContext.jurisdictionState || 'Active Sector'}
-          </span>
+          <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center">
+            <Truck className="w-4 h-4 text-blue-400" />
+          </div>
+          <div>
+            <h2 className="text-xs font-bold text-white leading-tight">Ongoing Relief Missions</h2>
+            <span className="text-[10px] text-slate-400">Sector: {userContext.communityName || 'Assigned Community'}</span>
+          </div>
         </div>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+          {relevantMissions.length} Active
+        </span>
       </div>
 
       {relevantMissions.length === 0 ? (
-        <div className="p-12 text-center bg-surface border border-border rounded-lg text-text-tertiary space-y-2">
-          <Truck className="w-10 h-10 mx-auto opacity-30" />
-          <p className="text-sm font-semibold">No active missions for this sector.</p>
-          <p className="text-xs">
-            Submit a resource requirement from the Community tab to generate an engine sortie recommendation.
+        <div className="fo-card p-8 text-center text-slate-500 space-y-2">
+          <Truck className="w-8 h-8 mx-auto opacity-30" />
+          <p className="text-xs font-semibold text-slate-400">No ongoing missions for this sector.</p>
+          <p className="text-[10px]">
+            Relief convoys will appear here once dispatched from regional supply hubs.
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {relevantMissions.map((mission) => {
             const isConfirmed = confirmedMissions[mission.id];
             const isArrived =
@@ -88,79 +89,66 @@ export const FieldOfficerMissionsView: React.FC = () => {
             return (
               <div
                 key={mission.id}
-                className={`bg-surface border rounded-lg p-4 sm:p-5 shadow-xs space-y-4 transition-all ${
+                className={`fo-card p-3.5 space-y-3 transition-all ${
                   isArrived && !isConfirmed
-                    ? 'border-emerald-500/80 ring-2 ring-emerald-500/20'
-                    : 'border-border'
+                    ? 'border-emerald-500/60 ring-1 ring-emerald-500/30'
+                    : 'border-slate-800'
                 }`}
               >
                 {/* Mission Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded font-mono font-bold text-xs bg-primary/10 text-primary">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-[11px] text-blue-400">
                         {mission.id}
                       </span>
-                      <h2 className="text-sm sm:text-base font-bold text-text-primary">
-                        {`${mission.originWarehouseName} → ${mission.communityName}`}
-                      </h2>
-                      {mission.source && (
-                        <span
-                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                            mission.source === 'ENGINE_GENERATED'
-                              ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20'
-                              : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-                          }`}
-                        >
-                          {mission.source === 'ENGINE_GENERATED' ? 'ENGINE GENERATED' : 'MANUAL'}
-                        </span>
-                      )}
+                      <span className="text-[10px] text-slate-500">•</span>
+                      <span className="text-[11px] font-bold text-white truncate max-w-[180px]">
+                        {mission.communityName}
+                      </span>
                     </div>
-                    <span className="text-[11px] text-text-secondary mt-0.5 block">
-                      Target Destination: <strong>{mission.communityName}</strong> • Origin Hub: {mission.originWarehouseName}
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      From: {mission.originWarehouseName}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-2.5 py-1 rounded font-mono font-bold text-xs border ${
-                        mission.status === 'DELIVERED'
-                          ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30'
-                          : mission.status === 'IN_TRANSIT'
-                          ? 'bg-blue-500/10 text-blue-500 border-blue-500/30'
-                          : mission.status === 'SUGGESTED'
-                          ? 'bg-orange-500/10 text-orange-500 border-orange-500/30'
-                          : 'bg-surface-subtle text-text-primary border-border'
-                      }`}
-                    >
-                      {mission.status}
-                    </span>
-                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full font-bold text-[9px] border ${
+                      mission.status === 'DELIVERED'
+                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                        : mission.status === 'IN_TRANSIT'
+                        ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                        : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                    }`}
+                  >
+                    {mission.status === 'IN_TRANSIT' ? 'En Route' : mission.status === 'PENDING_ADMIN_CLOSEOUT' ? 'Arrived' : mission.status}
+                  </span>
                 </div>
 
-                {/* Convoy Telemetry Details */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-md bg-surface-subtle border border-border text-[11px]">
-                  <div>
-                    <span className="text-text-tertiary block text-[10px]">Vehicle Unit</span>
-                    <span className="font-semibold text-text-primary">
+                {/* Convoy Telemetry Details - Compact Grid */}
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="fo-stat-chip p-2">
+                    <span className="text-[9px] text-slate-400 block">Convoy Vehicle</span>
+                    <span className="font-semibold text-white truncate block">
                       {mission.assignedVehicleId || 'Medic-01 (4x4)'}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-text-tertiary block text-[10px]">Assigned Driver</span>
-                    <span className="font-semibold text-text-primary">
+                  <div className="fo-stat-chip p-2">
+                    <span className="text-[9px] text-slate-400 block">Lead Driver</span>
+                    <span className="font-semibold text-white truncate block">
                       {mission.assignedDriver || 'Rajesh Mech'}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-text-tertiary block text-[10px]">Transit Route</span>
-                    <span className="font-mono text-text-primary truncate block">
+                  <div className="fo-stat-chip p-2">
+                    <span className="text-[9px] text-slate-400 block">Transit Corridor</span>
+                    <span className="font-mono text-white truncate block">
                       {mission.assignedRouteId || 'NH-306 Corridor'}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-text-tertiary block text-[10px]">Estimated Arrival</span>
-                    <span className="font-mono font-bold text-primary">
+                  <div className="fo-stat-chip p-2">
+                    <span className="text-[9px] text-slate-400 block">Estimated Arrival</span>
+                    <span className="font-mono font-bold text-blue-400 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
                       {mission.routeDurationMinutes ? `${mission.routeDurationMinutes} min` : '42 min'}
                     </span>
                   </div>
@@ -168,17 +156,17 @@ export const FieldOfficerMissionsView: React.FC = () => {
 
                 {/* Cargo Manifest Breakdown */}
                 <div>
-                  <span className="font-semibold text-text-secondary text-[11px] block mb-1.5">
-                    Required Relief Cargo Manifest:
+                  <span className="text-[10px] text-slate-400 font-semibold block mb-1">
+                    Relief Cargo Manifest:
                   </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-3 gap-1.5">
                     {mission.cargoAllocations.map((c, i) => (
                       <div
                         key={i}
-                        className="p-2 rounded bg-surface-subtle border border-border text-center"
+                        className="p-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60 text-center"
                       >
-                        <span className="text-[10px] text-text-tertiary block truncate">{c.item}</span>
-                        <span className="font-mono font-bold text-xs text-text-primary">
+                        <span className="text-[9px] text-slate-400 block truncate">{c.item}</span>
+                        <span className="font-mono font-bold text-[10px] text-white">
                           {c.quantity} {c.unit}
                         </span>
                       </div>
@@ -186,62 +174,56 @@ export const FieldOfficerMissionsView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Section 16: DELIVERY VERIFICATION CALLOUT */}
+                {/* DELIVERY VERIFICATION CALLOUT */}
                 {isArrived && !isConfirmed && (
-                  <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/40 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <PackageCheck className="w-5 h-5 text-emerald-500 shrink-0" />
-                        <div>
-                          <h3 className="font-bold text-xs text-emerald-600 dark:text-emerald-400">
-                            DELIVERY ARRIVED AT COMMUNITY
-                          </h3>
-                          <p className="text-[11px] text-text-secondary">
-                            Convoy vehicle reached destination perimeter. Verify received supplies and confirm delivery.
-                          </p>
-                        </div>
+                  <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <PackageCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div>
+                        <h4 className="font-bold text-xs text-emerald-400 uppercase tracking-wider">
+                          DELIVERY ARRIVED
+                        </h4>
+                        <p className="text-[10px] text-slate-300">
+                          Convoy reached destination. Confirm received cargo to complete sortie.
+                        </p>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
                       {mission.cargoAllocations.map((c, i) => (
-                        <div key={i} className="p-2 rounded bg-surface border border-emerald-500/30">
-                          <span className="text-[10px] text-text-secondary block">{c.item}</span>
-                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            {c.quantity} / {c.quantity}
+                        <div key={i} className="p-1.5 rounded-lg bg-slate-900/80 border border-emerald-500/30">
+                          <span className="text-[9px] text-slate-400 block truncate">{c.item}</span>
+                          <span className="font-mono font-bold text-emerald-400 text-[10px]">
+                            {c.quantity}/{c.quantity}
                           </span>
                         </div>
                       ))}
                     </div>
 
-                    <div className="flex items-center justify-end gap-2 pt-1">
-                      <button
-                        onClick={() => handleConfirmDelivery(mission)}
-                        className="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 btn-press cursor-pointer shadow-md"
-                      >
-                        <Check className="w-4 h-4" />
-                        <span>CONFIRM DELIVERY</span>
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleConfirmDelivery(mission)}
+                      className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 btn-press cursor-pointer shadow-md transition-colors"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>CONFIRM RECEIPT</span>
+                    </button>
                   </div>
                 )}
 
                 {isConfirmed && (
-                  <div className="p-3 rounded-md bg-emerald-500/15 border border-emerald-500/40 flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+                  <div className="p-2.5 rounded-lg bg-emerald-500/15 border border-emerald-500/40 flex items-center gap-2 text-emerald-400 text-[11px] font-semibold">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>Delivery Confirmed by Field Officer ({userContext.name}). Mission closeout recorded.</span>
+                    <span>Receipt Confirmed by Field Officer ({userContext.name}).</span>
                   </div>
                 )}
 
-                {/* View Tactical Map Link */}
-                <div className="flex items-center justify-end pt-1">
+                {/* View Tactical Map Link Button - Fully Working */}
+                <div className="flex items-center justify-end pt-1 border-t border-slate-800/60">
                   <button
-                    onClick={() => {
-                      setSelectedMissionId(mission.id);
-                      setActiveView('GIS_COMMAND');
-                    }}
-                    className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    onClick={() => handleViewConvoy(mission.id)}
+                    className="px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-400 font-bold text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer btn-press"
                   >
+                    <Radio className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
                     <span>View Convoy on Tactical GIS Map</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>

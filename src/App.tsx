@@ -20,6 +20,7 @@ import { FieldOfficerRequirementsView } from './components/fieldOfficer/FieldOff
 import { FieldOfficerMyReportsView } from './components/fieldOfficer/FieldOfficerMyReportsView';
 import { FieldOfficerFloatingActionMenu } from './components/fieldOfficer/FieldOfficerFloatingActionMenu';
 import { FieldOfficerMobileShell } from './components/fieldOfficer/FieldOfficerMobileShell';
+import { DriverMobileShell } from './components/driver/DriverMobileShell';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Analytics } from '@vercel/analytics/react';
 import { AlertOctagon, X } from 'lucide-react';
@@ -58,6 +59,11 @@ const AppContent: React.FC = () => {
   // Dedicated Mobile-First Field Officer Interface (contained inside mobile frame)
   if (activeRole === 'FIELD_OFFICER') {
     return <FieldOfficerMobileShell />;
+  }
+
+  // Dedicated Mobile-First Driver Interface (contained inside mobile frame)
+  if (activeRole === 'DRIVER') {
+    return <DriverMobileShell />;
   }
 
   return (
