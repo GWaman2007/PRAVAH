@@ -23,7 +23,6 @@ import { fetchOSRMRouteAlternatives, fetchOSRMRouteMetrics } from './osrmRouting
 import { fetchBhuvanShortestPath } from './bhuvanRoutingService';
 import { haversineDistanceKm } from './gisMath';
 import { SHILLONG_PRIMARY_ROUTE_COORDS, SHILLONG_BYPASS_ROUTE_COORDS } from '../data/shillongRoadRoutes';
-import { resolveCorridorBypassSegments } from './modelAService';
 
 export interface RouteRankingResult {
   missionId: string;
